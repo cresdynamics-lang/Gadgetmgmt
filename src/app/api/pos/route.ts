@@ -4,11 +4,13 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { canUseCapability } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (!canUseCapability(session.user.role, "sales")) return NextResponse.json({ error: "Your role cannot access sales." }, { status: 403 });
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
@@ -47,17 +49,27 @@ export async function GET() {
 const checkoutSchema = z.object({
   items: z.array(z.object({ productId: z.string().cuid(), quantity: z.number().int().min(1).max(1000) })).min(1).max(100),
   customerId: z.string().cuid().nullable().optional(),
-  paymentMethod: z.enum(["CASH", "MPESA", "CARD"]),
+  paymentMethod: z.enum(["CASH", "MPESA", "CARD", "CREDIT", "SPLIT"]),
+  paidAmount: z.number().int().nonnegative().max(2_000_000_000).optional(),
+  discountAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
+  taxAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
 });
 
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (!canUseCapability(session.user.role, "sales")) return NextResponse.json({ error: "Your role cannot create sales." }, { status: 403 });
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
   const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The checkout details are invalid." }, { status: 400 });
+  if (parsed.data.paymentMethod === "CREDIT" && !parsed.data.customerId) {
+    return NextResponse.json({ error: "Select a customer to create a credit sale." }, { status: 400 });
+  }
+  if ((parsed.data.discountAmount > 0 || parsed.data.taxAmount > 0) && session.user.role !== "OWNER") {
+    return NextResponse.json({ error: "Only an administrator can apply checkout adjustments." }, { status: 403 });
+  }
 
   const quantities = new Map<string, number>();
   for (const item of parsed.data.items) {
@@ -72,6 +84,7 @@ export async function POST(request: Request) {
         select: {
           id: true,
           name: true,
+          costPrice: true,
           sellingPrice: true,
           inventory: { where: { branchId }, select: { id: true, stockOnHand: true, reservedStock: true } },
         },
@@ -82,8 +95,10 @@ export async function POST(request: Request) {
       const lineItems = products.map((product) => {
         const quantity = quantities.get(product.id)!;
         const inventory = product.inventory[0];
-        if (!inventory || inventory.stockOnHand - inventory.reservedStock < quantity) throw new Error("INSUFFICIENT_STOCK");
-        return { product, inventory, quantity, total: product.sellingPrice * quantity };
+        if (!inventory || inventory.stockOnHand - inventory.reservedStock < quantity) {
+          throw new Error(`INSUFFICIENT_STOCK:${product.name}`);
+        }
+        return { product, inventory, quantity, subtotal: product.sellingPrice * quantity };
       });
 
       if (parsed.data.customerId) {
@@ -94,16 +109,35 @@ export async function POST(request: Request) {
         if (!customer) throw new Error("CUSTOMER_UNAVAILABLE");
       }
 
-      for (const { inventory, quantity } of lineItems) {
+      for (const { inventory, quantity, product } of lineItems) {
         const updated = await transaction.inventoryItem.updateMany({
-          where: { id: inventory.id, stockOnHand: inventory.stockOnHand, reservedStock: inventory.reservedStock },
+          where: { id: inventory.id, stockOnHand: { gte: inventory.reservedStock + quantity }, reservedStock: inventory.reservedStock },
           data: { stockOnHand: { decrement: quantity } },
         });
-        if (updated.count !== 1) throw new Error("INVENTORY_CHANGED");
+        if (updated.count !== 1) throw new Error(`INSUFFICIENT_STOCK:${product.name}`);
       }
 
-      const total = lineItems.reduce((sum, item) => sum + item.total, 0);
-      const invoiceNumber = `GH-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${randomBytes(4).toString("hex").toUpperCase()}`;
+      const subtotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
+      if (parsed.data.discountAmount > subtotal) throw new Error("DISCOUNT_EXCEEDS_SUBTOTAL");
+      const total = subtotal - parsed.data.discountAmount + parsed.data.taxAmount;
+      const paidAmount = parsed.data.paymentMethod === "CREDIT" ? 0 : parsed.data.paymentMethod === "SPLIT" ? parsed.data.paidAmount : total;
+      if (paidAmount === undefined || paidAmount > total || (parsed.data.paymentMethod === "SPLIT" && (paidAmount <= 0 || paidAmount >= total))) {
+        throw new Error("INVALID_PAID_AMOUNT");
+      }
+      const receiptDate = new Date();
+      const datePart = receiptDate.toISOString().slice(2, 10).replaceAll("-", "");
+      const invoiceNumber = `GH-${datePart}-${randomBytes(2).toString("hex").toUpperCase()}`;
+
+      let discountRemaining = parsed.data.discountAmount;
+      let taxRemaining = parsed.data.taxAmount;
+      const saleLines = lineItems.map((item, index) => {
+        const isLast = index === lineItems.length - 1;
+        const lineDiscount = isLast ? discountRemaining : Math.floor(parsed.data.discountAmount * item.subtotal / subtotal);
+        discountRemaining -= lineDiscount;
+        const lineTax = isLast ? taxRemaining : Math.floor(parsed.data.taxAmount * item.subtotal / subtotal);
+        taxRemaining -= lineTax;
+        return { ...item, lineDiscount, lineTax, total: item.subtotal - lineDiscount + lineTax };
+      });
 
       const createdSale = await transaction.sale.create({
         data: {
@@ -112,23 +146,51 @@ export async function POST(request: Request) {
           cashierId: session.user.id,
           customerId: parsed.data.customerId ?? null,
           total,
-          paidAmount: total,
+          discountAmount: parsed.data.discountAmount,
+          taxAmount: parsed.data.taxAmount,
+          paidAmount,
           paymentMethod: parsed.data.paymentMethod,
-          status: "PAID",
+          status: paidAmount === total ? "PAID" : "PARTIAL",
           saleItems: {
-            create: lineItems.map(({ product, quantity, total: lineTotal }) => ({
+            create: saleLines.map(({ product, quantity, lineDiscount, lineTax, total: lineTotal }) => ({
               productId: product.id,
               quantity,
               unitPrice: product.sellingPrice,
+              unitCost: product.costPrice,
+              discountAmount: lineDiscount,
+              taxAmount: lineTax,
               total: lineTotal,
             })),
           },
         },
-        select: { id: true, invoiceNumber: true, total: true, paymentMethod: true, createdAt: true },
+        include: {
+          customer: { select: { name: true, phone: true } },
+          branch: { select: { name: true, address: true, phone: true } },
+          cashier: { select: { name: true } },
+          saleItems: { include: { product: { select: { name: true, sku: true, configuration: true, condition: true } } } },
+        },
       });
 
+      if (parsed.data.paymentMethod === "CREDIT") {
+        const dueDate = new Date(receiptDate);
+        dueDate.setDate(dueDate.getDate() + 30);
+        await transaction.creditPlan.createMany({
+          data: saleLines.map(({ product, total: lineTotal }) => ({
+            saleId: createdSale.id,
+            branchId,
+            customerId: parsed.data.customerId!,
+            productId: product.id,
+            totalAmount: lineTotal,
+            balance: lineTotal,
+            installmentCount: 1,
+            nextDueDate: dueDate,
+            status: "ACTIVE",
+          })),
+        });
+      }
+
       await transaction.inventoryMovement.createMany({
-        data: lineItems.map(({ product, quantity }) => ({
+        data: saleLines.map(({ product, quantity }) => ({
           branchId,
           productId: product.id,
           userId: session.user.id,
@@ -144,9 +206,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(sale, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && ["INSUFFICIENT_STOCK", "INVENTORY_CHANGED"].includes(error.message)) {
-      return NextResponse.json({ error: "Stock changed or is insufficient. Refresh the catalogue and try again." }, { status: 409 });
+    if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
+      return NextResponse.json({ error: `Insufficient stock for ${error.message.slice("INSUFFICIENT_STOCK:".length)}.` }, { status: 409 });
     }
+    if (error instanceof Error && error.message === "DISCOUNT_EXCEEDS_SUBTOTAL") return NextResponse.json({ error: "Discount cannot exceed the sale subtotal." }, { status: 400 });
+    if (error instanceof Error && error.message === "INVALID_PAID_AMOUNT") return NextResponse.json({ error: "Enter a paid amount below the total for a split payment." }, { status: 400 });
     if (error instanceof Error && error.message === "PRODUCT_UNAVAILABLE") {
       return NextResponse.json({ error: "One or more products are unavailable at your branch." }, { status: 400 });
     }

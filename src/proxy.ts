@@ -1,10 +1,15 @@
 import { auth } from "@/auth";
+import { canAccessPage } from "@/lib/access";
 
 export default auth((request) => {
-  if (!request.auth && request.nextUrl.pathname !== "/login") {
+  const pathname = request.nextUrl.pathname;
+  if (!request.auth && pathname !== "/login") {
     const loginUrl = new URL("/login", request.nextUrl);
-    loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+    loginUrl.searchParams.set("callbackUrl", pathname);
     return Response.redirect(loginUrl);
+  }
+  if (request.auth?.user && pathname !== "/login" && !canAccessPage(request.auth.user.role, pathname)) {
+    return Response.redirect(new URL("/dashboard", request.nextUrl));
   }
 });
 

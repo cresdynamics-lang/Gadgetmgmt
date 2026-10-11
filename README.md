@@ -32,6 +32,8 @@ Multi-branch retail operations app built with Next.js, Auth.js, Prisma, and Post
    ```
 7. Open http://localhost:3000 and sign in using `INITIAL_OWNER_EMAIL` and `INITIAL_OWNER_PASSWORD`.
 
+For production, generate `NEXTAUTH_SECRET` with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Use the database provider's pooled connection URL for application traffic, enable TLS with `sslmode=require`, and retain a separate direct URL for schema deployment if the provider requires one.
+
 The seed creates one owner account only. Additional staff accounts should be created from the Staff screen. The sample product and opening stock are development data; replace them with verified business data before operational use.
 
 ## Database
@@ -51,3 +53,20 @@ The Prisma schema is in `prisma/schema.prisma`. `db:push` is intended for local 
 npm run lint
 npm run build
 ```
+
+## Catalog intake
+
+The supplied `Gadget_Hub_Complete_Market_Master.csv` contains 519 unique source items (not 489) across seven categories. The importer creates NEW and EX-UK condition SKUs for every active branch, so one branch gets 1,038 variants. It maps the two source price columns to retail market prices, leaves purchase cost at 0 until actual supplier cost is known, and leaves stock at 0 unless a verified count is configured.
+
+```powershell
+npm run db:push
+npm run db:generate
+npm run db:import-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv" --dry-run
+npm run db:import-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv"
+npm run db:verify-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv"
+npm run db:test-pos-transaction
+```
+
+Set `CATALOG_OPENING_STOCK` only after confirming physical counts. Re-imports are idempotent for catalog rows and opening receipts. In production, use reviewed Prisma migrations instead of `db push`; this repository does not currently contain migration history.
+
+The POS smoke test uses an active branch and administrator, verifies sale lines, stock decrement, inventory movement, and credit-plan linkage inside one serializable transaction, then intentionally rolls back all test data.

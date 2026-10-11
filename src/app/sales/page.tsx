@@ -8,7 +8,7 @@ type Product = { id: string; sku: string; name: string; category: string; sellin
 type Customer = { id: string; name: string; phone: string };
 type Receipt = { invoiceNumber: string; total: number; paymentMethod: string };
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
-const paymentMethods = [{ value: "CASH", label: "Cash" }, { value: "MPESA", label: "M-Pesa" }, { value: "CARD", label: "Card" }] as const;
+const paymentMethods = [{ value: "CASH", label: "Cash" }, { value: "MPESA", label: "M-Pesa" }, { value: "CARD", label: "Card" }, { value: "CREDIT", label: "Credit" }, { value: "SPLIT", label: "Split" }] as const;
 
 export default function SalesPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -17,6 +17,7 @@ export default function SalesPage() {
   const [query, setQuery] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethods)[number]["value"]>("CASH");
+  const [paidAmount, setPaidAmount] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -69,7 +70,7 @@ export default function SalesPage() {
       const response = await fetch("/api/pos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity })), customerId: customerId || null, paymentMethod }),
+        body: JSON.stringify({ items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity })), customerId: customerId || null, paymentMethod, paidAmount: paymentMethod === "SPLIT" ? Number(paidAmount) : undefined }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Sale could not be completed.");
@@ -101,9 +102,10 @@ export default function SalesPage() {
             {cartItems.length ? <div className="divide-y divide-[#e8ebe8] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{product.name}</p><p className="mt-1 text-xs text-[#69746c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="p-1 text-[#8a5149] hover:bg-red-50"><Trash2 className="h-4 w-4" /></button></div><div className="mt-2 flex items-center justify-between"><div className="flex items-center border border-[#dfe4df]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center hover:bg-[#f4f6f3]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-sm tabular-nums">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center hover:bg-[#f4f6f3] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-sm font-semibold tabular-nums">{money(product.sellingPrice * quantity)}</span></div></div>)}</div> : <p className="px-4 py-8 text-center text-sm text-[#69746c]">Add an item to begin checkout.</p>}
             <div className="space-y-4 border-t border-[#e5e9e5] p-4">
               <label className="block space-y-1.5"><span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#69746c]">Customer <span className="font-normal normal-case tracking-normal">(optional)</span></span><select value={customerId} onChange={(event) => setCustomerId(event.target.value)} className="w-full border border-[#d6ddd6] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#315d3f]"><option value="">Walk-in customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select></label>
-              <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#69746c]">Payment method</legend><div className="grid grid-cols-3 border border-[#d6ddd6]">{paymentMethods.map((method) => <button key={method.value} type="button" aria-pressed={paymentMethod === method.value} onClick={() => setPaymentMethod(method.value)} className={`px-2 py-2 text-xs font-medium ${paymentMethod === method.value ? "bg-[#173a2b] text-white" : "bg-white text-[#354139] hover:bg-[#f4f6f3]"}`}>{method.label}</button>)}</div></fieldset>
+              <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#69746c]">Payment method</legend><div className="grid grid-cols-5 border border-[#d6ddd6]">{paymentMethods.map((method) => <button key={method.value} type="button" disabled={method.value === "CREDIT" && !customerId} aria-pressed={paymentMethod === method.value} onClick={() => setPaymentMethod(method.value)} className={`px-1 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ${paymentMethod === method.value ? "bg-[#173a2b] text-white" : "bg-white text-[#354139] hover:bg-[#f4f6f3]"}`}>{method.label}</button>)}</div>{paymentMethod === "CREDIT" && !customerId ? <p className="mt-1 text-xs text-[#995338]">Select a customer before choosing credit.</p> : null}</fieldset>
+              {paymentMethod === "SPLIT" ? <label className="block space-y-1.5"><span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#69746c]">Amount paid now (KES)</span><input type="number" min="1" max={Math.max(1, total - 1)} step="1" required value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="w-full border border-[#d6ddd6] px-3 py-2.5 text-sm" /></label> : null}
               <div className="flex items-end justify-between border-t border-[#e5e9e5] pt-3"><span className="text-sm text-[#69746c]">Total due</span><span className="text-xl font-semibold tabular-nums">{money(total)}</span></div>
-              <button type="submit" disabled={!cartItems.length || submitting} className="w-full bg-[#173a2b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#24513a] disabled:cursor-not-allowed disabled:bg-[#aab5ac]">{submitting ? "Recording sale…" : "Complete sale"}</button>
+              <button type="submit" disabled={!cartItems.length || submitting || (paymentMethod === "CREDIT" && !customerId) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total))} className="w-full bg-[#173a2b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#24513a] disabled:cursor-not-allowed disabled:bg-[#aab5ac]">{submitting ? "Recording sale…" : "Complete sale"}</button>
             </div>
           </form>
         </div>

@@ -38,17 +38,35 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(initialPassword, 12);
 
-  await prisma.user.upsert({
-    where: { email: ownerEmail },
-    update: {},
-    create: {
-      name: ownerName,
-      email: ownerEmail,
-      passwordHash,
-      role: "OWNER",
-      branchId: westlands.id,
-    },
+  const ownerWithEmail = await prisma.user.findUnique({ where: { email: ownerEmail } });
+  const existingOwner = ownerWithEmail ?? await prisma.user.findFirst({
+    where: { role: "OWNER" },
+    orderBy: { createdAt: "asc" },
   });
+
+  if (existingOwner) {
+    await prisma.user.update({
+      where: { id: existingOwner.id },
+      data: {
+        name: ownerName,
+        email: ownerEmail,
+        passwordHash,
+        role: "OWNER",
+        status: "ACTIVE",
+        branchId: westlands.id,
+      },
+    });
+  } else {
+    await prisma.user.create({
+      data: {
+        name: ownerName,
+        email: ownerEmail,
+        passwordHash,
+        role: "OWNER",
+        branchId: westlands.id,
+      },
+    });
+  }
 
   const iphone = await prisma.product.upsert({
     where: { sku: "IPH-15-PRO" },

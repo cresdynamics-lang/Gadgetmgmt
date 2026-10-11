@@ -46,6 +46,11 @@ enum InventoryMovementType {
   ADJUSTMENT
 }
 
+enum ProductCondition {
+  NEW
+  EX_UK
+}
+
 model Branch {
   id          String         @id @default(cuid())
   name        String
@@ -98,22 +103,29 @@ model Customer {
 }
 
 model Product {
-  id                String         @id @default(cuid())
-  sku               String         @unique
+  id                String           @id @default(cuid())
+  sku               String           @unique
+  catalogItemId     String?
+  productGroup      String?
+  configuration     String?
+  catalogNotes      String?
+  condition         ProductCondition @default(NEW)
+  marketNewPrice    Int?
+  marketExUkPrice   Int?
   name              String
   category          String
   brand             String?
   costPrice         Int
   sellingPrice      Int
-  reorderLevel      Int            @default(0)
+  reorderLevel      Int              @default(0)
   branchId          String
-  branch            Branch         @relation(fields: [branchId], references: [id])
+  branch            Branch           @relation(fields: [branchId], references: [id])
   inventory         InventoryItem[]
   saleItems         SaleItem[]
   creditPlans       CreditPlan[]
   movements         InventoryMovement[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([branchId, category])
 }
@@ -143,10 +155,13 @@ model Sale {
   customerId    String?
   customer      Customer?   @relation(fields: [customerId], references: [id])
   total         Int
+  discountAmount Int        @default(0)
+  taxAmount     Int         @default(0)
   paidAmount    Int         @default(0)
   paymentMethod String      @default("CASH")
   status        SaleStatus  @default(PAID)
   saleItems     SaleItem[]
+  creditPlans   CreditPlan[]
   movements     InventoryMovement[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -162,6 +177,9 @@ model SaleItem {
   product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
   unitPrice Int
+  unitCost  Int      @default(0)
+  discountAmount Int @default(0)
+  taxAmount Int       @default(0)
   total     Int
   createdAt DateTime @default(now())
 }
@@ -175,6 +193,8 @@ model CreditPlan {
   productId       String
   product         Product     @relation(fields: [productId], references: [id])
   totalAmount     Int
+  saleId          String?
+  sale            Sale?       @relation(fields: [saleId], references: [id])
   depositAmount   Int         @default(0)
   balance         Int
   installmentCount Int

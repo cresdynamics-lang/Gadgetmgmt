@@ -5,6 +5,13 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 
+if (process.env.NODE_ENV === "production") {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret || secret.length < 43 || secret === "replace-with-a-long-random-secret") {
+    throw new Error("Set NEXTAUTH_SECRET to a cryptographically generated 32-byte base64 value in production.");
+  }
+}
+
 const credentialsSchema = z.object({
   email: z.string().trim().email().transform((email) => email.toLowerCase()),
   password: z.string().min(1),
@@ -50,6 +57,17 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.role = user.role;
         token.branchId = user.branchId;
         token.branchName = user.branchName;
+      } else if (typeof token.userId === "string" && token.userId) {
+        return prisma.user.findUnique({
+          where: { id: token.userId },
+          select: { role: true, status: true, branchId: true, branch: { select: { name: true } } },
+        }).then((currentUser) => {
+          if (!currentUser || currentUser.status !== "ACTIVE") return null;
+          token.role = currentUser.role;
+          token.branchId = currentUser.branchId;
+          token.branchName = currentUser.branch?.name ?? null;
+          return token;
+        });
       }
       return token;
     },

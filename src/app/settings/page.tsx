@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 
 type Branch = { id: string; name: string; code: string; address: string; phone: string; email: string | null; isActive: boolean };
-const roleNames: Record<string, string> = { OWNER: "Owner", BRANCH_MANAGER: "Branch manager", CASHIER: "Cashier", INVENTORY_LEAD: "Inventory lead" };
+const roleNames: Record<string, string> = { OWNER: "Administrator", BRANCH_MANAGER: "Branch manager", CASHIER: "Cashier", INVENTORY_LEAD: "Inventory lead" };
 
 export default function SettingsPage() {
   const { data: session } = useSession();

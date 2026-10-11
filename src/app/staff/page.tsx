@@ -17,7 +17,7 @@ type StaffMember = {
 };
 
 type Branch = { id: string; name: string; code: string };
-const roleNames: Record<string, string> = { OWNER: "Owner", BRANCH_MANAGER: "Branch manager", CASHIER: "Cashier", INVENTORY_LEAD: "Inventory lead" };
+const roleNames: Record<string, string> = { OWNER: "Administrator", BRANCH_MANAGER: "Branch manager", CASHIER: "Cashier", INVENTORY_LEAD: "Inventory lead" };
 
 export default function StaffPage() {
   const { data: session } = useSession();
@@ -26,6 +26,7 @@ export default function StaffPage() {
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingMemberId, setSavingMemberId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -54,6 +55,7 @@ export default function StaffPage() {
 
   const activeCount = staff.filter((member) => member.status === "ACTIVE").length;
   const canManage = session?.user.role === "OWNER" || session?.user.role === "BRANCH_MANAGER";
+  const canManageAccess = session?.user.role === "OWNER";
 
   async function createStaff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,6 +80,27 @@ export default function StaffPage() {
       setError(saveError instanceof Error ? saveError.message : "Staff account could not be created.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function updateAccess(id: string, changes: { role?: string; status?: string }) {
+    setSavingMemberId(id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/staff/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Staff access could not be updated.");
+      setStaff((current) => current.map((member) => member.id === id ? { ...member, role: result.role, status: result.status } : member));
+      setNotice("Staff access updated.");
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Staff access could not be updated.");
+    } finally {
+      setSavingMemberId("");
     }
   }
 
@@ -136,7 +159,7 @@ export default function StaffPage() {
                       <option value="CASHIER">Cashier</option>
                       <option value="INVENTORY_LEAD">Inventory lead</option>
                       <option value="BRANCH_MANAGER">Branch manager</option>
-                      <option value="OWNER">Owner</option>
+                      <option value="OWNER">Administrator</option>
                     </>
                   ) : (
                     <>
@@ -177,6 +200,7 @@ export default function StaffPage() {
                   <th className="px-4 py-3 font-medium">Branch</th>
                   <th className="px-4 py-3 text-right font-medium">Sales</th>
                   <th className="px-4 py-3 font-medium">Account status</th>
+                  {canManageAccess ? <th className="px-4 py-3 font-medium">Access controls</th> : null}
                   <th className="px-4 py-3 font-medium">Created</th>
                 </tr>
               </thead>
@@ -187,18 +211,34 @@ export default function StaffPage() {
                       <p className="font-medium">{member.name}</p>
                       <p className="mt-1 text-xs text-[#69746c]">{member.email}</p>
                     </td>
-                    <td className="px-4 py-3">{roleNames[member.role] ?? member.role}</td>
+                    <td className="px-4 py-3">
+                      {canManageAccess && member.id !== session?.user.id ? (
+                        <select aria-label={`Role for ${member.name}`} value={member.role} disabled={savingMemberId === member.id} onChange={(event) => void updateAccess(member.id, { role: event.target.value })} className="border border-[#d6ddd6] bg-white px-2 py-1.5 text-sm disabled:opacity-60">
+                          <option value="OWNER">Administrator</option>
+                          <option value="BRANCH_MANAGER">Branch manager</option>
+                          <option value="CASHIER">Cashier</option>
+                          <option value="INVENTORY_LEAD">Inventory lead</option>
+                        </select>
+                      ) : roleNames[member.role] ?? member.role}
+                    </td>
                     <td className="px-4 py-3 text-[#69746c]">{member.branch?.name ?? "Unassigned"}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{member._count.sales}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs ${member.status === "ACTIVE" ? "text-[#42684a]" : "text-[#995338]"}`}>{member.status.replace("_", " ")}</span>
+                      {canManageAccess && member.id !== session?.user.id ? (
+                        <select aria-label={`Status for ${member.name}`} value={member.status} disabled={savingMemberId === member.id} onChange={(event) => void updateAccess(member.id, { status: event.target.value })} className="border border-[#d6ddd6] bg-white px-2 py-1.5 text-sm disabled:opacity-60">
+                          <option value="ACTIVE">Active</option>
+                          <option value="OFF_SHIFT">Off shift</option>
+                          <option value="SUSPENDED">Suspended</option>
+                        </select>
+                      ) : <span className={`text-xs ${member.status === "ACTIVE" ? "text-[#42684a]" : "text-[#995338]"}`}>{member.status.replace("_", " ")}</span>}
                     </td>
+                    {canManageAccess ? <td className="px-4 py-3 text-xs text-[#69746c]">{member.id === session?.user.id ? "Current account" : savingMemberId === member.id ? "Saving…" : "Changes save immediately"}</td> : null}
                     <td className="px-4 py-3 text-xs text-[#69746c]">{new Date(member.createdAt).toLocaleDateString("en-KE")}</td>
                   </tr>
                 ))}
                 {!loading && !staff.length ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center">
+                    <td colSpan={canManageAccess ? 7 : 6} className="px-4 py-10 text-center">
                       <p className="text-sm font-semibold">No staff accounts found</p>
                       <p className="mt-1 text-sm text-[#69746c]">Create a staff account to grant a team member access.</p>
                     </td>
@@ -206,7 +246,7 @@ export default function StaffPage() {
                 ) : null}
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-[#69746c]">Loading staff records…</td>
+                    <td colSpan={canManageAccess ? 7 : 6} className="px-4 py-8 text-center text-sm text-[#69746c]">Loading staff records…</td>
                   </tr>
                 ) : null}
               </tbody>

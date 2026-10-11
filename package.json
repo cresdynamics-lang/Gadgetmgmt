@@ -10,7 +10,10 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "node --env-file=.env --import tsx prisma/seed.ts",
+    "db:import-catalog": "node --env-file=.env --import tsx scripts/import-catalog.ts",
+    "db:verify-catalog": "node --env-file=.env --import tsx scripts/verify-catalog.ts",
+    "db:test-pos-transaction": "node --env-file=.env --import tsx scripts/test-pos-transaction.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -41,5 +44,12 @@
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "prisma@6.19.3": true,
+    "esbuild@0.28.2": true,
+    "unrs-resolver@1.12.2": true
   }
 }

@@ -3,11 +3,13 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { canUseCapability } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (!canUseCapability(session.user.role, "staff")) return NextResponse.json({ error: "Your role cannot view staff accounts." }, { status: 403 });
 
   const users = await prisma.user.findMany({
     where: session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" },
@@ -38,7 +40,7 @@ const staffSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403 });
+  if (!canUseCapability(session.user.role, "staff")) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403 });
 
   const parsed = staffSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400 });

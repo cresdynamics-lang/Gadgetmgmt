@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 
 import { navItems } from "@/lib/navigation";
+import { canAccessPage } from "@/lib/access";
 
 function IconBell() {
   return (
@@ -79,7 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
 
             <nav className="space-y-2">
-              {navItems.map(({ label, href }) => {
+              {navItems.filter(({ href }) => canAccessPage(session?.user.role ?? "", href)).map(({ label, href }) => {
                 const isActive = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
 
                 return (

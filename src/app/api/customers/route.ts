@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { canUseCapability } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot access customers." }, { status: 403 });
 
   const customers = await prisma.customer.findMany({
     where: session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" },
@@ -47,6 +49,7 @@ const customerSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot create customers." }, { status: 403 });
 
   const parsed = customerSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, phone, email and credit limit." }, { status: 400 });

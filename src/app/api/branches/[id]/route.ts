@@ -15,7 +15,7 @@ const branchSchema = z.object({
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Your role cannot update branch settings." }, { status: 403 });
+  if (session.user.role !== "OWNER" && session.user.role !== "BRANCH_MANAGER") return NextResponse.json({ error: "Your role cannot update branch settings." }, { status: 403 });
 
   const { id } = await context.params;
   if (session.user.role !== "OWNER" && session.user.branchId !== id) return NextResponse.json({ error: "You can only update your assigned branch." }, { status: 403 });
