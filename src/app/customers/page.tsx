@@ -57,9 +57,10 @@ export default function CustomersPage() {
 
   async function createCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setSaving(true);
     setError("");
-    const formData = new FormData(event.currentTarget);
+    const formData = new FormData(form);
 
     try {
       const response = await fetch("/api/customers", {
@@ -79,7 +80,7 @@ export default function CustomersPage() {
       if (refreshed.ok) setCustomers(await refreshed.json());
       setSelectedId(data.id);
       setAdding(false);
-      event.currentTarget.reset();
+      form.reset();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Customer could not be saved.");
     } finally {
