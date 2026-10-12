@@ -16,6 +16,8 @@ Remote implementation commits: `fabeedf`, `9af9451`, and `af5abed` on `main`.
 - Made opening receipts idempotent under concurrent imports, expanded invoice identifiers, guarded POS integer totals, and persisted split-tender methods and amounts.
 - Added an itemized printable POS receipt, split-tender reporting by actual channel, focused CSV parser tests, and an incremental Prisma migration.
 - Added separate layaway orders with branch-scoped stock reservation, locked price/cost snapshots, payment history, fully-paid pickup gating, and sale/inventory-ledger creation at confirmed handover.
+- Added downloadable PDF receipts for POS sales and individual layaway installments, including running balance and pickup invoice details where applicable.
+- Receipt PDF generation tests passed for both POS and layaway receipt formats; lint, TypeScript, and production build passed after adding the download controls.
 
 ## Verification
 

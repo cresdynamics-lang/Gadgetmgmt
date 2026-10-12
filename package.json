@@ -15,7 +15,8 @@
     "db:verify-catalog": "node --env-file=.env --import tsx scripts/verify-catalog.ts",
     "db:test-pos-transaction": "node --env-file=.env --import tsx scripts/test-pos-transaction.ts",
     "db:test-layaway-transaction": "node --env-file=.env --import tsx scripts/test-layaway-transaction.ts",
-    "test:catalog-csv": "node --import tsx --test scripts/catalog-csv.test.ts"
+    "test:catalog-csv": "node --import tsx --test scripts/catalog-csv.test.ts",
+    "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -25,6 +26,7 @@
     "@tanstack/react-table": "^9.2.8",
     "bcryptjs": "^3.0.0",
     "clsx": "^2.1.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.54.0",
     "next": "16.4.0",
     "next-auth": "^5.0.0-beta.32",

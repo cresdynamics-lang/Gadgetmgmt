@@ -52,6 +52,7 @@ The Prisma schema is in `prisma/schema.prisma`. `db:push` is intended for local 
 ```bash
 npm run lint
 npm run build
+npm run test:receipt-pdf
 ```
 
 ## Catalog intake
@@ -75,6 +76,8 @@ The POS smoke test uses an active branch and administrator, verifies sale lines,
 ## Lipa Mdogo Mdogo (layaway)
 
 Layaway is separate from post-sale credit. A cashier selects an active customer and an in-stock item, takes the first payment, and reserves the requested quantity at the current price. Further payments are recorded with method, reference, receiver, and timestamp. The order becomes ready for pickup only when its payment ledger covers the full locked total. A staff member then confirms handover; that transaction creates the paid sale and inventory movement, and only then decrements on-hand and reserved stock.
+
+POS sales and each layaway installment can be downloaded as PDF receipts from their receipt/payment views. Layaway receipts show the received amount, payment method/reference, cumulative paid amount, remaining balance, receiving staff member, and pickup invoice once collected.
 
 The current workflow supports one product per layaway order and has no cancellation, refund, expiry, or late-fee policy. Orders remain reserved until paid and collected; define and approve cancellation/refund and reservation-duration rules before using the workflow as a production policy. To test the database transaction lifecycle without retaining test data, run `npm run db:test-layaway-transaction`.
 

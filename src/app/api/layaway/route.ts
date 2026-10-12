@@ -27,7 +27,10 @@ export async function GET() {
       include: {
         customer: { select: { id: true, name: true, phone: true } },
         branch: { select: { name: true } },
-        payments: { orderBy: { createdAt: "asc" } },
+        payments: {
+          orderBy: { createdAt: "asc" },
+          include: { receivedBy: { select: { name: true } } },
+        },
         sale: { select: { invoiceNumber: true } },
       },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
