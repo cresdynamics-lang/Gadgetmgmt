@@ -2,7 +2,7 @@
 
 Date: 2026-10-12
 
-Remote implementation commits: `fabeedf` and report update `9af9451` on `main`.
+Remote implementation commits: `fabeedf`, `9af9451`, and `af5abed` on `main`.
 
 ## Delivered
 
@@ -24,24 +24,25 @@ Remote implementation commits: `fabeedf` and report update `9af9451` on `main`.
 - `npm run lint`: passed with exit code 0.
 - `npm run build`: passed.
 - Catalog importer dry-run: passed; 519 unique source records expand to 1,038 condition variants per active branch across seven categories.
-- Browser check: login page responds at `http://localhost:3003`.
-- Local follow-up: Prisma schema push completed against the PostgreSQL service on this workstation; schema validation, generation, lint, TypeScript, and production build passed. The production build used a process-local throwaway Auth.js secret. Seeding was safely blocked because this workstation has no configured `INITIAL_OWNER_PASSWORD`; no catalog CSV is present under the workspace.
-- Catalog parser tests cover quoted commas, CRLF, duplicate IDs, zero prices, fractional prices, and PostgreSQL integer overflow.
+- Local database schema push succeeded against PostgreSQL on this workstation.
+- Owner seed succeeded and browser sign-in reached the Westlands dashboard.
+- Supplied CSV dry-run validated 519 unique records across seven categories; import created 2,076 variants across two active branches with opening stock set to zero.
+- Catalog verification confirmed all 2,076 variants and exact source prices. The rollback-only POS transaction smoke test passed.
+- Catalog parser tests cover quoted commas, CRLF, duplicate IDs, zero prices, fractional prices, and PostgreSQL integer overflow; all three tests passed.
+- Prisma validation/generation, lint, TypeScript, and production build passed. The production build used a process-local throwaway Auth.js secret.
 
 ## Remaining To Complete
 
 ### 1. Connect And Initialize The Database
 
-This is the immediate blocker. The last `npm run db:push` returned Prisma `P1000`: the running PostgreSQL service rejected the credentials in `DATABASE_URL`. Therefore, the schema changes have not been applied, the admin account is not active in the database, and the catalog is not imported. `.env` is local and is not part of the repository push.
-
-Correct the PostgreSQL `gadgethub` role password or update the local `DATABASE_URL` to the actual credentials. Then run the commands below in order. `db:push` is for local development only.
+Local development database initialization is complete on this workstation. The commands below are retained for repeatable setup on another machine; `db:push` is for local development only. The owner password was supplied at setup time and was not committed.
 
 ```powershell
 npm run db:push
 npm run db:generate
 npm run db:seed
-npm run db:import-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv"
-npm run db:verify-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv"
+npm run db:import-catalog -- "C:\Users\Administrator\Downloads\Gadget_Hub_Complete_Market_Master.csv"
+npm run db:verify-catalog -- "C:\Users\Administrator\Downloads\Gadget_Hub_Complete_Market_Master.csv"
 npm run db:test-pos-transaction
 ```
 
@@ -56,7 +57,7 @@ npm run db:test-pos-transaction
 
 - Exercise cash, M-Pesa, card, credit, and split tenders against a working database, including concurrent last-unit checkout and failure rollback. The split tender now stores each tender method and amount.
 - The API supports discount/tax values, but the current POS UI has no adjustment controls. Define the adjustment policy and add the approved UI/authorization path before using discounts or tax operationally.
-- Add a printable, complete receipt view; checkout returns receipt metadata while the page currently displays only the invoice number and total.
+- Live cash, M-Pesa, card, and split-tender checkout flows have not been separately exercised through the browser; the database smoke test covers the rollback-only credit transaction path.
 - Decide and enforce customer credit-limit rules, default due dates/installment policy, and what should happen when a customer already has overdue credit.
 - Payment-provider settlement, M-Pesa integration, refunds, and void/reversal workflows are not implemented.
 
@@ -74,12 +75,12 @@ npm run db:test-pos-transaction
 - [x] Catalog CSV dry-run validates 519 unique IDs, integer price fields, and seven categories.
 - [x] Code/report pushed to `origin/main`; local `.env` excluded.
 - [x] Local development database schema push succeeds using this workstation's configured PostgreSQL credentials. Production migration deployment is not yet verified.
-- [ ] Administrator seed succeeds and the configured owner can sign in.
-- [ ] Database verification confirms all expected catalog variants and prices.
-- [ ] POS transaction smoke test passes against PostgreSQL.
+- [x] Owner seed succeeds and the configured owner can sign in.
+- [x] Database verification confirms all expected catalog variants and exact source prices across active branches.
+- [x] POS transaction smoke test passes against PostgreSQL and rolls back its test data.
 - [ ] Verified supplier costs and physical stock counts are loaded.
 - [ ] Production migrations, secrets, TLS/pooling, backups, and operational integrations are configured.
 
 ## Database Blocker Details
 
-The previous workstation could not authenticate to PostgreSQL. On this workstation, the local development schema push has now succeeded. Administrator seeding still requires a unique `INITIAL_OWNER_PASSWORD` of 12 to 72 characters, and catalog import/verification requires the supplied business CSV, which is not present in this workspace. After configuring that owner password and placing the approved CSV at a known path, run the seed, import, verification, and POS transaction commands above. Supplier costs, verified opening counts, credit policy, payment integrations, managed production database setup, backups, and staging acceptance remain business/operations requirements and have not been inferred or fabricated.
+The schema, owner seed, catalog import/verification, owner browser sign-in, and rollback-only POS transaction test are complete on this local workstation. Supplier costs and physical opening counts remain unset; all imported stock is zero. Credit policy, payment-provider settlement, refunds/voids, managed production database configuration, backups, and production staging acceptance remain business/operations requirements and have not been inferred or fabricated. Rotate the owner password before production use because setup credentials were shared during this session.
