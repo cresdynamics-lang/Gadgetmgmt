@@ -14,6 +14,7 @@
     "db:import-catalog": "node --env-file=.env --import tsx scripts/import-catalog.ts",
     "db:verify-catalog": "node --env-file=.env --import tsx scripts/verify-catalog.ts",
     "db:test-pos-transaction": "node --env-file=.env --import tsx scripts/test-pos-transaction.ts",
+    "db:test-layaway-transaction": "node --env-file=.env --import tsx scripts/test-layaway-transaction.ts",
     "test:catalog-csv": "node --import tsx --test scripts/catalog-csv.test.ts"
   },
   "dependencies": {

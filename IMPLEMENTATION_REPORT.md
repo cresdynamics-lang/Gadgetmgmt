@@ -15,6 +15,7 @@ Remote implementation commits: `fabeedf`, `9af9451`, and `af5abed` on `main`.
 - Shared a quote-aware catalog CSV parser between import and verification; verification now compares exact source and variant prices, and invalid/overflowing prices are rejected.
 - Made opening receipts idempotent under concurrent imports, expanded invoice identifiers, guarded POS integer totals, and persisted split-tender methods and amounts.
 - Added an itemized printable POS receipt, split-tender reporting by actual channel, focused CSV parser tests, and an incremental Prisma migration.
+- Added separate layaway orders with branch-scoped stock reservation, locked price/cost snapshots, payment history, fully-paid pickup gating, and sale/inventory-ledger creation at confirmed handover.
 
 ## Verification
 
@@ -29,6 +30,8 @@ Remote implementation commits: `fabeedf`, `9af9451`, and `af5abed` on `main`.
 - Supplied CSV dry-run validated 519 unique records across seven categories; import created 2,076 variants across two active branches with opening stock set to zero.
 - Catalog verification confirmed all 2,076 variants and exact source prices. The rollback-only POS transaction smoke test passed.
 - Catalog parser tests cover quoted commas, CRLF, duplicate IDs, zero prices, fractional prices, and PostgreSQL integer overflow; all three tests passed.
+- Layaway lifecycle smoke test passed against local PostgreSQL; reservation, two installments, pickup sale, inventory movements, balances, and final order state were checked in one transaction and rolled back.
+- Layaway production page and API routes are included in the passing production build.
 - Prisma validation/generation, lint, TypeScript, and production build passed. The production build used a process-local throwaway Auth.js secret.
 
 ## Remaining To Complete
@@ -60,6 +63,7 @@ npm run db:test-pos-transaction
 - Live cash, M-Pesa, card, and split-tender checkout flows have not been separately exercised through the browser; the database smoke test covers the rollback-only credit transaction path.
 - Decide and enforce customer credit-limit rules, default due dates/installment policy, and what should happen when a customer already has overdue credit.
 - Payment-provider settlement, M-Pesa integration, refunds, and void/reversal workflows are not implemented.
+- Layaway currently supports one product per order and deliberately has no cancellation/refund, reservation expiry, or late-fee handling until business policy is approved.
 
 ### 4. Prepare For Production
 

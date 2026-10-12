@@ -72,4 +72,10 @@ Set `CATALOG_OPENING_STOCK` only after confirming physical counts. Re-imports ar
 
 The POS smoke test uses an active branch and administrator, verifies sale lines, stock decrement, inventory movement, and credit-plan linkage inside one serializable transaction, then intentionally rolls back all test data.
 
+## Lipa Mdogo Mdogo (layaway)
+
+Layaway is separate from post-sale credit. A cashier selects an active customer and an in-stock item, takes the first payment, and reserves the requested quantity at the current price. Further payments are recorded with method, reference, receiver, and timestamp. The order becomes ready for pickup only when its payment ledger covers the full locked total. A staff member then confirms handover; that transaction creates the paid sale and inventory movement, and only then decrements on-hand and reserved stock.
+
+The current workflow supports one product per layaway order and has no cancellation, refund, expiry, or late-fee policy. Orders remain reserved until paid and collected; define and approve cancellation/refund and reservation-duration rules before using the workflow as a production policy. To test the database transaction lifecycle without retaining test data, run `npm run db:test-layaway-transaction`.
+
 The schema change for auditable split tenders and idempotent catalog opening receipts is recorded in `prisma/migrations/20261012143000_pos_payments_and_catalog_idempotency/migration.sql`. This is an incremental migration, not a baseline for an empty production database; establish and review a baseline before adopting migrations on an existing deployment.

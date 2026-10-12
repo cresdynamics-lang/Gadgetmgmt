@@ -34,6 +34,12 @@ enum CreditStatus {
   PAID_OFF
 }
 
+enum LayawayStatus {
+  ACTIVE
+  READY_FOR_PICKUP
+  FULFILLED
+}
+
 enum CustomerStatus {
   ACTIVE
   INACTIVE
@@ -44,6 +50,8 @@ enum InventoryMovementType {
   RECEIPT
   SALE
   ADJUSTMENT
+  RESERVATION
+  RESERVATION_RELEASE
 }
 
 enum ProductCondition {
@@ -67,6 +75,7 @@ model Branch {
   inventory   InventoryItem[]
   sales       Sale[]
   creditPlans CreditPlan[]
+  layawayOrders LayawayOrder[]
   movements   InventoryMovement[]
 }
 
@@ -81,6 +90,8 @@ model User {
   branch       Branch?             @relation(fields: [branchId], references: [id])
   sales        Sale[]
   movements    InventoryMovement[]
+  layawayOrdersCreated LayawayOrder[] @relation("LayawayCreatedBy")
+  layawayPaymentsReceived LayawayPayment[] @relation("LayawayReceivedBy")
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 }
@@ -98,6 +109,7 @@ model Customer {
   updatedAt   DateTime       @updatedAt
   sales       Sale[]
   creditPlans CreditPlan[]
+  layawayOrders LayawayOrder[]
 
   @@index([branchId, status])
 }
@@ -123,6 +135,7 @@ model Product {
   inventory       InventoryItem[]
   saleItems       SaleItem[]
   creditPlans     CreditPlan[]
+  layawayOrders   LayawayOrder[]
   movements       InventoryMovement[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
@@ -163,6 +176,8 @@ model Sale {
   saleItems      SaleItem[]
   payments       SalePayment[]
   creditPlans    CreditPlan[]
+  layawayOrderId String? @unique
+  layawayOrder LayawayOrder? @relation(fields: [layawayOrderId], references: [id])
   movements      InventoryMovement[]
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
@@ -226,6 +241,50 @@ model CreditPlan {
   @@index([branchId, status, nextDueDate])
 }
 
+model LayawayOrder {
+  id          String          @id @default(cuid())
+  branchId    String
+  branch      Branch          @relation(fields: [branchId], references: [id])
+  customerId  String
+  customer    Customer        @relation(fields: [customerId], references: [id])
+  productId   String
+  product     Product         @relation(fields: [productId], references: [id])
+  createdById String
+  createdBy   User            @relation("LayawayCreatedBy", fields: [createdById], references: [id])
+  productName String
+  productSku  String
+  quantity    Int
+  unitPrice   Int
+  unitCost    Int
+  totalAmount Int
+  amountPaid  Int             @default(0)
+  balance     Int
+  status      LayawayStatus   @default(ACTIVE)
+  payments    LayawayPayment[]
+  movements   InventoryMovement[]
+  sale        Sale?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  fulfilledAt DateTime?
+
+  @@index([branchId, status, createdAt])
+  @@index([customerId, createdAt])
+}
+
+model LayawayPayment {
+  id             String       @id @default(cuid())
+  layawayOrderId String
+  layawayOrder   LayawayOrder @relation(fields: [layawayOrderId], references: [id])
+  receivedById   String
+  receivedBy     User         @relation("LayawayReceivedBy", fields: [receivedById], references: [id])
+  amount         Int
+  method         TenderMethod
+  reference      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([layawayOrderId, createdAt])
+}
+
 model Payment {
   id           String     @id @default(cuid())
   creditPlanId String
@@ -247,6 +306,8 @@ model InventoryMovement {
   user           User                  @relation(fields: [userId], references: [id])
   saleId         String?
   sale           Sale?                 @relation(fields: [saleId], references: [id])
+  layawayOrderId String?
+  layawayOrder   LayawayOrder?         @relation(fields: [layawayOrderId], references: [id])
   type           InventoryMovementType
   quantity       Int
   reference      String?
