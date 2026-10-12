@@ -65,8 +65,11 @@ npm run db:import-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_M
 npm run db:import-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv"
 npm run db:verify-catalog -- "C:\Users\pc\Downloads\Gadget_Hub_Complete_Market_Master.csv"
 npm run db:test-pos-transaction
+npm run test:catalog-csv
 ```
 
 Set `CATALOG_OPENING_STOCK` only after confirming physical counts. Re-imports are idempotent for catalog rows and opening receipts. In production, use reviewed Prisma migrations instead of `db push`; this repository does not currently contain migration history.
 
 The POS smoke test uses an active branch and administrator, verifies sale lines, stock decrement, inventory movement, and credit-plan linkage inside one serializable transaction, then intentionally rolls back all test data.
+
+The schema change for auditable split tenders and idempotent catalog opening receipts is recorded in `prisma/migrations/20261012143000_pos_payments_and_catalog_idempotency/migration.sql`. This is an incremental migration, not a baseline for an empty production database; establish and review a baseline before adopting migrations on an existing deployment.

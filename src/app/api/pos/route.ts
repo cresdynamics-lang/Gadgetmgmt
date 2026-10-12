@@ -50,6 +50,7 @@ const checkoutSchema = z.object({
   items: z.array(z.object({ productId: z.string().cuid(), quantity: z.number().int().min(1).max(1000) })).min(1).max(100),
   customerId: z.string().cuid().nullable().optional(),
   paymentMethod: z.enum(["CASH", "MPESA", "CARD", "CREDIT", "SPLIT"]),
+  paymentBreakdown: z.array(z.object({ method: z.enum(["CASH", "MPESA", "CARD"]), amount: z.number().int().positive().max(2_000_000_000) })).min(2).max(3).optional(),
   paidAmount: z.number().int().nonnegative().max(2_000_000_000).optional(),
   discountAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
   taxAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
@@ -66,6 +67,9 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "The checkout details are invalid." }, { status: 400 });
   if (parsed.data.paymentMethod === "CREDIT" && !parsed.data.customerId) {
     return NextResponse.json({ error: "Select a customer to create a credit sale." }, { status: 400 });
+  }
+  if (parsed.data.paymentMethod === "SPLIT" && !parsed.data.paymentBreakdown) {
+    return NextResponse.json({ error: "Enter at least two payment methods for a split tender." }, { status: 400 });
   }
   if ((parsed.data.discountAmount > 0 || parsed.data.taxAmount > 0) && session.user.role !== "OWNER") {
     return NextResponse.json({ error: "Only an administrator can apply checkout adjustments." }, { status: 403 });
@@ -98,7 +102,9 @@ export async function POST(request: Request) {
         if (!inventory || inventory.stockOnHand - inventory.reservedStock < quantity) {
           throw new Error(`INSUFFICIENT_STOCK:${product.name}`);
         }
-        return { product, inventory, quantity, subtotal: product.sellingPrice * quantity };
+        const lineSubtotal = product.sellingPrice * quantity;
+        if (!Number.isSafeInteger(lineSubtotal) || lineSubtotal < 1 || lineSubtotal > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
+        return { product, inventory, quantity, subtotal: lineSubtotal };
       });
 
       if (parsed.data.customerId) {
@@ -118,15 +124,19 @@ export async function POST(request: Request) {
       }
 
       const subtotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
+      if (!Number.isSafeInteger(subtotal) || subtotal > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
       if (parsed.data.discountAmount > subtotal) throw new Error("DISCOUNT_EXCEEDS_SUBTOTAL");
       const total = subtotal - parsed.data.discountAmount + parsed.data.taxAmount;
-      const paidAmount = parsed.data.paymentMethod === "CREDIT" ? 0 : parsed.data.paymentMethod === "SPLIT" ? parsed.data.paidAmount : total;
-      if (paidAmount === undefined || paidAmount > total || (parsed.data.paymentMethod === "SPLIT" && (paidAmount <= 0 || paidAmount >= total))) {
+      if (!Number.isSafeInteger(total) || total < 1 || total > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
+      const paidAmount = parsed.data.paymentMethod === "CREDIT" ? 0 : total;
+      const splitTotal = parsed.data.paymentBreakdown?.reduce((sum, payment) => sum + payment.amount, 0);
+      const splitMethods = new Set(parsed.data.paymentBreakdown?.map((payment) => payment.method));
+      if (parsed.data.paymentMethod === "SPLIT" && (splitTotal !== total || splitMethods.size !== parsed.data.paymentBreakdown?.length)) {
         throw new Error("INVALID_PAID_AMOUNT");
       }
       const receiptDate = new Date();
       const datePart = receiptDate.toISOString().slice(2, 10).replaceAll("-", "");
-      const invoiceNumber = `GH-${datePart}-${randomBytes(2).toString("hex").toUpperCase()}`;
+      const invoiceNumber = `GH-${datePart}-${randomBytes(12).toString("hex").toUpperCase()}`;
 
       let discountRemaining = parsed.data.discountAmount;
       let taxRemaining = parsed.data.taxAmount;
@@ -162,12 +172,20 @@ export async function POST(request: Request) {
               total: lineTotal,
             })),
           },
+          payments: {
+            create: parsed.data.paymentMethod === "SPLIT"
+              ? parsed.data.paymentBreakdown!
+              : parsed.data.paymentMethod === "CREDIT"
+                ? []
+                : [{ amount: total, method: parsed.data.paymentMethod }],
+          },
         },
         include: {
           customer: { select: { name: true, phone: true } },
           branch: { select: { name: true, address: true, phone: true } },
           cashier: { select: { name: true } },
           saleItems: { include: { product: { select: { name: true, sku: true, configuration: true, condition: true } } } },
+          payments: true,
         },
       });
 
@@ -211,6 +229,7 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && error.message === "DISCOUNT_EXCEEDS_SUBTOTAL") return NextResponse.json({ error: "Discount cannot exceed the sale subtotal." }, { status: 400 });
     if (error instanceof Error && error.message === "INVALID_PAID_AMOUNT") return NextResponse.json({ error: "Enter a paid amount below the total for a split payment." }, { status: 400 });
+    if (error instanceof Error && error.message === "SALE_AMOUNT_OUT_OF_RANGE") return NextResponse.json({ error: "Sale total exceeds the supported integer amount or contains an invalid price." }, { status: 400 });
     if (error instanceof Error && error.message === "PRODUCT_UNAVAILABLE") {
       return NextResponse.json({ error: "One or more products are unavailable at your branch." }, { status: 400 });
     }

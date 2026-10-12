@@ -1,91 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { PrismaClient, type ProductCondition } from "@prisma/client";
+import { Prisma, PrismaClient, type ProductCondition } from "@prisma/client";
+import { parseCatalog } from "./catalog-csv";
 
 const prisma = new PrismaClient();
-
-type CatalogRow = {
-  category: string;
-  itemId: string;
-  group: string;
-  product: string;
-  configuration: string;
-  newPrice: number;
-  exUkPrice: number;
-  notes: string;
-};
-
-function parseCsvLine(line: string) {
-  const cells: string[] = [];
-  let value = "";
-  let quoted = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    if (character === '"') {
-      if (quoted && line[index + 1] === '"') {
-        value += '"';
-        index += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (character === "," && !quoted) {
-      cells.push(value);
-      value = "";
-    } else {
-      value += character;
-    }
-  }
-
-  if (quoted) throw new Error("Catalog CSV contains an unclosed quoted field.");
-  cells.push(value);
-  return cells;
-}
-
-function parseCatalog(text: string): CatalogRow[] {
-  const [headerLine, ...lines] = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.length > 0);
-  const headers = parseCsvLine(headerLine);
-  const index = (name: string) => {
-    const position = headers.indexOf(name);
-    if (position < 0) throw new Error(`Catalog CSV is missing the required column: ${name}`);
-    return position;
-  };
-  const columns = {
-    category: index("Category"),
-    itemId: index("Item ID"),
-    group: index("Group"),
-    product: index("Product"),
-    configuration: index("Configuration / Spec"),
-    newPrice: index("Price NEW (KES)"),
-    exUkPrice: index("Price EX-UK (KES)"),
-    notes: index("Notes"),
-  };
-  const ids = new Set<string>();
-
-  return lines.map((line, lineIndex) => {
-    const cells = parseCsvLine(line);
-    const get = (position: number) => cells[position]?.trim() ?? "";
-    const itemId = get(columns.itemId);
-    const newPriceText = get(columns.newPrice);
-    const exUkPriceText = get(columns.exUkPrice);
-    if (!itemId || ids.has(itemId)) throw new Error(`Catalog item ID is empty or duplicated on CSV row ${lineIndex + 2}.`);
-    ids.add(itemId);
-    if (!/^\d+$/.test(newPriceText) || !/^\d+$/.test(exUkPriceText)) {
-      throw new Error(`Catalog prices must be whole KES integers on CSV row ${lineIndex + 2}.`);
-    }
-
-    return {
-      category: get(columns.category),
-      itemId,
-      group: get(columns.group),
-      product: get(columns.product),
-      configuration: get(columns.configuration),
-      newPrice: Number(newPriceText),
-      exUkPrice: Number(exUkPriceText),
-      notes: get(columns.notes),
-    };
-  });
-}
 
 async function main() {
   const csvPath = resolve(process.argv[2] ?? "C:/Users/pc/Downloads/Gadget_Hub_Complete_Market_Master.csv");
@@ -123,8 +41,11 @@ async function main() {
         const sku = `${row.itemId}-${variant.suffix}-${branch.code}`;
         const name = `${row.product} ${row.configuration} (${variant.label})`.trim();
         const reference = `CATALOG-OPENING-${row.itemId}-${variant.suffix}-${branch.code}`;
-        const product = await prisma.$transaction(async (transaction) => {
-          const savedProduct = await transaction.product.upsert({
+        let imported = false;
+        for (let attempt = 0; attempt < 3 && !imported; attempt += 1) {
+          try {
+            await prisma.$transaction(async (transaction) => {
+              const savedProduct = await transaction.product.upsert({
             where: { sku },
             update: {
               catalogItemId: row.itemId,
@@ -156,38 +77,36 @@ async function main() {
               branchId: branch.id,
             },
             select: { id: true },
-          });
+              });
 
-          const existingInventory = await transaction.inventoryItem.findUnique({
-            where: { branchId_productId: { branchId: branch.id, productId: savedProduct.id } },
-            select: { id: true },
-          });
-          if (existingInventory) {
-            if (requestedStock > 0) {
-              const receiptExists = await transaction.inventoryMovement.findFirst({
-                where: { branchId: branch.id, productId: savedProduct.id, type: "RECEIPT", reference },
+              const inventory = await transaction.inventoryItem.upsert({
+                where: { branchId_productId: { branchId: branch.id, productId: savedProduct.id } },
+                update: {},
+                create: { branchId: branch.id, productId: savedProduct.id, stockOnHand: 0 },
                 select: { id: true },
               });
-              if (!receiptExists) {
-                await transaction.inventoryItem.update({ where: { id: existingInventory.id }, data: { stockOnHand: { increment: requestedStock } } });
-                await transaction.inventoryMovement.create({
-                  data: { branchId: branch.id, productId: savedProduct.id, userId: owner!.id, type: "RECEIPT", quantity: requestedStock, reference, note: "Catalog import opening stock" },
-                });
+              if (requestedStock > 0) {
+                const receiptExists = await transaction.inventoryMovement.findUnique({ where: { idempotencyKey: reference }, select: { id: true } });
+                if (!receiptExists) {
+                  await transaction.inventoryMovement.create({
+                    data: { branchId: branch.id, productId: savedProduct.id, userId: owner!.id, type: "RECEIPT", quantity: requestedStock, reference, idempotencyKey: reference, note: "Catalog import opening stock" },
+                  });
+                  await transaction.inventoryItem.update({ where: { id: inventory.id }, data: { stockOnHand: { increment: requestedStock } } });
+                }
               }
+            }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+            imported = true;
+          } catch (error) {
+            const retryable = error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code);
+            if (requestedStock > 0 && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+              const receipt = await prisma.inventoryMovement.findUnique({ where: { idempotencyKey: reference }, select: { id: true } });
+              if (receipt) imported = true;
             }
-          } else {
-            await transaction.inventoryItem.create({
-              data: { branchId: branch.id, productId: savedProduct.id, stockOnHand: requestedStock },
-            });
-            if (requestedStock > 0) {
-              await transaction.inventoryMovement.create({
-                data: { branchId: branch.id, productId: savedProduct.id, userId: owner!.id, type: "RECEIPT", quantity: requestedStock, reference, note: "Catalog import opening stock" },
-              });
-            }
+            if (!imported && (!retryable || attempt === 2)) throw error;
           }
-          return savedProduct;
-        });
-        if (product.id) variantCount += 1;
+        }
+        if (!imported) throw new Error(`Could not safely import catalog variant ${sku}.`);
+        variantCount += 1;
       }
     }
   }

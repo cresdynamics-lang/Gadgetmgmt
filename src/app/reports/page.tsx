@@ -16,7 +16,7 @@ export default async function ReportsPage() {
 
   const sales = await prisma.sale.findMany({
     where: { ...scope, status: { not: "VOIDED" }, createdAt: { gte: startPeriod } },
-    include: { branch: { select: { name: true } }, saleItems: { include: { product: { select: { name: true, category: true, sku: true } } } } },
+    include: { branch: { select: { name: true } }, payments: { select: { method: true, amount: true } }, saleItems: { include: { product: { select: { name: true, category: true, sku: true } } } } },
     orderBy: { createdAt: "desc" },
     take: 5000,
   });
@@ -35,10 +35,17 @@ export default async function ReportsPage() {
   const methods = new Map<string, { count: number; value: number }>();
   const products = new Map<string, { sku: string; name: string; category: string; units: number; value: number }>();
   for (const sale of sales) {
-    const method = methods.get(sale.paymentMethod) ?? { count: 0, value: 0 };
-    method.count += 1;
-    method.value += sale.paidAmount;
-    methods.set(sale.paymentMethod, method);
+    const tenders = sale.payments.length
+      ? sale.payments
+      : sale.paymentMethod === "CREDIT"
+        ? []
+        : [{ method: sale.paymentMethod, amount: sale.paidAmount }];
+    for (const tender of tenders) {
+      const method = methods.get(tender.method) ?? { count: 0, value: 0 };
+      method.count += 1;
+      method.value += tender.amount;
+      methods.set(tender.method, method);
+    }
     for (const line of sale.saleItems) {
       const product = products.get(line.productId) ?? { sku: line.product.sku, name: line.product.name, category: line.product.category, units: 0, value: 0 };
       product.units += line.quantity;
