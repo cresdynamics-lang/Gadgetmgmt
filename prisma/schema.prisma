@@ -292,6 +292,8 @@ model PaymentRequest {
   tokenHash          String              @unique
   dedupeKey          String?             @unique
   payerPhone         String?
+  targetPhone        String?
+  targetConsentAt    DateTime?
   status             PaymentRequestStatus @default(CREATED)
   checkoutRequestId  String?             @unique
   merchantRequestId  String?

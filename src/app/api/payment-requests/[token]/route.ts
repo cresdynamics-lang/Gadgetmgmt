@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
 
-const phoneSchema = z.object({ phone: z.string().trim().min(9).max(20) }).strict();
+const phoneSchema = z.object({ phone: z.string().trim().min(9).max(20).optional() }).strict();
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -13,12 +13,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   if (!/^[a-f0-9]{64}$/.test(token)) return NextResponse.json({ error: "This payment link is invalid." }, { status: 404 });
   const paymentRequest = await prisma.paymentRequest.findUnique({
     where: { tokenHash: hashToken(token) },
-    select: { id: true, amount: true, purpose: true, status: true, expiresAt: true, creditPlan: { select: { branch: { select: { name: true } } } }, sale: { select: { branch: { select: { name: true } } } } },
+    select: { id: true, amount: true, purpose: true, status: true, expiresAt: true, targetPhone: true, creditPlan: { select: { branch: { select: { name: true } } } }, sale: { select: { branch: { select: { name: true } } } } },
   });
   if (!paymentRequest || (paymentRequest.expiresAt <= new Date() && !["PROCESSING", "REVIEW"].includes(paymentRequest.status)) || paymentRequest.status === "EXPIRED") {
     return NextResponse.json({ error: "This payment request has expired." }, { status: 410 });
   }
-  return NextResponse.json({ amount: paymentRequest.amount, purpose: paymentRequest.purpose, status: paymentRequest.status, branchName: paymentRequest.creditPlan?.branch.name ?? paymentRequest.sale?.branch.name ?? "GadgetHub" });
+  return NextResponse.json({ amount: paymentRequest.amount, purpose: paymentRequest.purpose, status: paymentRequest.status, targetPhone: paymentRequest.targetPhone, branchName: paymentRequest.creditPlan?.branch.name ?? paymentRequest.sale?.branch.name ?? "GadgetHub" });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -26,10 +26,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   if (!/^[a-f0-9]{64}$/.test(token)) return NextResponse.json({ error: "This payment link is invalid." }, { status: 404 });
   const parsed = phoneSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid Kenyan M-Pesa phone number." }, { status: 400 });
-  const phone = normalizeKenyanPhone(parsed.data.phone);
-  if (!phone) return NextResponse.json({ error: "Use a Kenyan number such as 0712 345 678." }, { status: 400 });
-  const record = await prisma.paymentRequest.findUnique({ where: { tokenHash: hashToken(token) }, select: { id: true, amount: true, status: true, expiresAt: true, stkAttempts: true } });
+  const record = await prisma.paymentRequest.findUnique({ where: { tokenHash: hashToken(token) }, select: { id: true, amount: true, status: true, expiresAt: true, stkAttempts: true, targetPhone: true } });
   if (!record || record.expiresAt <= new Date() || record.status === "EXPIRED") return NextResponse.json({ error: "This payment request has expired." }, { status: 410 });
+  const phone = normalizeKenyanPhone(parsed.data.phone ?? record.targetPhone ?? "");
+  if (!phone) return NextResponse.json({ error: "Enter a Kenyan mobile number such as 0712 345 678." }, { status: 400 });
   if (record.status === "PAID") return NextResponse.json({ error: "This payment has already been completed." }, { status: 409 });
   if (record.status === "REVIEW") return NextResponse.json({ error: "This payment is being checked by the business. Please do not try again." }, { status: 409 });
   if (record.status === "PROCESSING") return NextResponse.json({ error: "A payment prompt is already awaiting confirmation." }, { status: 409 });

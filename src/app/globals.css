@@ -312,3 +312,124 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Workspace refinement: keep the existing spruce palette, with quieter surfaces
+   and consistent controls across operations screens. */
+:root {
+  --background: #f4f5f1;
+  --panel: #ffffff;
+  --foreground: #20332a;
+  --muted: #748178;
+  --border: #e5eae5;
+  --accent: #315843;
+}
+
+.workspace-content {
+  background: #f6f7f4;
+}
+
+.workspace-content section.border,
+.workspace-content form.border,
+.workspace-content > div > section.border {
+  border-color: #e5eae5;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgb(25 50 38 / 3%);
+}
+
+.workspace-content > div > div:first-child[class*="border-b"][class*="pb-4"] {
+  border-color: #e6ebe5;
+  border-radius: 12px;
+  background: #fff;
+  padding: 17px 20px;
+}
+
+.workspace-content > div > div:first-child[class*="border-b"][class*="pb-4"]::after {
+  opacity: .45;
+}
+
+.workspace-content > div > div:first-child[class*="border-b"][class*="pb-4"] h2 {
+  color: #20382d;
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+}
+
+.workspace-content .dashboard-welcome {
+  min-height: 0;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgb(24 60 54 / 10%);
+}
+
+.workspace-content .dashboard-welcome::after {
+  display: none;
+}
+
+.workspace-content .dashboard-metrics .metric-card {
+  min-height: 142px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgb(36 50 40 / 3%);
+}
+
+.workspace-content .dashboard-metrics .metric-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgb(36 50 40 / 6%);
+}
+
+.workspace-content .dashboard-metrics .metric-card::after {
+  opacity: .5;
+}
+
+.workspace-content .dashboard-action-desk,
+.workspace-content .dashboard-panel {
+  border-color: #e5eae5;
+  border-radius: 13px;
+  box-shadow: 0 2px 8px rgb(33 55 47 / 3%);
+}
+
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"] {
+  background: #fbfcfa;
+}
+
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"]::after {
+  width: 22px;
+  height: 2px;
+  opacity: .7;
+}
+
+.workspace-content input:not([type="checkbox"]),
+.workspace-content select,
+.workspace-content textarea {
+  border-color: #dfe6df;
+  border-radius: 9px;
+  background-color: #fff;
+}
+
+.workspace-content input:not([type="checkbox"]):focus,
+.workspace-content select:focus,
+.workspace-content textarea:focus {
+  border-color: #75a58b;
+  box-shadow: 0 0 0 3px rgb(90 145 112 / 12%);
+}
+
+.workspace-content table thead {
+  background: #f6f8f5;
+}
+
+.workspace-content table tbody tr:hover {
+  background: #f7faf7;
+}
+
+.workspace-content button:focus-visible,
+.workspace-content a:focus-visible,
+header button:focus-visible,
+header a:focus-visible {
+  outline-color: #4e8a6c;
+  outline-offset: 3px;
+}
+
+@media (max-width: 639px) {
+  .workspace-content > div > div:first-child[class*="border-b"][class*="pb-4"] {
+    padding: 15px 16px;
+  }
+  .workspace-content .dashboard-metrics .metric-card {
+    min-height: 132px;
+  }
+}

@@ -4,9 +4,9 @@ import { useEffect, useState, type FormEvent } from "react";
 
 type Status = "CREATED" | "PROCESSING" | "PAID" | "REVIEW" | "FAILED" | "EXPIRED";
 
-export function ThirdPartyPaymentForm({ token, amount, initialStatus }: { token: string; amount: number; initialStatus: Status }) {
+export function ThirdPartyPaymentForm({ token, amount, initialStatus, initialPhone }: { token: string; amount: number; initialStatus: Status; initialPhone: string }) {
   const [status, setStatus] = useState<Status>(initialStatus);
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(initialPhone);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 

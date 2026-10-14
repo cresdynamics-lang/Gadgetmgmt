@@ -6,6 +6,8 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
+import { deliverNotification } from "@/lib/notifications";
+import { normalizeKenyanPhone } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -50,6 +52,8 @@ export async function GET() {
 const checkoutSchema = z.object({
   items: z.array(z.object({ productId: z.string().cuid(), quantity: z.number().int().min(1).max(1000) })).min(1).max(100),
   customerId: z.string().cuid().nullable().optional(),
+  payerPhone: z.string().trim().min(7).max(30).optional(),
+  payerConsent: z.literal(true).optional(),
   newCustomer: z.object({
     name: z.string().trim().min(2).max(120),
     phone: z.string().trim().min(7).max(30),
@@ -76,6 +80,12 @@ const checkoutSchema = z.object({
   if (data.paymentMethod === "CREDIT" && !data.customerId && !data.newCustomer) {
     context.addIssue({ code: "custom", path: ["newCustomer"], message: "Add or select a customer for a Lipa plan." });
   }
+  if (data.paymentMethod === "PAY_LINK" && (!data.payerPhone || data.payerConsent !== true)) {
+    context.addIssue({ code: "custom", path: ["payerPhone"], message: "Enter the payer’s number and confirm they agreed to receive the payment link." });
+  }
+  if (data.paymentMethod !== "PAY_LINK" && (data.payerPhone || data.payerConsent)) {
+    context.addIssue({ code: "custom", path: ["payerPhone"], message: "Payer contact details are only valid for a payer link." });
+  }
   if (data.paymentMethod === "CREDIT" && (!data.creditTermMonths || !data.creditDepositAmount || !data.creditDepositMethod)) {
     context.addIssue({ code: "custom", path: ["creditTermMonths"], message: "Choose a loan term, deposit amount and deposit payment method." });
   }
@@ -99,6 +109,15 @@ export async function POST(request: Request) {
 
   const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The checkout details are invalid." }, { status: 400 });
+  const payerPhone = parsed.data.paymentMethod === "PAY_LINK" ? normalizeKenyanPhone(parsed.data.payerPhone ?? "") : null;
+  if (parsed.data.paymentMethod === "PAY_LINK" && !payerPhone) return NextResponse.json({ error: "Enter a valid Kenyan mobile number for the payer." }, { status: 400 });
+  const paymentBaseUrl = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
+  if (parsed.data.paymentMethod === "PAY_LINK") {
+    let baseUrl: URL;
+    try { baseUrl = new URL(paymentBaseUrl); } catch { return NextResponse.json({ error: "Set APP_BASE_URL to the public address of this app before sending payment links." }, { status: 503 }); }
+    if (process.env.NODE_ENV === "production" && baseUrl.protocol !== "https:") return NextResponse.json({ error: "Payment links require a public HTTPS APP_BASE_URL in production." }, { status: 503 });
+    if (!process.env.AT_USERNAME || !process.env.AT_API_KEY) return NextResponse.json({ error: "SMS delivery is not configured. Add Africa’s Talking credentials before creating a payer link." }, { status: 503 });
+  }
   if (parsed.data.paymentMethod === "CREDIT" && !parsed.data.customerId && !parsed.data.newCustomer) {
     return NextResponse.json({ error: "Add or select a customer to create a Lipa plan." }, { status: 400 });
   }
@@ -241,18 +260,36 @@ export async function POST(request: Request) {
       });
 
       let salePaymentLink: { token: string; amount: number } | null = null;
+      let payerNotificationId: string | null = null;
       if (parsed.data.paymentMethod === "PAY_LINK") {
         const token = randomBytes(32).toString("hex");
-        await transaction.paymentRequest.create({
+        const paymentRequest = await transaction.paymentRequest.create({
           data: {
             saleId: createdSale.id,
             amount: total,
             purpose: "Product purchase payment",
             tokenHash: createHash("sha256").update(token).digest("hex"),
+            targetPhone: payerPhone,
+            targetConsentAt: receiptDate,
             expiresAt: new Date(receiptDate.getTime() + 48 * 60 * 60 * 1000),
           },
+          select: { id: true },
         });
         salePaymentLink = { token, amount: total };
+        const notification = await transaction.customerNotification.create({
+          data: {
+            branchId,
+            channel: "SMS",
+            status: "QUEUED",
+            kind: "SALE_PAYMENT_LINK",
+            recipient: payerPhone!,
+            subject: null,
+            body: `${createdSale.branch.name}: payment of KES ${total.toLocaleString("en-KE")} is requested for invoice ${createdSale.invoiceNumber}. Pay securely using this link: ${paymentBaseUrl}/request/${token}. The link expires in 48 hours.`,
+            dedupeKey: `payer-link:${paymentRequest.id}`,
+          },
+          select: { id: true },
+        });
+        payerNotificationId = notification.id;
         await transaction.inventoryMovement.createMany({
           data: saleLines.map(({ product, quantity }) => ({
             branchId, productId: product.id, userId: session.user.id, saleId: createdSale.id,
@@ -331,10 +368,33 @@ export async function POST(request: Request) {
         })),
       });
 
-      return { sale: createdSale, creditPlanLinks, salePaymentLink };
+      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-    return NextResponse.json({ ...sale.sale, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink }, { status: 201 });
+    let payerMessage: { recipient: string; status: "SENT" | "FAILED" | "QUEUED" } | null = null;
+    if (sale.payerNotificationId) {
+      payerMessage = { recipient: payerPhone!, status: "QUEUED" };
+      try {
+        const notification = await prisma.customerNotification.findUnique({ where: { id: sale.payerNotificationId } });
+        if (notification) {
+        const claimed = await prisma.customerNotification.updateMany({ where: { id: notification.id, status: "QUEUED" }, data: { status: "PROCESSING", attempts: { increment: 1 } } });
+        if (claimed.count === 1) {
+          try {
+            await deliverNotification(notification);
+            await prisma.customerNotification.update({ where: { id: notification.id }, data: { status: "SENT", sentAt: new Date(), lastError: null } });
+            payerMessage = { recipient: notification.recipient, status: "SENT" };
+          } catch (deliveryError) {
+            const message = deliveryError instanceof Error ? deliveryError.message.slice(0, 300) : "SMS delivery failed.";
+            await prisma.customerNotification.update({ where: { id: notification.id }, data: { status: "FAILED", lastError: message } });
+            payerMessage = { recipient: notification.recipient, status: "FAILED" };
+          }
+        }
+        }
+      } catch (deliveryError) {
+        console.error("Payment link was created, but immediate SMS delivery could not be recorded", sale.payerNotificationId, deliveryError instanceof Error ? deliveryError.message : "unknown error");
+      }
+    }
+    return NextResponse.json({ ...sale.sale, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
       return NextResponse.json({ error: `Insufficient stock for ${error.message.slice("INSUFFICIENT_STOCK:".length)}.` }, { status: 409 });
