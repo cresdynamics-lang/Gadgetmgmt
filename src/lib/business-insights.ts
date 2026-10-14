@@ -42,7 +42,7 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
       },
     }),
     prisma.creditPlan.findMany({
-      where: { ...scope, status: { in: ["ACTIVE", "DUE_SOON", "OVERDUE"] } },
+      where: { ...scope, balance: { gt: 0 }, status: { not: "PAID_OFF" } },
       select: {
         balance: true,
         installments: { select: { amount: true, paidAmount: true, dueDate: true } },
@@ -84,7 +84,7 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
   }
   const topProducts = [...productSales.values()].sort((a, b) => b.total - a.total).slice(0, 5);
   const soldUnitsBySku = new Map([...productSales.values()].map((item) => [item.sku, item.units]));
-  const stockAttention = inventory.map((item) => {
+  const stockAttentionAll = inventory.map((item) => {
     const available = Math.max(0, item.stockOnHand - item.reservedStock);
     const reorderPoint = Math.max(item.reorderLevel, item.product.reorderLevel);
     const unitsSold = soldUnitsBySku.get(item.product.sku) ?? 0;
@@ -101,7 +101,8 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
     const bBelow = b.available <= b.reorderPoint;
     if (aBelow !== bBelow) return aBelow ? -1 : 1;
     return a.available - b.available;
-  }).slice(0, 8);
+  });
+  const stockAttention = stockAttentionAll.slice(0, 8);
 
   const ageBuckets = { notDue: 0, days1to7: 0, days8to30: 0, days31Plus: 0 };
   let overdueBalance = 0;
@@ -139,7 +140,7 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
       profitChangePercent: changePercent(current.estimatedGrossProfit, previous.estimatedGrossProfit),
       daily: dailySales,
     },
-    inventory: { stockedProducts: inventory.length, attentionCount: stockAttention.filter((item) => item.available <= item.reorderPoint).length, attention: stockAttention, topProducts },
+    inventory: { stockedProducts: inventory.length, attentionCount: stockAttentionAll.filter((item) => item.available <= item.reorderPoint).length, attention: stockAttention, topProducts },
     credit: { activePlans: plans.length, overdueBalance, ageBuckets },
     generatedAt: now.toISOString(),
   };

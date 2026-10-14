@@ -19,6 +19,29 @@ function secureEqual(left: string, right: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+async function alertReconciliation(paymentRequestId: string, amount: number | null, receipt: string | null, reason: string) {
+  const request = await prisma.paymentRequest.findUnique({
+    where: { id: paymentRequestId },
+    select: { creditPlan: { select: { branchId: true, branch: { select: { name: true } } } }, sale: { select: { branchId: true, branch: { select: { name: true } } } } },
+  });
+  const branchId = request?.creditPlan?.branchId ?? request?.sale?.branchId;
+  const branchName = request?.creditPlan?.branch.name ?? request?.sale?.branch.name ?? "GadgetHub";
+  if (!branchId) return;
+  const recipients = await prisma.user.findMany({ where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId }] }, select: { email: true } });
+  await prisma.customerNotification.createMany({
+    data: [...new Set(recipients.map((user) => user.email.toLowerCase()))].map((recipient) => ({
+      branchId,
+      channel: "EMAIL" as const,
+      kind: "MPESA_RECONCILIATION",
+      recipient,
+      subject: `Action required · M-Pesa payment needs reconciliation · ${branchName}`,
+      body: `M-Pesa returned a successful payment callback for request ${paymentRequestId}${amount !== null ? ` (KES ${amount.toLocaleString("en-KE")})` : ""}${receipt ? `, receipt ${receipt}` : ""}, but it could not be applied automatically: ${reason}. Verify the payment against the M-Pesa statement and reconcile it in Messages & alerts. The payment link is locked against another charge.`,
+      dedupeKey: `mpesa-reconciliation:${paymentRequestId}:${recipient}`,
+    })),
+    skipDuplicates: true,
+  });
+}
+
 export async function POST(request: Request) {
   const config = getDarajaConfig();
   const url = new URL(request.url);
@@ -45,6 +68,14 @@ export async function POST(request: Request) {
   const normalizedCallbackPhone = payerPhone === undefined ? null : normalizeKenyanPhone(String(payerPhone));
   if (!Number.isSafeInteger(amount) || amount !== paymentRequest.amount || typeof receipt !== "string" || !/^[A-Z0-9]{6,20}$/.test(receipt) || !normalizedCallbackPhone || normalizedCallbackPhone !== paymentRequest.payerPhone) {
     console.error("M-Pesa success callback failed payment validation", paymentRequest.id);
+    // A success callback with inconsistent metadata may represent a real collection.
+    // Lock it for staff reconciliation instead of leaving it retryable or silently processing forever.
+    const validReceipt = typeof receipt === "string" && /^[A-Z0-9]{6,20}$/.test(receipt) ? receipt : null;
+    const updated = await prisma.paymentRequest.updateMany({ where: { id: paymentRequest.id, status: "PROCESSING" }, data: { status: "REVIEW", ...(validReceipt ? { mpesaReceipt: validReceipt } : {}), ...(Number.isSafeInteger(amount) && amount > 0 ? { receivedAmount: amount } : {}) } });
+    if (updated.count === 1) {
+      try { await alertReconciliation(paymentRequest.id, Number.isSafeInteger(amount) ? amount : null, validReceipt, "callback amount, receipt, or payer number did not match the payment request"); }
+      catch (alertError) { console.error("Could not queue M-Pesa reconciliation alert", paymentRequest.id, alertError instanceof Error ? alertError.message : "unknown error"); }
+    }
     return Response.json({ Result: "Accepted" });
   }
 
@@ -80,7 +111,7 @@ export async function POST(request: Request) {
       } else {
         throw new Error("PAYMENT_REQUEST_OWNER_MISSING");
       }
-      const updated = await transaction.paymentRequest.updateMany({ where: { id: paymentRequest.id, status: current.status }, data: { status: "PAID", mpesaReceipt: receipt, paidAt: new Date() } });
+      const updated = await transaction.paymentRequest.updateMany({ where: { id: paymentRequest.id, status: current.status }, data: { status: "PAID", mpesaReceipt: receipt, receivedAmount: amount, paidAt: new Date() } });
       if (updated.count !== 1) throw new Error("PAYMENT_REQUEST_ALREADY_HANDLED");
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
@@ -90,7 +121,7 @@ export async function POST(request: Request) {
         await prisma.$transaction(async (transaction) => {
           const current = await transaction.paymentRequest.findUnique({ where: { id: paymentRequest.id }, select: { status: true, creditPlan: { select: { branchId: true, branch: { select: { name: true } } } }, sale: { select: { branchId: true, branch: { select: { name: true } } } } } });
           if (!current || current.status === "PAID" || current.status === "REVIEW") return;
-          const moved = await transaction.paymentRequest.updateMany({ where: { id: paymentRequest.id, status: current.status }, data: { status: "REVIEW", mpesaReceipt: receipt, paidAt: new Date() } });
+          const moved = await transaction.paymentRequest.updateMany({ where: { id: paymentRequest.id, status: current.status }, data: { status: "REVIEW", mpesaReceipt: receipt, receivedAmount: amount, paidAt: new Date() } });
           if (moved.count !== 1) return;
           const branchId = current.creditPlan?.branchId ?? current.sale?.branchId;
           const branchName = current.creditPlan?.branch.name ?? current.sale?.branch.name ?? "GadgetHub";

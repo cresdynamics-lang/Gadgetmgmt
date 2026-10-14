@@ -130,7 +130,7 @@ export default function StaffPage() {
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#6a843f] bg-[#f2f6ec] px-4 py-3 text-sm text-[#31533a]">{notice}</p> : null}
 
-        <div className="grid border-y border-[#dfe4df] bg-white sm:grid-cols-3">
+        <div className="staff-metrics grid gap-3 sm:grid-cols-3">
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r">
             <p className="text-xs text-[#69746c]">Staff accounts</p>
             <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : staff.length}</p>
@@ -196,7 +196,7 @@ export default function StaffPage() {
           </form>
         ) : null}
 
-        <section className="border border-[#dfe4df] bg-white">
+        <section className="staff-directory overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_5px_22px_rgba(24,54,37,.035)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8ebe8] px-4 py-4 sm:px-5">
             <div><h3 className="text-sm font-semibold text-[#23372b]">Your people</h3><p className="mt-1 text-xs text-[#819087]">{staff.length} team {staff.length === 1 ? "member" : "members"}</p></div>
             <label className="flex min-w-[210px] items-center gap-2 rounded-xl border border-[#e5ece7] bg-[#fafcfa] px-3 py-2 text-xs text-[#839087] focus-within:border-[#8ebba2] focus-within:ring-4 focus-within:ring-[#dcefe3]"><Search className="h-4 w-4"/><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search team" placeholder="Find a teammate..." className="w-full border-0 bg-transparent outline-none placeholder:text-[#a2aea7]"/></label>

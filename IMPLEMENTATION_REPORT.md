@@ -121,3 +121,31 @@ npm run db:test-pos-transaction
 ## Database Blocker Details
 
 The schema, owner seed, catalog import/verification, owner browser sign-in, and rollback-only POS transaction test are complete on this local workstation. Supplier costs and physical opening counts remain unset; all imported stock is zero. Credit policy, payment-provider settlement, refunds/voids, managed production database configuration, backups, and production staging acceptance remain business/operations requirements and have not been inferred or fabricated. Rotate the owner password before production use because setup credentials were shared during this session.
+
+## 2026-10-14 Approved Stabilisation, Lipa, and UI Work
+
+- Added additive Prisma migration `20261014120000_credit_autopilot_foundation` for branch credit policies, lifecycle states, C2B receipt reconciliation, reschedule requests, reliability events, WhatsApp consent, plan references, and IMEI tracking. Existing plan references are backfilled before the unique index is created.
+- Credit status refresh, customer reminders, late-fee application, reliability events, and +3/+7 day escalation run through the secured daily collections job. The job must be scheduled and run against the migrated deployment database before these automations are active.
+- Daraja C2B callbacks can reconcile by plan reference. Duplicate receipt IDs are idempotent; unknown, excessive, and already-used receipt numbers are queued for review. The callback route uses a shared secret URL/header because Daraja's C2B callback does not provide an application-level signed payload in this integration.
+- Added owner/manager policy editing, C2B review, customer-initiated reschedule requests with manager approval, plan agreement PDF download, optional IMEI capture, and customer reliability indicators.
+- Added consent-gated WhatsApp Cloud API template reminders with SMS fallback only where SMS consent is independently enabled. Add and approve the matching Meta template and test delivery before enabling WhatsApp consent.
+- Started the token-first black/white/cobalt palette, dashboard shortcut tiles, ⌘/Ctrl+K route launcher, Lipa status board, cashier mode, and compact scan-first product list.
+- Early-settlement policy is applied when the customer pays the quoted payoff amount before the next due date; the discount updates the plan and sale totals in the same serializable collection transaction. The collection workspace shows the saving and a one-click amount fill.
+- Layaway is not yet converted into the installment-plan engine: its current reserve-until-paid contract has no monthly due date or take-home credit terms, so converting active orders requires an explicit policy and a reviewed data migration. Credit-plan refunds/reversals and a sandboxed live C2B integration check are also outstanding.
+
+## 2026-10-14 Payment Operations Readiness
+
+- Added an append-only operational run history for the daily collections job. Each invocation records start/completion state, plan updates, queued reminder/digest totals, deliveries, and failures; failed runs carry a generic operator-facing message while detail remains in server logs.
+- Messages & alerts now surfaces recent job health and, for owners only, whether deployment/provider settings are present. It never returns secret values. A successful run older than 36 hours is flagged for follow-up.
+- M-Pesa STK success callbacks with inconsistent metadata are locked for review, retain a valid receipt and callback-reported amount when available, and queue a deduplicated manager/owner alert. Reconciliation requires an authenticated manager/owner statement confirmation; missing receipts can be entered during the reconciliation step. Credit ledger reconciliation uses the callback-reported amount so a verified partial payment is not mistaken for the requested amount.
+- Added additive migrations `20261014110000_collections_job_runs` and `20261014110100_stk_callback_reconciliation`. These must be deployed with `prisma migrate deploy` before running the updated application against an existing database.
+- Provider status is a configuration-presence check, not a live test of Daraja, Resend, Africa's Talking, WhatsApp, callback reachability, or the scheduled deployment. Sandbox end-to-end acceptance and backups remain required before production.
+
+### Verification for this change
+
+- `tsc --noEmit`: passed.
+- Prisma schema validation: passed.
+- ESLint across the full repository: passed.
+- Production build: passed using a temporary process-only random `NEXTAUTH_SECRET`. The build found and fixed cache-components conflicts on the secure token pages; no secret was written to `.env`.
+- Credit lifecycle tests: all 3 passed using a local test-runner shim. The plain `node --import tsx --test` invocation is blocked in this Windows environment by `uv_os_get_passwd returned ENOMEM` from the installed `tsx` runtime, before test code loads.
+- No production database migration was applied. Existing production databases need a reviewed baseline and backup before migration deployment; use the migration, not `db push`, in production.

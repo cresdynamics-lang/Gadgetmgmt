@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
 import { recordCreditPayment } from "@/lib/credit-payment";
+import { daysUntilDue } from "@/lib/credit-lifecycle";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -17,9 +18,10 @@ export async function GET() {
     include: {
       customer: { select: { id: true, name: true, phone: true } },
       product: { select: { name: true, sku: true } },
-      branch: { select: { name: true } },
-      payments: { orderBy: { createdAt: "desc" }, take: 5 },
+      branch: { select: { name: true, creditPolicy: { select: { earlySettlementDiscountPercent: true } } } },
+      payments: { orderBy: { createdAt: "desc" } },
       installments: { orderBy: { sequence: "asc" } },
+      rescheduleRequests: { where: { status: "PENDING" }, orderBy: { createdAt: "asc" } },
       paymentSubmissions: { where: { status: "PENDING" }, orderBy: { createdAt: "asc" } },
       paymentRequests: { where: { status: "REVIEW", ...(session.user.role === "OWNER" || session.user.role === "BRANCH_MANAGER" ? {} : { id: "" }) }, orderBy: { createdAt: "desc" }, select: { id: true, amount: true, mpesaReceipt: true, createdAt: true } },
     },
@@ -29,7 +31,11 @@ export async function GET() {
   return NextResponse.json(plans.map((plan) => {
     const { portalTokenHash, ...safePlan } = plan;
     void portalTokenHash;
-    return safePlan;
+    const discountPercent = plan.branch.creditPolicy?.earlySettlementDiscountPercent ?? 0;
+    const discountAmount = daysUntilDue(plan.nextDueDate, new Date()) > 0
+      ? Math.floor(Math.max(0, plan.balance - plan.lateFeeAmount) * discountPercent / 100)
+      : 0;
+    return { ...safePlan, earlySettlementOffer: discountAmount > 0 ? { discountAmount, payOffAmount: plan.balance - discountAmount, discountPercent } : null };
   }));
 }
 

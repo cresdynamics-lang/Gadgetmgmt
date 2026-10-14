@@ -16,7 +16,8 @@ export default async function DashboardPage() {
   const branchId = session?.user.branchId;
   const scope = session?.user.role === "OWNER" ? {} : { branchId: branchId ?? "" };
   const now = new Date();
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateKey = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  const startToday = new Date(`${dateKey(now)}T00:00:00+03:00`);
   const startWeek = new Date(startToday);
   startWeek.setDate(startWeek.getDate() - 6);
   const startPreviousWeek = new Date(startWeek);
@@ -24,17 +25,11 @@ export default async function DashboardPage() {
   const endWeek = new Date(startToday);
   endWeek.setDate(endWeek.getDate() + 7);
 
-  const [sales, inventory, duePlans, overduePlanCount, paymentReviewCount] = await Promise.all([
+  const [sales, inventory, duePlans, overduePlanCount, paymentReviewCount, recentSales] = await Promise.all([
     prisma.sale.findMany({
       where: { ...scope, createdAt: { gte: startPreviousWeek } },
-      include: {
-        branch: { select: { name: true } },
-        cashier: { select: { name: true } },
-        customer: { select: { name: true } },
-        saleItems: { include: { product: { select: { name: true } } } },
-      },
+      select: { total: true, status: true, createdAt: true },
       orderBy: { createdAt: "desc" },
-      take: 100,
     }),
     prisma.inventoryItem.findMany({
       where: scope,
@@ -45,12 +40,12 @@ export default async function DashboardPage() {
       orderBy: { stockOnHand: "asc" },
     }),
     prisma.creditPlan.findMany({
-      where: { ...scope, status: { in: ["ACTIVE", "DUE_SOON", "OVERDUE"] }, nextDueDate: { lte: endWeek } },
+      where: { ...scope, balance: { gt: 0 }, status: { not: "PAID_OFF" }, nextDueDate: { lte: endWeek } },
       include: { customer: { select: { name: true, phone: true } }, branch: { select: { name: true } } },
       orderBy: { nextDueDate: "asc" },
       take: 6,
     }),
-    prisma.creditPlan.count({ where: { ...scope, status: "OVERDUE" } }),
+    prisma.creditPlan.count({ where: { ...scope, balance: { gt: 0 }, nextDueDate: { lt: startToday }, status: { not: "PAID_OFF" } } }),
     prisma.paymentRequest.count({
       where: {
         status: "REVIEW",
@@ -62,6 +57,7 @@ export default async function DashboardPage() {
         }),
       },
     }),
+    prisma.sale.findMany({ where: { ...scope, createdAt: { gte: startPreviousWeek }, status: { in: ["PAID", "PARTIAL"] } }, include: { branch: { select: { name: true } }, cashier: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
 
   const completedSales = sales.filter((sale) => sale.status === "PAID" || sale.status === "PARTIAL");
@@ -79,14 +75,14 @@ export default async function DashboardPage() {
     const nextDay = new Date(day);
     nextDay.setDate(nextDay.getDate() + 1);
     return {
-      label: day.toLocaleDateString("en-KE", { weekday: "short" }),
-      isToday: day.toDateString() === startToday.toDateString(),
+      label: day.toLocaleDateString("en-KE", { weekday: "short", timeZone: "Africa/Nairobi" }),
+      isToday: dateKey(day) === dateKey(now),
       total: currentWeekSales.filter((sale) => sale.createdAt >= day && sale.createdAt < nextDay).reduce((sum, sale) => sum + sale.total, 0),
     };
   });
   const maxDaily = Math.max(1, ...dailyTotals.map((day) => day.total));
   const weekChange = previousTotal ? `${Math.round(((weekTotal - previousTotal) / previousTotal) * 100)}% vs prior week` : "No prior-week baseline";
-  const formattedDate = now.toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const formattedDate = now.toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Nairobi" });
 
   return (
     <AppShell>
@@ -97,6 +93,15 @@ export default async function DashboardPage() {
             <div className="max-w-xl"><h2 className="mt-4 text-[28px] font-semibold leading-tight tracking-[-.045em] sm:text-[34px]">A good day to make<br className="hidden sm:block"/> good things happen.</h2><p className="mt-2 text-sm text-white/60">{session?.user.branchName ?? (session?.user.role === "OWNER" ? "All branches" : "Branch not assigned")} <span className="mx-1.5 text-white/30">·</span> {todaySales.length} sales captured today</p></div>
             <div className="flex flex-wrap items-center gap-3"><time dateTime={now.toISOString()} className="inline-flex items-center gap-2 rounded-xl border border-white/[.12] bg-white/[.06] px-3.5 py-2.5 text-xs font-medium text-white/75"><CalendarDays className="h-4 w-4 text-[#9bd5b2]"/>{formattedDate}</time><Link href="/sales" className="inline-flex items-center gap-2 rounded-xl bg-[#c8f0d8] px-4 py-2.5 text-xs font-semibold text-[#163a2c] shadow-sm transition hover:bg-white"><CirclePlus className="h-4 w-4"/>Open point of sale<ArrowUpRight className="h-3.5 w-3.5"/></Link></div>
           </div>
+        </section>
+
+        <section aria-label="Quick actions" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { href: "/sales", icon: CirclePlus, title: "New sale", detail: "Start a checkout" },
+            { href: "/inventory", icon: PackageCheck, title: "Receive stock", detail: "Add goods to a branch" },
+            { href: "/customers", icon: CreditCard, title: "Customer accounts", detail: "Find a customer or Lipa plan" },
+            { href: "/credit", icon: CalendarDays, title: "Collect a payment", detail: "Open the Lipa collection board" },
+          ].filter(({ href }) => canAccessPage(session?.user.role ?? "", href)).map(({ href, icon: Icon, title, detail }) => <Link key={href} href={href} className="dashboard-shortcut group flex min-h-24 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-md"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] transition group-hover:scale-105"><Icon className="h-5 w-5"/></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#20242b]">{title}</span><span className="mt-1 block text-xs text-[var(--muted)]">{detail}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#a3a9b1] transition group-hover:translate-x-1 group-hover:text-[var(--accent)]"/></Link>)}
         </section>
 
         <div className="dashboard-metrics grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -138,8 +143,8 @@ export default async function DashboardPage() {
           <section className="dashboard-panel dashboard-sales">
             <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent sales</h3><span className="text-xs text-[#69746c]">Latest 8</span></div>
             <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Invoice</th><th className="px-4 py-3 font-medium">Time</th><th className="px-4 py-3 font-medium">Branch</th><th className="px-4 py-3 font-medium">Cashier</th><th className="px-4 py-3 text-right font-medium">Total</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-[#edf0ed]">
-              {completedSales.slice(0, 8).map((sale) => <tr key={sale.id}><td className="px-4 py-3 font-mono text-[11px] font-semibold text-[#435b4b]">{sale.invoiceNumber}</td><td className="px-4 py-3 text-[#69746c]">{sale.createdAt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}</td><td className="px-4 py-3">{sale.branch.name}</td><td className="px-4 py-3">{sale.cashier.name}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-[#263b2e]">{money(sale.total)}</td><td className="px-4 py-3 text-xs"><span className="rounded-full bg-[#eaf6ed] px-2.5 py-1 text-[10px] font-semibold text-[#367d50]">{sale.status}</span></td></tr>)}
-              {!completedSales.length ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-[#69746c]">No completed sales have been recorded in this period.</td></tr> : null}
+              {recentSales.map((sale) => <tr key={sale.id}><td className="px-4 py-3 font-mono text-[11px] font-semibold text-[#435b4b]">{sale.invoiceNumber}</td><td className="px-4 py-3 text-[#69746c]">{sale.createdAt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3">{sale.branch.name}</td><td className="px-4 py-3">{sale.cashier.name}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-[#263b2e]">{money(sale.total)}</td><td className="px-4 py-3 text-xs"><span className="rounded-full bg-[#eaf6ed] px-2.5 py-1 text-[10px] font-semibold text-[#367d50]">{sale.status}</span></td></tr>)}
+              {!recentSales.length ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-[#69746c]">No completed sales have been recorded in this period.</td></tr> : null}
             </tbody></table></div>
           </section>
 

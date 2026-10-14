@@ -18,7 +18,8 @@
     "db:test-layaway-transaction": "node --env-file=.env --import tsx scripts/test-layaway-transaction.ts",
     "test:catalog-csv": "node --import tsx --test scripts/catalog-csv.test.ts",
     "test:money-allocation": "node --import tsx --test scripts/money-allocation.test.ts",
-    "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts"
+    "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts",
+    "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

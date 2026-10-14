@@ -5,7 +5,7 @@ import { Clock3, ShieldCheck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { ThirdPartyPaymentForm } from "./third-party-payment-form";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 export const metadata = { title: "Secure payment · GadgetHub", robots: { index: false, follow: false } };
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 

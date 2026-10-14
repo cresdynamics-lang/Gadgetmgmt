@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
 import { normalizeKenyanPhone } from "@/lib/mpesa";
+import { creditStatusForDays, daysUntilDue as calculateDaysUntilDue } from "@/lib/credit-lifecycle";
 import { deliverNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
@@ -23,10 +24,6 @@ function nairobiDate(date: Date) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function dateDistance(first: Date, second: Date) {
-  return Math.round((Date.parse(`${nairobiDate(first)}T00:00:00Z`) - Date.parse(`${nairobiDate(second)}T00:00:00Z`)) / 86_400_000);
-}
-
 function scheduledReminder(daysUntilDue: number) {
   if (daysUntilDue === 3) return "before-3-days";
   if (daysUntilDue === 0) return "due-today";
@@ -38,6 +35,50 @@ function dueLabel(daysUntilDue: number) {
   if (daysUntilDue === 0) return "is due today";
   if (daysUntilDue > 0) return `is due in ${daysUntilDue} days`;
   return `is ${Math.abs(daysUntilDue)} days overdue`;
+}
+
+async function refreshPlanStates(now: Date) {
+  const plans = await prisma.creditPlan.findMany({ where: { balance: { gt: 0 }, status: { not: "PAID_OFF" } }, select: { id: true, branchId: true, customerId: true, balance: true, lateFeeAppliedAt: true, nextDueDate: true, status: true, customer: { select: { name: true } }, branch: { select: { name: true } } } });
+  const policies = await prisma.creditPolicy.findMany({ select: { branchId: true, graceDays: true, lateFeeAmount: true, managerEscalationDays: true, ownerEscalationDays: true } });
+  const policyByBranch = new Map(policies.map((policy) => [policy.branchId, policy]));
+  let changed = 0;
+  for (const plan of plans) {
+    const policy = policyByBranch.get(plan.branchId);
+    const daysUntilDue = calculateDaysUntilDue(plan.nextDueDate, now);
+    const status = creditStatusForDays(daysUntilDue, policy?.graceDays ?? 3);
+    const updated = await prisma.creditPlan.updateMany({ where: { id: plan.id, balance: { gt: 0 }, status: { not: status } }, data: { status } });
+    changed += updated.count;
+    const overdueDays = Math.max(0, -daysUntilDue);
+    if (updated.count === 1 && ["LATE_1", "LATE_2", "LATE_3", "RECOVERY"].includes(status) && !["LATE_1", "LATE_2", "LATE_3", "RECOVERY"].includes(plan.status)) {
+      await prisma.$transaction(async (transaction) => {
+        await transaction.customerReliabilityEvent.create({ data: { customerId: plan.customerId, scoreDelta: -5, reason: `Account entered ${status.replaceAll("_", " ")} after missing an installment.` } });
+        const customer = await transaction.customer.findUnique({ where: { id: plan.customerId }, select: { reliabilityScore: true } });
+        if (customer) await transaction.customer.update({ where: { id: plan.customerId }, data: { reliabilityScore: Math.max(0, customer.reliabilityScore - 5) } });
+      });
+    }
+    const fee = policy?.lateFeeAmount ?? 0;
+    if (fee > 0 && overdueDays > (policy?.graceDays ?? 3) && !plan.lateFeeAppliedAt) {
+      await prisma.$transaction(async (transaction) => {
+        const installment = await transaction.creditInstallment.findFirst({ where: { creditPlanId: plan.id, paidAt: null }, orderBy: { sequence: "asc" }, select: { id: true } });
+        if (!installment) return;
+        const applied = await transaction.creditPlan.updateMany({ where: { id: plan.id, balance: plan.balance, lateFeeAppliedAt: null }, data: { balance: { increment: fee }, lateFeeAmount: fee, lateFeeAppliedAt: now } });
+        if (applied.count === 1) await transaction.creditInstallment.update({ where: { id: installment.id }, data: { amount: { increment: fee } } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }
+    const escalation = overdueDays >= (policy?.ownerEscalationDays ?? 7) ? "OWNER" : overdueDays >= (policy?.managerEscalationDays ?? 3) ? "MANAGER" : null;
+    if (!escalation) continue;
+    const date = nairobiDate(now);
+    const recipients = await prisma.user.findMany({ where: { status: "ACTIVE", ...(escalation === "OWNER" ? { role: "OWNER" } : { role: "BRANCH_MANAGER", branchId: plan.branchId }) }, select: { email: true } });
+    await prisma.customerNotification.createMany({
+      data: [...new Set(recipients.map((user) => user.email.toLowerCase()))].map((recipient) => ({
+        branchId: plan.branchId, channel: "EMAIL" as const, kind: `CREDIT_ESCALATION_${escalation}`, recipient,
+        subject: `Lipa account needs follow-up · ${plan.branch.name}`,
+        body: `${plan.customer.name}'s Lipa account is ${overdueDays} days past its due date (${status.replaceAll("_", " ")}). Review the account and contact history in GadgetHub.`,
+        dedupeKey: `credit-escalation:${plan.id}:${escalation}:${date}:${recipient}`,
+      })), skipDuplicates: true,
+    });
+  }
+  return changed;
 }
 
 async function queueReminders(now: Date) {
@@ -53,7 +94,7 @@ async function queueReminders(now: Date) {
     include: {
       creditPlan: {
         include: {
-          customer: { select: { id: true, name: true, phone: true, email: true, smsRemindersEnabled: true, emailRemindersEnabled: true } },
+          customer: { select: { id: true, name: true, phone: true, email: true, smsRemindersEnabled: true, emailRemindersEnabled: true, whatsappRemindersEnabled: true, whatsappConsentAt: true } },
           branch: { select: { id: true, name: true, phone: true } },
         },
       },
@@ -64,12 +105,13 @@ async function queueReminders(now: Date) {
   let queued = 0;
   for (const installment of installments) {
     const plan = installment.creditPlan;
-    const daysUntilDue = dateDistance(installment.dueDate, now);
+    const daysUntilDue = calculateDaysUntilDue(installment.dueDate, now);
     const milestone = scheduledReminder(daysUntilDue);
     const customer = plan.customer;
     const channels = [
       ...(customer.smsRemindersEnabled && normalizeKenyanPhone(customer.phone) ? [{ channel: "SMS" as const, recipient: normalizeKenyanPhone(customer.phone)! }] : []),
       ...(customer.emailRemindersEnabled && customer.email ? [{ channel: "EMAIL" as const, recipient: customer.email }] : []),
+      ...(customer.whatsappRemindersEnabled && customer.whatsappConsentAt && normalizeKenyanPhone(customer.phone) ? [{ channel: "WHATSAPP" as const, recipient: normalizeKenyanPhone(customer.phone)! }] : []),
     ];
     if (!milestone || channels.length === 0) continue;
     const amount = Math.min(installment.amount - installment.paidAmount, plan.balance);
@@ -121,17 +163,17 @@ async function queueOwnerDigests(now: Date) {
   const branches = await prisma.branch.findMany({ where: { isActive: true }, select: { id: true, name: true } });
   let queued = 0;
   for (const branch of branches) {
-    const [sales, salePayments, creditPayments, layawayPayments, overduePlans, pendingReferences, recipients, inventory] = await Promise.all([
+    const [sales, salePayments, creditPayments, overduePlans, pendingReferences, recipients, inventory] = await Promise.all([
       prisma.sale.aggregate({ where: { branchId: branch.id, createdAt: { gte: start, lt: end }, status: { in: ["PAID", "PARTIAL"] } }, _sum: { total: true }, _count: true }),
       prisma.salePayment.aggregate({ where: { sale: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { creditPlan: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
-      prisma.layawayPayment.aggregate({ where: { layawayOrder: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
       prisma.creditPlan.aggregate({ where: { branchId: branch.id, balance: { gt: 0 }, nextDueDate: { lt: start }, status: { not: "PAID_OFF" } }, _sum: { balance: true }, _count: true }),
       prisma.creditPaymentSubmission.count({ where: { status: "PENDING", creditPlan: { branchId: branch.id } } }),
       prisma.user.findMany({ where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId: branch.id }] }, select: { email: true } }),
       prisma.inventoryItem.findMany({ where: { branchId: branch.id }, select: { stockOnHand: true, reservedStock: true, reorderLevel: true } }),
     ]);
-    const collected = (salePayments._sum.amount ?? 0) + (creditPayments._sum.amount ?? 0) + (layawayPayments._sum.amount ?? 0);
+    // Fulfilled layaway payments are copied to SalePayment as part of the sale ledger.
+    const collected = (salePayments._sum.amount ?? 0) + (creditPayments._sum.amount ?? 0);
     const lowStock = inventory.filter((item) => item.stockOnHand - item.reservedStock <= item.reorderLevel).length;
     const facts = {
       salesTransactions: sales._count,
@@ -162,7 +204,7 @@ async function queueOwnerDigests(now: Date) {
           skipDuplicates: true,
         });
         queued += created.count;
-      } catch (error) { console.error("Could not queue owner daily digest", branch.id); }
+      } catch { console.error("Could not queue owner daily digest", branch.id); }
     }
   }
   return queued;
@@ -210,7 +252,7 @@ async function deliverQueued() {
         }
         await transaction.sale.updateMany({ where: { id: expired.sale.id, status: "PENDING" }, data: { status: "VOIDED" } });
       });
-    } catch (error) { console.error("Could not release expired payment-request stock", expired.id); }
+    } catch { console.error("Could not release expired payment-request stock", expired.id); }
   }
   await prisma.customerNotification.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 180 * 86_400_000) }, status: { in: ["SENT", "FAILED", "SKIPPED"] } } });
   const batch = await prisma.customerNotification.findMany({ where: { status: { in: ["QUEUED", "FAILED"] }, attempts: { lt: 5 } }, orderBy: { createdAt: "asc" }, take: 80 });
@@ -218,10 +260,12 @@ async function deliverQueued() {
   let failed = 0;
   for (const notification of batch) {
     if (notification.customerId) {
-      const customer = await prisma.customer.findFirst({ where: { id: notification.customerId, branchId: notification.branchId }, select: { phone: true, email: true, smsRemindersEnabled: true, emailRemindersEnabled: true } });
+      const customer = await prisma.customer.findFirst({ where: { id: notification.customerId, branchId: notification.branchId }, select: { phone: true, email: true, smsRemindersEnabled: true, emailRemindersEnabled: true, whatsappRemindersEnabled: true, whatsappConsentAt: true } });
       const stillOptedIn = notification.channel === "SMS"
         ? customer?.smsRemindersEnabled && normalizeKenyanPhone(customer.phone) === normalizeKenyanPhone(notification.recipient)
-        : customer?.emailRemindersEnabled && customer.email?.toLowerCase() === notification.recipient.toLowerCase();
+        : notification.channel === "EMAIL"
+          ? customer?.emailRemindersEnabled && customer.email?.toLowerCase() === notification.recipient.toLowerCase()
+          : customer?.whatsappRemindersEnabled && Boolean(customer.whatsappConsentAt) && normalizeKenyanPhone(customer.phone) === normalizeKenyanPhone(notification.recipient);
       if (!stillOptedIn) {
         await prisma.customerNotification.updateMany({ where: { id: notification.id, status: notification.status, attempts: notification.attempts }, data: { status: "SKIPPED", lastError: "Customer reminder preference was disabled or contact details changed." } });
         continue;
@@ -242,7 +286,16 @@ async function deliverQueued() {
       await prisma.customerNotification.update({ where: { id: notification.id }, data: { status: "SENT", sentAt: new Date(), lastError: null } });
       sent += 1;
     } catch (error) {
-      await prisma.customerNotification.update({ where: { id: notification.id }, data: { status: "FAILED", lastError: error instanceof Error ? error.message.slice(0, 300) : "Delivery failed." } });
+      const failure = error instanceof Error ? error.message.slice(0, 300) : "Delivery failed.";
+      await prisma.customerNotification.update({ where: { id: notification.id }, data: { status: "FAILED", lastError: failure } });
+      if (notification.channel === "WHATSAPP" && notification.customerId) {
+        const customer = await prisma.customer.findFirst({ where: { id: notification.customerId, branchId: notification.branchId }, select: { phone: true, smsRemindersEnabled: true } });
+        const fallbackPhone = customer?.smsRemindersEnabled ? normalizeKenyanPhone(customer.phone) : null;
+        if (fallbackPhone) await prisma.customerNotification.createMany({
+          data: [{ branchId: notification.branchId, customerId: notification.customerId, channel: "SMS", kind: `${notification.kind}_SMS_FALLBACK`, recipient: fallbackPhone, subject: notification.subject, body: notification.body, dedupeKey: `${notification.dedupeKey}:sms-fallback` }],
+          skipDuplicates: true,
+        });
+      }
       failed += 1;
     }
   }
@@ -251,12 +304,22 @@ async function deliverQueued() {
 
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  let runId: string | null = null;
   try {
+    const run = await prisma.scheduledJobRun.create({ data: { jobName: "COLLECTIONS_DAILY" }, select: { id: true } });
+    runId = run.id;
+    const updatedPlans = await refreshPlanStates(new Date());
     const queuedReminders = await queueReminders(new Date());
     const queuedDigests = await queueOwnerDigests(new Date());
     const delivery = await deliverQueued();
-    return NextResponse.json({ ok: true, queuedReminders, queuedDigests, ...delivery, ranAt: new Date().toISOString() });
+    const finishedAt = new Date();
+    await prisma.scheduledJobRun.update({ where: { id: runId }, data: { status: "SUCCEEDED", updatedPlans, queuedReminders, queuedDigests, sentCount: delivery.sent, failedCount: delivery.failed, finishedAt } });
+    return NextResponse.json({ ok: true, updatedPlans, queuedReminders, queuedDigests, ...delivery, ranAt: finishedAt.toISOString() });
   } catch (error) {
+    if (runId) {
+      try { await prisma.scheduledJobRun.update({ where: { id: runId }, data: { status: "FAILED", errorMessage: "Collections job failed. Check server logs.", finishedAt: new Date() } }); }
+      catch (recordError) { console.error("Could not save collections job failure status", recordError instanceof Error ? recordError.message : "unknown error"); }
+    }
     console.error("Collections notification job failed", error instanceof Error ? error.message : "unknown error");
     return NextResponse.json({ error: "Notification job failed. Review server logs." }, { status: 500 });
   }

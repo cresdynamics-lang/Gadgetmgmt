@@ -17,7 +17,7 @@ export async function GET() {
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
-  const [products, customers] = await Promise.all([
+  const [products, customers, creditPolicy] = await Promise.all([
     prisma.product.findMany({
       where: { branchId },
       select: {
@@ -38,6 +38,7 @@ export async function GET() {
       select: { id: true, name: true, phone: true },
       orderBy: { name: "asc" },
     }),
+    prisma.creditPolicy.findUnique({ where: { branchId }, select: { minimumDepositPercent: true, defaultCreditLimit: true } }),
   ]);
 
   return NextResponse.json({
@@ -46,6 +47,7 @@ export async function GET() {
       available: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - (inventory[0]?.reservedStock ?? 0)),
     })),
     customers,
+    creditPolicy: creditPolicy ?? { minimumDepositPercent: 20, defaultCreditLimit: 0 },
   });
 }
 
@@ -64,6 +66,7 @@ const checkoutSchema = z.object({
   creditDepositAmount: z.number().int().positive().max(2_000_000_000).optional(),
   creditDepositMethod: z.enum(["CASH", "MPESA", "CARD"]).optional(),
   creditDepositReference: z.string().trim().toUpperCase().min(6).max(32).optional(),
+  imei: z.string().trim().regex(/^\d{14,16}$/).optional(),
   paymentBreakdown: z.array(z.object({ method: z.enum(["CASH", "MPESA", "CARD"]), amount: z.number().int().positive().max(2_000_000_000) })).min(2).max(3).optional(),
   discountAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
   taxAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
@@ -94,6 +97,9 @@ const checkoutSchema = z.object({
   }
   if (data.paymentMethod === "CREDIT" && data.creditDepositMethod !== "MPESA" && data.creditDepositReference) {
     context.addIssue({ code: "custom", path: ["creditDepositReference"], message: "An M-Pesa transaction code is only valid for an M-Pesa deposit." });
+  }
+  if (data.imei && (data.paymentMethod !== "CREDIT" || data.items.length !== 1 || data.items[0].quantity !== 1)) {
+    context.addIssue({ code: "custom", path: ["imei"], message: "Enter one IMEI only for a single-unit Lipa sale." });
   }
   if (data.paymentMethod !== "CREDIT" && (data.creditTermMonths || data.creditDepositAmount || data.creditDepositMethod || data.creditDepositReference)) {
     context.addIssue({ code: "custom", path: ["creditTermMonths"], message: "Loan details are only valid for a credit sale." });
@@ -177,7 +183,7 @@ export async function POST(request: Request) {
       if (customerId) {
         const customer = await transaction.customer.findFirst({
           where: { id: customerId, branchId, status: "ACTIVE" },
-          select: { id: true },
+          select: { id: true, creditLimit: true },
         });
         if (!customer) throw new Error("CUSTOMER_UNAVAILABLE");
       }
@@ -199,6 +205,18 @@ export async function POST(request: Request) {
       if (!Number.isSafeInteger(total) || total < 1 || total > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
       const paidAmount = parsed.data.paymentMethod === "CREDIT" ? parsed.data.creditDepositAmount! : parsed.data.paymentMethod === "PAY_LINK" ? 0 : total;
       if (paidAmount > total) throw new Error("DEPOSIT_EXCEEDS_TOTAL");
+      if (parsed.data.paymentMethod === "CREDIT" && customerId) {
+        const customer = await transaction.customer.findFirst({ where: { id: customerId, branchId }, select: { creditLimit: true, status: true } });
+        if (customer?.status === "CREDIT_HOLD") throw new Error("CUSTOMER_CREDIT_HOLD");
+        const [policy, exposure] = await Promise.all([
+          transaction.creditPolicy.findUnique({ where: { branchId }, select: { minimumDepositPercent: true, defaultCreditLimit: true } }),
+          transaction.creditPlan.aggregate({ where: { branchId, customerId, balance: { gt: 0 } }, _sum: { balance: true } }),
+        ]);
+        const depositPercent = policy?.minimumDepositPercent ?? 20;
+        if (paidAmount * 100 < total * depositPercent) throw new Error("DEPOSIT_BELOW_POLICY");
+        const creditLimit = customer?.creditLimit || policy?.defaultCreditLimit || 0;
+        if (creditLimit > 0 && (exposure._sum.balance ?? 0) + total - paidAmount > creditLimit) throw new Error("CREDIT_LIMIT_EXCEEDED");
+      }
       const splitTotal = parsed.data.paymentBreakdown?.reduce((sum, payment) => sum + payment.amount, 0);
       const splitMethods = new Set(parsed.data.paymentBreakdown?.map((payment) => payment.method));
       if (parsed.data.paymentMethod === "SPLIT" && (splitTotal !== total || splitMethods.size !== parsed.data.paymentBreakdown?.length)) {
@@ -298,8 +316,9 @@ export async function POST(request: Request) {
         });
       }
 
-      const creditPlanLinks: { token: string; productName: string; payerToken?: string; payerAmount?: number }[] = [];
+      const creditPlanLinks: { token: string; planReference: string; productName: string; payerToken?: string; payerAmount?: number }[] = [];
       if (parsed.data.paymentMethod === "CREDIT") {
+        if (parsed.data.imei && await transaction.creditPlan.findUnique({ where: { imei: parsed.data.imei }, select: { id: true } })) throw new Error("IMEI_ALREADY_REGISTERED");
         let depositRemaining = paidAmount;
         for (let index = 0; index < saleLines.length; index += 1) {
           const line = saleLines[index];
@@ -322,12 +341,15 @@ export async function POST(request: Request) {
             remainder = Math.max(0, remainder - 1);
             return { sequence: installmentIndex + 1, dueDate, amount };
           });
+          const planReference = `GH${randomBytes(5).toString("hex").toUpperCase()}`;
           const plan = await transaction.creditPlan.create({
             data: {
+              planReference,
               saleId: createdSale.id,
               branchId,
               customerId: customerId!,
               productId: line.product.id,
+              ...(parsed.data.imei ? { imei: parsed.data.imei } : {}),
               totalAmount: line.total,
               depositAmount: allocatedDeposit,
               balance: lineBalance,
@@ -336,7 +358,7 @@ export async function POST(request: Request) {
               nextDueDate: dueDates[0],
               portalTokenHash: createHash("sha256").update(token).digest("hex"),
               status: lineBalance === 0 ? "PAID_OFF" : "ACTIVE",
-              installments: { create: installments },
+            installments: { create: installments.filter((installment) => installment.amount > 0) },
             },
           });
           let payerToken: string | undefined;
@@ -352,7 +374,7 @@ export async function POST(request: Request) {
               },
             });
           }
-          creditPlanLinks.push({ token, productName: line.product.name, ...(payerToken ? { payerToken, payerAmount: lineBalance } : {}) });
+          creditPlanLinks.push({ token, planReference, productName: line.product.name, ...(payerToken ? { payerToken, payerAmount: lineBalance } : {}) });
         }
       }
 
@@ -401,6 +423,10 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && error.message === "DISCOUNT_EXCEEDS_SUBTOTAL") return NextResponse.json({ error: "Discount cannot exceed the sale subtotal." }, { status: 400 });
     if (error instanceof Error && error.message === "DEPOSIT_EXCEEDS_TOTAL") return NextResponse.json({ error: "The deposit cannot exceed the total sale amount." }, { status: 400 });
+    if (error instanceof Error && error.message === "DEPOSIT_BELOW_POLICY") return NextResponse.json({ error: "The deposit is below the minimum required by this branch's Lipa policy." }, { status: 400 });
+    if (error instanceof Error && error.message === "CREDIT_LIMIT_EXCEEDED") return NextResponse.json({ error: "This sale would exceed the customer's available Lipa credit limit." }, { status: 409 });
+    if (error instanceof Error && error.message === "CUSTOMER_CREDIT_HOLD") return NextResponse.json({ error: "This customer is on credit hold. Cash and card purchases can still be recorded." }, { status: 409 });
+    if (error instanceof Error && error.message === "IMEI_ALREADY_REGISTERED") return NextResponse.json({ error: "This IMEI is already attached to a Lipa account." }, { status: 409 });
     if (error instanceof Error && error.message === "INVALID_PAID_AMOUNT") return NextResponse.json({ error: "Use two distinct payment methods whose amounts add up to the sale total." }, { status: 400 });
     if (error instanceof Error && error.message === "SALE_AMOUNT_OUT_OF_RANGE") return NextResponse.json({ error: "Sale total exceeds the supported integer amount or contains an invalid price." }, { status: 400 });
     if (error instanceof Error && error.message === "PRODUCT_UNAVAILABLE") {

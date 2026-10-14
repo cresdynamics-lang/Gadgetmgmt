@@ -5,7 +5,16 @@ import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
-const preferenceSchema = z.object({ smsRemindersEnabled: z.boolean(), emailRemindersEnabled: z.boolean() }).strict();
+const customerUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  phone: z.string().trim().min(7).max(30).optional(),
+  email: z.union([z.string().trim().email().max(254), z.literal("")]).optional(),
+  creditLimit: z.number().int().nonnegative().optional(),
+  status: z.enum(["ACTIVE", "INACTIVE", "CREDIT_HOLD"]).optional(),
+  smsRemindersEnabled: z.boolean().optional(),
+  emailRemindersEnabled: z.boolean().optional(),
+  whatsappRemindersEnabled: z.boolean().optional(),
+}).strict().refine((data) => Object.keys(data).length > 0);
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -27,6 +36,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           termMonths: true,
           nextDueDate: true,
           status: true,
+          imei: true,
           createdAt: true,
           branch: { select: { name: true } },
           product: { select: { name: true, sku: true } },
@@ -47,19 +57,36 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot manage customer preferences." }, { status: 403 });
-  const parsed = preferenceSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Choose valid reminder preferences." }, { status: 400 });
+  const parsed = customerUpdateSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Enter valid customer details or reminder preferences." }, { status: 400 });
+  const profileFields = ["name", "phone", "email", "creditLimit", "status"] as const;
+  const isProfileUpdate = profileFields.some((field) => parsed.data[field] !== undefined);
+  if (isProfileUpdate && session.user.role !== "OWNER" && session.user.role !== "BRANCH_MANAGER") return NextResponse.json({ error: "Only an owner or branch manager can edit customer details or credit status." }, { status: 403 });
   const { id } = await params;
-  const customer = await prisma.customer.findFirst({ where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) }, select: { id: true } });
+  const customer = await prisma.customer.findFirst({ where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) }, select: { id: true, phone: true, email: true, smsRemindersEnabled: true, emailRemindersEnabled: true, whatsappRemindersEnabled: true, remindersConsentAt: true, whatsappConsentAt: true } });
   if (!customer) return NextResponse.json({ error: "Customer was not found." }, { status: 404 });
-  const anyEnabled = parsed.data.smsRemindersEnabled || parsed.data.emailRemindersEnabled;
+  const phoneChanged = parsed.data.phone !== undefined && parsed.data.phone !== customer.phone;
+  const emailChanged = parsed.data.email !== undefined && (parsed.data.email || null) !== customer.email;
+  const smsEnabled = phoneChanged ? false : parsed.data.smsRemindersEnabled ?? customer.smsRemindersEnabled;
+  const emailEnabled = emailChanged ? false : parsed.data.emailRemindersEnabled ?? customer.emailRemindersEnabled;
+  const whatsappEnabled = phoneChanged ? false : parsed.data.whatsappRemindersEnabled ?? customer.whatsappRemindersEnabled;
+  const reminderChangedToEnabled = (!customer.smsRemindersEnabled && smsEnabled) || (!customer.emailRemindersEnabled && emailEnabled);
+  const whatsappChangedToEnabled = !customer.whatsappRemindersEnabled && whatsappEnabled;
   const updated = await prisma.customer.update({
     where: { id },
     data: {
-      ...parsed.data,
-      remindersConsentAt: anyEnabled ? new Date() : null,
+      ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+      ...(parsed.data.phone !== undefined ? { phone: parsed.data.phone } : {}),
+      ...(parsed.data.email !== undefined ? { email: parsed.data.email || null } : {}),
+      ...(parsed.data.creditLimit !== undefined ? { creditLimit: parsed.data.creditLimit } : {}),
+      ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
+      ...(parsed.data.smsRemindersEnabled !== undefined || phoneChanged ? { smsRemindersEnabled: smsEnabled } : {}),
+      ...(parsed.data.emailRemindersEnabled !== undefined || emailChanged ? { emailRemindersEnabled: emailEnabled } : {}),
+      ...(parsed.data.whatsappRemindersEnabled !== undefined || phoneChanged ? { whatsappRemindersEnabled: whatsappEnabled } : {}),
+      remindersConsentAt: !smsEnabled && !emailEnabled ? null : reminderChangedToEnabled ? new Date() : customer.remindersConsentAt,
+      whatsappConsentAt: !whatsappEnabled ? null : whatsappChangedToEnabled ? new Date() : customer.whatsappConsentAt,
     },
-    select: { id: true, smsRemindersEnabled: true, emailRemindersEnabled: true, remindersConsentAt: true },
+    select: { id: true, name: true, phone: true, email: true, status: true, creditLimit: true, reliabilityScore: true, smsRemindersEnabled: true, emailRemindersEnabled: true, remindersConsentAt: true, whatsappRemindersEnabled: true, whatsappConsentAt: true },
   });
   return NextResponse.json(updated);
 }

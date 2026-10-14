@@ -15,6 +15,38 @@ export async function deliverNotification(input: { channel: NotificationChannel;
     return;
   }
 
+  if (input.channel === "WHATSAPP") {
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const templateName = process.env.WHATSAPP_PAYMENT_TEMPLATE;
+    if (!accessToken || !phoneNumberId || !templateName) throw new Error("WhatsApp delivery needs WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_PAYMENT_TEMPLATE.");
+    const token = input.body.match(/\/request\/([a-f0-9]{64})/i)?.[1];
+    const buttonIndex = process.env.WHATSAPP_PAY_BUTTON_INDEX || "0";
+    const bodyText = input.body.replace(/\s*Pay securely here: https?:\/\/\S+/i, "").slice(0, 1024);
+    const response = await fetch(`https://graph.facebook.com/v22.0/${encodeURIComponent(phoneNumberId)}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: input.recipient.replace(/\D/g, ""),
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en" },
+          components: [
+            { type: "body", parameters: [{ type: "text", text: bodyText }] },
+            ...(token ? [{ type: "button", sub_type: "url", index: buttonIndex, parameters: [{ type: "text", text: token }] }] : []),
+          ],
+        },
+      }),
+    });
+    if (!response.ok) throw new Error(`WhatsApp provider returned ${response.status}.`);
+    return;
+  }
+
   const username = process.env.AT_USERNAME;
   const apiKey = process.env.AT_API_KEY;
   if (!username || !apiKey) throw new Error("SMS delivery needs AT_USERNAME and AT_API_KEY.");

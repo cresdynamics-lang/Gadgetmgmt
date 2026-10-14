@@ -285,6 +285,102 @@ button { cursor: pointer; }
   .workspace-content .dashboard-action-desk > div:last-child > a { min-height: 76px; }
 }
 
+/* Token-first quiet workspace palette: charcoal, white, and a spruce green action color. */
+:root {
+  color-scheme: light;
+  --background: #f4f5f7;
+  --foreground: #17191d;
+  --panel: #ffffff;
+  --muted: #747983;
+  --border: #e3e5e9;
+  --accent: #315843;
+  --accent-soft: #eaf3ed;
+  --signal: #315843;
+  --radius-card: 16px;
+  --shadow-card: 0 2px 8px rgb(20 25 35 / 4%);
+}
+
+::selection { background: #dcebe1; color: #203c2b; }
+:focus-visible { outline-color: var(--signal); }
+.workspace-content { background: var(--background); }
+.workspace-content section.border,
+.workspace-content form.border,
+.workspace-content > div > section.border,
+.workspace-content .dashboard-panel,
+.workspace-content .dashboard-action-desk,
+.workspace-content .metric-card {
+  border-color: var(--border);
+  border-radius: var(--radius-card);
+  background-color: var(--panel);
+  box-shadow: var(--shadow-card);
+}
+.workspace-content > div > div:first-child[class*="border-b"][class*="pb-4"] {
+  border-color: var(--border);
+  border-radius: var(--radius-card);
+  background: #fff;
+}
+.workspace-content > div > div:first-child[class*="border-b"][class*="pb-4"] h2,
+.workspace-content section h3 { color: #1c2026; font-family: inherit; }
+.workspace-content input:not([type="checkbox"]),
+.workspace-content select,
+.workspace-content textarea { border-color: var(--border); border-radius: 10px; }
+.workspace-content input:not([type="checkbox"]):focus,
+.workspace-content select:focus,
+.workspace-content textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 3px rgb(49 88 67 / 12%); }
+.workspace-content table thead { background: #f7f8fa; }
+.workspace-content table th { color: #737983; }
+.workspace-content table tbody tr:hover { background: #f8f9fb; }
+.workspace-content .dashboard-welcome {
+  min-height: 0;
+  border: 1px solid #252932;
+  border-radius: 18px;
+  background: #17191d;
+  background-image: radial-gradient(ellipse at 92% 130%, rgb(100 156 117 / 22%), transparent 38%);
+  box-shadow: 0 10px 28px rgb(18 22 30 / 12%);
+}
+.workspace-content .dashboard-welcome::after { display: none; }
+.workspace-content .dashboard-welcome h2 { font-family: inherit; font-weight: 600; text-shadow: none; }
+.workspace-content .dashboard-welcome time svg { color: #b9d7c1; }
+.workspace-content .dashboard-welcome a { border-radius: 10px; background: var(--signal); color: #fff; box-shadow: none; }
+.workspace-content .dashboard-welcome a:hover { background: #244632; }
+.workspace-content .dashboard-metrics .metric-card {
+  min-height: 138px;
+  border-top: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+.workspace-content .dashboard-metrics .metric-card:nth-child(n) { --metric-accent: var(--signal); --metric-tint: var(--accent-soft); border-top-color: var(--border); }
+.workspace-content .dashboard-metrics .metric-card:nth-child(1) { border-top: 2px solid var(--signal); }
+.workspace-content .dashboard-metrics .metric-card::after { opacity: .22; }
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"] { background: #fff; }
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"]::after { background: var(--signal); }
+.workspace-content .dashboard-shortcut { border-radius: 14px; box-shadow: var(--shadow-card); }
+.workspace-content .dashboard-shortcut:hover { box-shadow: 0 8px 22px rgb(20 25 35 / 9%); }
+.workspace-content button.bg-\[\#173a2b\],
+.workspace-content button.bg-\[\#254936\],
+.workspace-content button.bg-\[\#174b37\] { background: var(--signal); color: #fff; }
+.workspace-content button.bg-\[\#173a2b\]:hover,
+.workspace-content button.bg-\[\#254936\]:hover,
+.workspace-content button.bg-\[\#174b37\]:hover { background: #244632; }
+.workspace-content a:focus-visible,
+.workspace-content button:focus-visible { outline-color: var(--signal); }
+
+@keyframes soft-rise {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.workspace-content > div > section,
+.workspace-content .dashboard-shortcut { animation: soft-rise .24s ease-out both; }
+.workspace-content .dashboard-shortcut:nth-child(2) { animation-delay: 25ms; }
+.workspace-content .dashboard-shortcut:nth-child(3) { animation-delay: 50ms; }
+.workspace-content .dashboard-shortcut:nth-child(4) { animation-delay: 75ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-content > div > section,
+  .workspace-content .dashboard-shortcut { animation: none; }
+}
+
 @media print {
   @page { margin: 12mm; }
   html, body { background: #fff !important; }
@@ -432,4 +528,290 @@ header a:focus-visible {
   .workspace-content .dashboard-metrics .metric-card {
     min-height: 132px;
   }
+}
+
+/* Final token values override the legacy component polish above. */
+:root {
+  --background: #f4f5f1;
+  --foreground: #20332a;
+  --panel: #fff;
+  --muted: #748178;
+  --border: #e5eae5;
+  --accent: #315843;
+  --accent-soft: #eaf3ed;
+  --signal: #315843;
+}
+.workspace-content { background: var(--background); }
+.workspace-content .dashboard-welcome { background: #17191d; background-image: radial-gradient(ellipse at 92% 130%, rgb(100 156 117 / 22%), transparent 38%); }
+.workspace-content .dashboard-welcome a { background: var(--signal); color: #fff; }
+.workspace-content .dashboard-metrics .metric-card:nth-child(n) { --metric-accent: var(--signal); --metric-tint: var(--accent-soft); }
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"] { background: #fff; }
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"]::after { background: var(--signal); }
+.workspace-content input:not([type="checkbox"]):focus,
+.workspace-content select:focus,
+.workspace-content textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 3px rgb(49 88 67 / 12%); }
+.workspace-content button.bg-\[\#173a2b\],
+.workspace-content button.bg-\[\#254936\],
+.workspace-content button.bg-\[\#174b37\] { background-color: var(--signal); }
+.workspace-content button.bg-\[\#173a2b\]:hover,
+.workspace-content button.bg-\[\#254936\]:hover,
+.workspace-content button.bg-\[\#174b37\]:hover { background-color: #244632; }
+.workspace-content button:focus-visible,
+.workspace-content a:focus-visible,
+header button:focus-visible,
+header a:focus-visible { outline-color: var(--signal); }
+
+/* Cashier mode keeps the product picker and checkout in a compact, scan-first workspace. */
+.cashier-mode > div.grid > section:first-child > div.divide-y {
+  max-height: min(68vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #c8cdd5 transparent;
+  scrollbar-width: thin;
+}
+.cashier-mode > div.grid > section:first-child > div.divide-y > div { min-height: 68px; }
+.cashier-mode > div.grid > section:first-child > div.divide-y > div button { width: 42px; height: 42px; }
+.cashier-mode > div.grid > form { box-shadow: 0 12px 36px rgb(18 22 31 / 8%); }
+@media (min-width: 1280px) {
+  .cashier-mode > div.grid > form { position: sticky; top: 84px; }
+}
+
+/* Refined sales and inventory surfaces, keeping the existing spruce palette. */
+.workspace-content .sales-hero,
+.workspace-content .inventory-hero {
+  border-color: #e1e9e1;
+  border-radius: 16px;
+}
+.workspace-content .sales-hero h2,
+.workspace-content .inventory-hero h2 { color: #20382d; }
+.workspace-content .sales-layout { align-items: start; }
+.workspace-content .sales-product-list { align-content: start; }
+.workspace-content .sales-product-card {
+  min-height: 76px;
+  box-shadow: 0 1px 3px rgb(32 56 43 / 3%);
+}
+.workspace-content .sales-product-card:hover {
+  border-color: #cfdfd1;
+  background: #fbfdfb;
+  box-shadow: 0 6px 16px rgb(28 59 39 / 6%);
+  transform: translateY(-1px);
+}
+.workspace-content .sales-checkout { border-color: #e0e8e0; }
+.workspace-content .sales-checkout > div:first-child {
+  background: linear-gradient(110deg, #f2f8f2, #fbfcfa);
+}
+.workspace-content .inventory-stats > div {
+  min-width: 0;
+  border: 1px solid #e2eae2;
+  border-radius: 15px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 3px 12px rgb(25 52 37 / 3%);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.workspace-content .inventory-stats > div:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 9px 20px rgb(28 59 39 / 7%);
+}
+.workspace-content .inventory-receive-form,
+.workspace-content .inventory-receipt-ready,
+.workspace-content .inventory-table-panel,
+.workspace-content .inventory-movements-panel {
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgb(24 54 37 / 3%);
+}
+.workspace-content .inventory-table-panel > div:first-child,
+.workspace-content .inventory-movements-panel > div:first-child { background: #fbfdfb; }
+.workspace-content .inventory-table-panel table,
+.workspace-content .inventory-movements-panel table { white-space: nowrap; }
+.workspace-content .inventory-table-panel tbody tr,
+.workspace-content .inventory-movements-panel tbody tr { transition: background-color 120ms ease; }
+.workspace-content .inventory-table-panel tbody tr:hover,
+.workspace-content .inventory-movements-panel tbody tr:hover { background: #f5faf5; }
+.workspace-content .inventory-table-panel thead,
+.workspace-content .inventory-movements-panel thead { background: #f5f8f4; }
+
+/* Cashier mode keeps a dense, scan first product list. */
+.cashier-mode .sales-layout > .product-catalog > .sales-product-list {
+  display: block;
+  max-height: min(68vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0;
+  scrollbar-color: #bdd0bf transparent;
+  scrollbar-width: thin;
+}
+.cashier-mode .sales-product-card {
+  min-height: 68px;
+  border: 0;
+  border-bottom: 1px solid #e8eee8;
+  border-radius: 0;
+  padding: 12px 16px;
+  box-shadow: none;
+}
+.cashier-mode .sales-product-card:hover { transform: none; box-shadow: none; }
+.cashier-mode .sales-checkout { box-shadow: 0 12px 36px rgb(18 42 27 / 9%); }
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-content .inventory-stats > div,
+  .workspace-content .sales-product-card { transition: none; }
+}
+
+/* A quieter, more deliberate finish for the operational home screen. */
+.workspace-content .dashboard-welcome {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(148 185 154 / 18%);
+  background-color: #173b2a;
+  background-image: radial-gradient(ellipse at 94% 8%, rgb(120 174 127 / 22%), transparent 34%),
+    radial-gradient(ellipse at 4% 110%, rgb(69 121 83 / 24%), transparent 42%),
+    linear-gradient(115deg, #173b2a 0%, #204632 58%, #1b3d2c 100%);
+  box-shadow: 0 14px 36px rgb(22 57 39 / 14%);
+}
+.workspace-content .dashboard-welcome > * { position: relative; z-index: 1; }
+.workspace-content .dashboard-welcome a {
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgb(8 34 20 / 15%);
+  transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.workspace-content .dashboard-welcome a:hover {
+  transform: translateY(-1px);
+  background-color: #3f7952;
+  box-shadow: 0 7px 17px rgb(8 34 20 / 22%);
+}
+.workspace-content .dashboard-shortcut {
+  border-radius: 14px;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.workspace-content .dashboard-shortcut:hover {
+  transform: translateY(-2px);
+  border-color: #cbdccd;
+  box-shadow: 0 9px 20px rgb(28 59 39 / 7%);
+}
+.workspace-content .dashboard-panel,
+.workspace-content .dashboard-action-desk {
+  background-image: linear-gradient(145deg, #fff 0%, #fff 76%, #fbfdfb 100%);
+}
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"] h3,
+.workspace-content .dashboard-panel > div:first-child[class*="border-b"] h2 {
+  letter-spacing: -.015em;
+}
+.workspace-content .dashboard-metrics .metric-card {
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+.workspace-content .dashboard-metrics .metric-card:hover {
+  transform: translateY(-2px);
+  border-color: #d4e2d5;
+  box-shadow: 0 10px 24px rgb(27 59 40 / 7%);
+}
+
+/* Customer and Lipa workspaces use the same spruce surface language. */
+.workspace-content .customer-hero {
+  border-color: #e1e9e1;
+  border-radius: 16px;
+}
+.workspace-content .customer-hero h2 { color: #20382d; }
+.workspace-content .customer-hero > div > p:first-child {
+  color: #60816b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .17em;
+}
+.workspace-content .customer-stats > div {
+  border-radius: 15px;
+  box-shadow: 0 3px 12px rgb(25 52 37 / 3%);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.workspace-content .customer-stats > div:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 9px 20px rgb(28 59 39 / 7%);
+}
+.workspace-content .customer-workspace {
+  border-color: #dfe8df;
+  box-shadow: 0 12px 36px rgb(27 47 35 / 6%);
+}
+.workspace-content .customer-workspace > section:first-child {
+  background: #fbfcfa;
+}
+.workspace-content .customer-workspace > section:first-child > div:nth-child(2) {
+  scrollbar-color: #bdd0bf transparent;
+  scrollbar-width: thin;
+}
+.workspace-content .customer-workspace > section:last-child > div:first-child {
+  border-color: #e7eee7;
+}
+
+.workspace-content .lipa-hero {
+  position: relative;
+  overflow: hidden;
+  background-color: #183b2a;
+  background-image: radial-gradient(ellipse at 94% 8%, rgb(120 174 127 / 22%), transparent 34%),
+    radial-gradient(ellipse at 4% 110%, rgb(69 121 83 / 24%), transparent 42%),
+    linear-gradient(115deg, #173b2a 0%, #204632 58%, #1b3d2c 100%);
+}
+.workspace-content .lipa-hero a { text-decoration: none; }
+.workspace-content .lipa-stats > div {
+  min-width: 0;
+  border: 1px solid #e2eae2;
+  border-radius: 15px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 3px 12px rgb(25 52 37 / 3%);
+}
+.workspace-content .lipa-board { border-color: #e2e9e2; }
+.workspace-content .lipa-lane {
+  border: 1px solid #e5ece5;
+  background: #f5f8f4;
+}
+.workspace-content .lipa-lane > div:first-child h4 { color: #354b3b; }
+.workspace-content .lipa-lane button {
+  border-color: #e1e9e1;
+  border-radius: 11px;
+  box-shadow: 0 1px 3px rgb(32 56 43 / 3%);
+}
+.workspace-content .lipa-lane button:hover { border-color: #9fbea4; }
+.workspace-content .lipa-lane button > span:first-child > span:first-child { color: #294533; }
+.workspace-content .lipa-lane button > span:first-child > span:last-child {
+  background: #edf4ee;
+  color: #58705e;
+}
+.workspace-content .lipa-lane button > span:last-child { border-color: #e8efe8; }
+.workspace-content #lipa-accounts > div:first-child,
+.workspace-content #lipa-record-payment > div:first-child {
+  border-color: #e8eee8;
+}
+
+.workspace-content .settings-hero { border-color: #e1e9e1; }
+.workspace-content .settings-branch-card,
+.workspace-content .settings-account-card { border-color: #e2e9e2; }
+.workspace-content .settings-branch-card input,
+.workspace-content .settings-branch-card select { border-radius: 9px; }
+.workspace-content .settings-account-card dl > div { min-width: 0; }
+.workspace-content .staff-metrics > div {
+  min-width: 0;
+  border: 1px solid #e2eae2;
+  border-radius: 15px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 3px 12px rgb(25 52 37 / 3%);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.workspace-content .staff-metrics > div:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 9px 20px rgb(28 59 39 / 7%);
+}
+.workspace-content .staff-directory { border-color: #e2e9e2; }
+.workspace-content .staff-directory thead { background: #f5f8f4; }
+.workspace-content .staff-directory tbody tr { transition: background-color 120ms ease; }
+.workspace-content .staff-directory tbody tr:hover { background: #f6faf6; }
+.workspace-content .staff-directory select { border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-content .dashboard-welcome a,
+  .workspace-content .dashboard-shortcut,
+  .workspace-content .dashboard-metrics .metric-card,
+  .workspace-content .customer-stats > div,
+  .workspace-content .inventory-stats > div,
+  .workspace-content .sales-product-card,
+  .workspace-content .staff-metrics > div { transition: none; }
 }

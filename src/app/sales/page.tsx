@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { CalendarDays, Check, CreditCard, Download, Minus, Package, Plus, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { downloadSaleReceipt } from "@/lib/receipt-pdf";
 
 type Product = { id: string; sku: string; name: string; category: string; sellingPrice: number; available: number };
 type Customer = { id: string; name: string; phone: string };
+type CreditPolicy = { minimumDepositPercent: number; defaultCreditLimit: number };
 type NewCustomer = { name: string; phone: string; email: string };
 type Receipt = {
   id: string;
@@ -23,7 +24,7 @@ type Receipt = {
   customer: { name: string; phone: string } | null;
   saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string } }[];
   payments: { amount: number; method: string }[];
-  creditPlanLinks?: { token: string; productName: string; payerToken?: string; payerAmount?: number }[];
+  creditPlanLinks?: { token: string; planReference: string; productName: string; payerToken?: string; payerAmount?: number }[];
   salePaymentLink?: { token: string; amount: number } | null;
   payerMessage?: { recipient: string; status: "SENT" | "FAILED" | "QUEUED" } | null;
 };
@@ -34,6 +35,7 @@ const blankCustomer: NewCustomer = { name: "", phone: "", email: "" };
 export default function SalesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [creditPolicy, setCreditPolicy] = useState<CreditPolicy>({ minimumDepositPercent: 20, defaultCreditLimit: 0 });
   const [cart, setCart] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All items");
@@ -47,6 +49,7 @@ export default function SalesPage() {
   const [creditDepositAmount, setCreditDepositAmount] = useState("");
   const [creditDepositMethod, setCreditDepositMethod] = useState<"CASH" | "MPESA" | "CARD">("MPESA");
   const [creditDepositReference, setCreditDepositReference] = useState("");
+  const [creditImei, setCreditImei] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
   const [firstTenderMethod, setFirstTenderMethod] = useState<"CASH" | "MPESA" | "CARD">("CASH");
   const [secondTenderMethod, setSecondTenderMethod] = useState<"CASH" | "MPESA" | "CARD">("MPESA");
@@ -58,6 +61,8 @@ export default function SalesPage() {
   const [copiedPayerLink, setCopiedPayerLink] = useState("");
   const [copiedSaleLink, setCopiedSaleLink] = useState(false);
   const [firstDueDate, setFirstDueDate] = useState("");
+  const [cashierMode, setCashierMode] = useState(false);
+  const productSearch = useRef<HTMLInputElement>(null);
 
   async function copyCustomerLink(token: string) {
     const link = `${window.location.origin}/pay/${token}`;
@@ -90,6 +95,9 @@ export default function SalesPage() {
     if (!response.ok) throw new Error(data.error ?? "Could not load branch catalogue.");
     setProducts(data.products);
     setCustomers(data.customers);
+    const requestedCustomerId = new URLSearchParams(window.location.search).get("customer");
+    if (requestedCustomerId && data.customers.some((customer: Customer) => customer.id === requestedCustomerId)) setCustomerId(requestedCustomerId);
+    setCreditPolicy(data.creditPolicy ?? { minimumDepositPercent: 20, defaultCreditLimit: 0 });
   }
 
   useEffect(() => {
@@ -97,7 +105,8 @@ export default function SalesPage() {
     const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
     const lastDayOfNextMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
     nextMonth.setDate(Math.min(today.getDate(), lastDayOfNextMonth));
-    setFirstDueDate(nextMonth.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }));
+    const firstDueLabel = nextMonth.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
+    const firstDueFrame = window.requestAnimationFrame(() => setFirstDueDate(firstDueLabel));
 
     async function initialLoad() {
       try {
@@ -110,7 +119,12 @@ export default function SalesPage() {
     }
 
     void initialLoad();
+    return () => window.cancelAnimationFrame(firstDueFrame);
   }, []);
+
+  useEffect(() => {
+    if (cashierMode) productSearch.current?.focus();
+  }, [cashierMode]);
 
   useEffect(() => {
     if (!receipt || receipt.status !== "PENDING") return;
@@ -131,7 +145,7 @@ export default function SalesPage() {
     };
     const timer = window.setInterval(() => void refreshPendingSale(), 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [receipt?.id, receipt?.status]);
+  }, [receipt]);
 
   const cartItems = Object.entries(cart)
     .map(([id, quantity]) => ({ product: products.find((item) => item.id === id), quantity }))
@@ -140,13 +154,11 @@ export default function SalesPage() {
   const deposit = Number(creditDepositAmount) || 0;
   const previewDeposit = Number.isFinite(deposit) ? Math.min(total, Math.max(0, Math.trunc(deposit))) : 0;
   const creditBalance = Math.max(0, total - previewDeposit);
-  let depositRemaining = previewDeposit;
   const estimatedInstallment = cartItems.reduce((sum, item, index) => {
     const lineTotal = item.product.sellingPrice * item.quantity;
     const allocatedDeposit = index === cartItems.length - 1
-      ? depositRemaining
+      ? previewDeposit - cartItems.slice(0, index).reduce((allocated, previous) => allocated + (total > 0 ? Number((BigInt(previewDeposit) * BigInt(previous.product.sellingPrice * previous.quantity)) / BigInt(total)) : 0), 0)
       : total > 0 ? Number((BigInt(previewDeposit) * BigInt(lineTotal)) / BigInt(total)) : 0;
-    depositRemaining -= allocatedDeposit;
     return sum + Math.ceil(Math.max(0, lineTotal - allocatedDeposit) / creditTermMonths);
   }, 0);
   const newCustomerReady = newCustomer.name.trim().length >= 2 && newCustomer.phone.trim().length >= 7;
@@ -184,6 +196,7 @@ export default function SalesPage() {
             creditDepositAmount: Number(creditDepositAmount),
             creditDepositMethod,
             ...(creditDepositMethod === "MPESA" ? { creditDepositReference } : {}),
+            ...(creditImei ? { imei: creditImei } : {}),
           } : {}),
           paymentBreakdown: paymentMethod === "SPLIT" ? [
             { method: firstTenderMethod, amount: Number(paidAmount) },
@@ -203,6 +216,7 @@ export default function SalesPage() {
       setPayerConsent(false);
       setCreditDepositAmount("");
       setCreditDepositReference("");
+      setCreditImei("");
       await loadCatalogue();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Sale could not be completed.");
@@ -213,8 +227,8 @@ export default function SalesPage() {
 
   return (
     <AppShell>
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e2e6e2] pb-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Point of sale</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">New sale</h2></div><p className="text-sm text-[#66736a]">Live prices and available stock</p></div>
+      <div className={`sales-workspace space-y-5 ${cashierMode ? "cashier-mode" : ""}`}>
+        <div className="sales-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Point of sale</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">New sale</h2><p className="mt-1.5 text-sm text-[#77837a]">Search the catalogue, build the basket, and check out in one place.</p></div><div className="flex items-center gap-3"><p className="hidden text-sm text-[#66736a] sm:block">Live prices and available stock</p><button type="button" aria-pressed={cashierMode} onClick={() => setCashierMode((active) => !active)} className="inline-flex items-center gap-2 rounded-xl border border-[#dce6dd] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#365b43] transition hover:bg-[#f1f7f2]">{cashierMode ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}{cashierMode ? "Exit cashier mode" : "Cashier mode"}</button></div></div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {receipt ? (
           <section className="receipt-print mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-[#e4e1d7] bg-[#fffefa] shadow-[0_18px_55px_rgba(36,43,32,0.09)]" aria-label="Sale receipt">
@@ -269,17 +283,17 @@ export default function SalesPage() {
 
         {receipt?.creditPlanLinks?.length ? <section className="rounded-xl border border-[#e7dfcb] bg-[#fbf8f0] p-4 sm:p-5" aria-label="Customer payment links">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#94784e]">Customer and payer links</p><p className="mt-1 text-sm font-semibold text-[#354536]">Share the right link with each person</p><p className="mt-1 text-xs text-[#74786d]">The customer schedule shows the account. The separate payer link hides those details and starts an M-Pesa prompt when Daraja is configured.</p></div></div>
-          <div className="mt-3 space-y-2">{receipt.creditPlanLinks.map((plan, index) => <div key={`${plan.productName}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e9e4d8] bg-white px-3 py-2.5"><span className="min-w-0 truncate text-xs font-medium text-[#3b4b3d]">{plan.productName}</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void copyCustomerLink(plan.token)} className="rounded-md border border-[#d6ddd6] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#35513c] hover:bg-[#f5f8f5]">{copiedCustomerLink === plan.token ? "Copied" : "Customer schedule"}</button>{plan.payerToken ? <button type="button" onClick={() => void copyPayerLink(plan.payerToken!)} className="rounded-md bg-[#254936] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#315943]">{copiedPayerLink === plan.payerToken ? "Copied" : `Payer link · ${money(plan.payerAmount ?? 0)}`}</button> : null}</div></div>)}</div>
+          <div className="mt-3 space-y-2">{receipt.creditPlanLinks.map((plan, index) => <div key={`${plan.productName}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e9e4d8] bg-white px-3 py-2.5"><span className="min-w-0"><span className="block truncate text-xs font-medium text-[#3b4b3d]">{plan.productName}</span><span className="mt-0.5 block font-mono text-[10px] text-[#889287]">PayBill reference: {plan.planReference}</span></span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void copyCustomerLink(plan.token)} className="rounded-md border border-[#d6ddd6] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#35513c] hover:bg-[#f5f8f5]">{copiedCustomerLink === plan.token ? "Copied" : "Customer schedule"}</button>{plan.payerToken ? <button type="button" onClick={() => void copyPayerLink(plan.payerToken!)} className="rounded-md bg-[#254936] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#315943]">{copiedPayerLink === plan.payerToken ? "Copied" : `Payer link · ${money(plan.payerAmount ?? 0)}`}</button> : null}</div></div>)}</div>
         </section> : null}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
-          <section className="min-w-0 border border-[#dfe4df] bg-white">
-            <div className="flex flex-col gap-3 border-b border-[#e5e9e5] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="relative w-full sm:max-w-sm"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input aria-label="Search products" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, SKU or category" className="w-full border border-[#d6ddd6] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#315d3f]" /></div><span className="text-xs text-[#69746c]">{loading ? "Loading catalogueâ€¦" : `${filteredProducts.length} products`}</span></div>
-            {!loading && categories.length > 1 ? <div className="flex gap-2 overflow-x-auto border-b border-[#edf1ed] px-4 py-3">{categories.map((category) => <button key={category} type="button" onClick={() => setActiveCategory(category)} aria-pressed={activeCategory === category} className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${activeCategory === category ? "border-[#c9e3d0] bg-[#edf7ef] text-[#326b49]" : "border-transparent bg-[#f6f8f6] text-[#849188] hover:border-[#e4ebe5] hover:text-[#4d6656]"}`}>{category}</button>)}</div> : null}
-            {loading ? <div className="p-8 text-sm text-[#69746c]">Connecting to branch inventoryâ€¦</div> : filteredProducts.length ? <div className="divide-y divide-[#e8ebe8]">{filteredProducts.map((product) => <div key={product.id} className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-[#f8faf7]"><div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#f1f7f1] to-[#e7f0e8] text-[#4d7959] ring-1 ring-[#e3ece3]"><Package className="h-[17px] w-[17px]" strokeWidth={1.7}/></span><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#263b2e]">{product.name}</p><p className="mt-1 truncate text-[10px] text-[#89958d]">{product.sku}<span className="px-1.5 text-[#c2cbc4]">Â·</span>{product.category}</p></div></div><div className="flex shrink-0 items-center gap-4"><div className="text-right"><p className="text-sm font-semibold tabular-nums">{money(product.sellingPrice)}</p><p className={`mt-1 text-[10px] font-medium ${product.available ? "text-[#55734d]" : "text-[#9b4a3d]"}`}>{product.available} available</p></div><button type="button" disabled={product.available < 1 || (cart[product.id] ?? 0) >= product.available} onClick={() => setQuantity(product, (cart[product.id] ?? 0) + 1)} aria-label={`Add ${product.name}`} className={`grid h-9 w-9 place-items-center rounded-xl transition ${cart[product.id] ? "bg-[#e8f4eb] text-[#32704b]" : "border border-[#e2eae3] bg-white text-[#597464] shadow-sm hover:border-[#b9d7c1] hover:bg-[#edf7ef]"} disabled:cursor-not-allowed disabled:opacity-35`}>{cart[product.id] ? <Check className="h-4 w-4"/> : <Plus className="h-4 w-4"/>}</button></div></div>)}</div> : <div className="grid min-h-56 place-items-center p-8 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#f3f6f3] text-[#839187]"><Package className="h-5 w-5"/></span><p className="mt-3 text-sm font-semibold">{products.length ? "No matching products" : "No products stocked at this branch"}</p><p className="mt-1 max-w-xs text-xs leading-5 text-[#839087]">{products.length ? "Try another name, SKU or category." : "Add products and receive stock into this branch before making a sale."}</p></div></div>}
+        <div className="sales-layout grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <section className="product-catalog min-w-0 overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_4px_18px_rgba(24,54,37,.03)]">
+            <div className="flex flex-col gap-3 border-b border-[#e5e9e5] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="relative w-full sm:max-w-sm"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input ref={productSearch} aria-label="Search products" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, SKU or category" className="w-full border border-[#d6ddd6] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#315d3f]" /></div><span className="text-xs text-[#69746c]">{loading ? "Loading catalogueâ€¦" : `${filteredProducts.length} products`}</span></div>
+            {!cashierMode && !loading && categories.length > 1 ? <div className="flex gap-2 overflow-x-auto border-b border-[#edf1ed] px-4 py-3">{categories.map((category) => <button key={category} type="button" onClick={() => setActiveCategory(category)} aria-pressed={activeCategory === category} className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${activeCategory === category ? "border-[#c9e3d0] bg-[#edf7ef] text-[#326b49]" : "border-transparent bg-[#f6f8f6] text-[#849188] hover:border-[#e4ebe5] hover:text-[#4d6656]"}`}>{category}</button>)}</div> : null}
+            {loading ? <div className="p-8 text-sm text-[#69746c]">Connecting to branch inventoryâ€¦</div> : filteredProducts.length ? <div className="sales-product-list grid gap-2.5 p-3 sm:grid-cols-2">{filteredProducts.map((product) => <div key={product.id} className="sales-product-card flex items-center justify-between gap-3 rounded-xl border border-[#edf1ed] bg-white p-3 transition"><div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#f1f7f1] to-[#e7f0e8] text-[#4d7959] ring-1 ring-[#e3ece3]"><Package className="h-[17px] w-[17px]" strokeWidth={1.7}/></span><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#263b2e]">{product.name}</p><p className="mt-1 truncate text-[10px] text-[#89958d]">{product.sku}<span className="px-1.5 text-[#c2cbc4]">Â·</span>{product.category}</p></div></div><div className="flex shrink-0 items-center gap-4"><div className="text-right"><p className="text-sm font-semibold tabular-nums">{money(product.sellingPrice)}</p><p className={`mt-1 text-[10px] font-medium ${product.available ? "text-[#55734d]" : "text-[#9b4a3d]"}`}>{product.available} available</p></div><button type="button" disabled={product.available < 1 || (cart[product.id] ?? 0) >= product.available} onClick={() => setQuantity(product, (cart[product.id] ?? 0) + 1)} aria-label={`Add ${product.name}`} className={`grid h-9 w-9 place-items-center rounded-xl transition ${cart[product.id] ? "bg-[#e8f4eb] text-[#32704b]" : "border border-[#e2eae3] bg-white text-[#597464] shadow-sm hover:border-[#b9d7c1] hover:bg-[#edf7ef]"} disabled:cursor-not-allowed disabled:opacity-35`}>{cart[product.id] ? <Check className="h-4 w-4"/> : <Plus className="h-4 w-4"/>}</button></div></div>)}</div> : <div className="grid min-h-56 place-items-center p-8 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#f3f6f3] text-[#839187]"><Package className="h-5 w-5"/></span><p className="mt-3 text-sm font-semibold">{products.length ? "No matching products" : "No products stocked at this branch"}</p><p className="mt-1 max-w-xs text-xs leading-5 text-[#839087]">{products.length ? "Try another name, SKU or category." : "Add products and receive stock into this branch before making a sale."}</p></div></div>}
           </section>
 
-          <form onSubmit={completeSale} className="h-fit border border-[#dfe4df] bg-white xl:sticky xl:top-[96px]">
+          <form onSubmit={completeSale} className="sales-checkout h-fit overflow-hidden rounded-2xl border border-[#dfe4df] bg-white shadow-[0_10px_28px_rgba(24,54,37,.06)] xl:sticky xl:top-[96px]">
             <div className="flex items-center justify-between border-b border-[#e5e9e5] bg-[#f8faf8] px-4 py-3.5"><div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e6f2e9] text-[#39724f]"><ShoppingBag className="h-4 w-4"/></span><div><h3 className="text-sm font-semibold text-[#263b2e]">Current sale</h3><p className="mt-0.5 text-[10px] text-[#8b978f]">Review before checkout</p></div></div><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-[#6d7f73] ring-1 ring-[#e7ede8]">{cartItems.reduce((sum, item) => sum + item.quantity, 0)} units</span></div>
             {cartItems.length ? <div className="divide-y divide-[#f0f3f0] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#293d30]">{product.name}</p><p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5ebe5] bg-[#fafcfa]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#eef4ef]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#304637]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#52745d] transition hover:bg-[#eef4ef] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#293d30]">{money(product.sellingPrice * quantity)}</span></div></div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f1f6f1] text-[#7c9583]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#4a5f50]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customerâ€™s basket.</p></div></div>}
             <div className="space-y-4 border-t border-[#e5e9e5] p-4">
@@ -299,9 +313,10 @@ export default function SalesPage() {
               {paymentMethod === "CREDIT" ? <div className="space-y-3 rounded-xl border border-[#e6e1d5] bg-[#fbfaf6] p-3.5">
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e7f1e6] text-[#47724f]"><CreditCard className="h-4 w-4"/></span><div><p className="text-xs font-semibold text-[#354638]">Lipa Mdogo Mdogo</p><p className="mt-0.5 text-[10px] text-[#7d8175]">Pay a deposit, take it home today.</p></div></div><span className="rounded-full bg-[#f1eadb] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#886d3e]">Take home</span></div>
                 <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Repayment term</p><div className="grid grid-cols-3 gap-1.5">{([4, 6, 12] as const).map((months) => <button key={months} type="button" aria-pressed={creditTermMonths === months} onClick={() => setCreditTermMonths(months)} className={`rounded-lg border px-2 py-2 text-center transition ${creditTermMonths === months ? "border-[#427653] bg-[#e9f3e9] text-[#2e6743] shadow-[inset_0_0_0_1px_#427653]" : "border-[#e5e2d8] bg-white text-[#74796d] hover:border-[#c8d9c8]"}`}><span className="block text-xs font-bold">{months}</span><span className="text-[9px]">months</span></button>)}</div></div>
-                <div><label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]" htmlFor="credit-deposit">Deposit collected today</label><div className="relative mt-1.5"><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[10px] font-semibold text-[#889187]">KES</span><input id="credit-deposit" type="number" min="1" max={Math.max(1, total - 1)} step="1" required value={creditDepositAmount} onChange={(event) => setCreditDepositAmount(event.target.value)} placeholder="Enter amount received" className="w-full rounded-lg border border-[#e3e1d7] bg-white py-2.5 pl-12 pr-3 text-sm normal-case tracking-normal outline-none focus:border-[#86ae8d]"/></div><div className="mt-2 flex items-center justify-between gap-2"><span className="text-[9px] text-[#8a8d80]">Quick picks · editable</span><div className="flex gap-1.5">{([10, 20, 30] as const).map((percent) => <button key={percent} type="button" disabled={total < 2} onClick={() => setCreditDepositAmount(String(Math.max(1, Math.min(total - 1, Math.round(total * percent / 100)))))} className="rounded-md border border-[#e5e2d8] bg-white px-2 py-1 text-[9px] font-semibold text-[#627366] hover:border-[#9eb99f] disabled:opacity-40">{percent}%</button>)}</div></div></div>
+                <div><label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]" htmlFor="credit-deposit">Deposit collected today</label><div className="relative mt-1.5"><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[10px] font-semibold text-[#889187]">KES</span><input id="credit-deposit" type="number" min={Math.max(1, Math.ceil(total * creditPolicy.minimumDepositPercent / 100))} max={Math.max(1, total - 1)} step="1" required value={creditDepositAmount} onChange={(event) => setCreditDepositAmount(event.target.value)} placeholder="Enter amount received" className="w-full rounded-lg border border-[#e3e1d7] bg-white py-2.5 pl-12 pr-3 text-sm normal-case tracking-normal outline-none focus:border-[#86ae8d]"/></div><div className="mt-2 flex items-center justify-between gap-2"><span className="text-[9px] text-[#8a8d80]">Minimum {creditPolicy.minimumDepositPercent}% · quick picks</span><div className="flex gap-1.5">{([10, 20, 30] as const).map((percent) => <button key={percent} type="button" disabled={total < 2 || percent < creditPolicy.minimumDepositPercent} onClick={() => setCreditDepositAmount(String(Math.max(1, Math.min(total - 1, Math.round(total * percent / 100)))))} className="rounded-md border border-[#e5e2d8] bg-white px-2 py-1 text-[9px] font-semibold text-[#627366] hover:border-[#9eb99f] disabled:opacity-40">{percent}%</button>)}</div></div></div>
                 <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Deposit paid by<select value={creditDepositMethod} onChange={(event) => setCreditDepositMethod(event.target.value as typeof creditDepositMethod)} className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#29382d]"><option value="MPESA">M-Pesa</option><option value="CASH">Cash</option><option value="CARD">Card</option></select></label>
                 {creditDepositMethod === "MPESA" ? <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Verified M-Pesa transaction code<input required minLength={6} maxLength={32} value={creditDepositReference} onChange={(event) => setCreditDepositReference(event.target.value.toUpperCase())} placeholder="e.g. QWE123ABC" className="mt-1 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal"/><span className="mt-1 block text-[10px] font-normal normal-case leading-4 tracking-normal text-[#8b887c]">Confirm the deposit in M-Pesa before checkout. The code is added to the payment record.</span></label> : null}
+                {cartItems.length === 1 && cartItems[0].quantity === 1 ? <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Device IMEI <span className="font-normal normal-case tracking-normal">(optional)</span><input inputMode="numeric" pattern="[0-9]{14,16}" minLength={14} maxLength={16} value={creditImei} onChange={(event) => setCreditImei(event.target.value.replace(/\D/g, ""))} placeholder="15-digit device IMEI" className="mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal"/><span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[var(--muted)]">Saved on the account to help identify the device during collections and recovery.</span></label> : null}
                 <div className="rounded-xl border border-[#e6e6dc] bg-white p-3.5"><div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[#768176]"><Sparkles className="h-3.5 w-3.5 text-[#9b8150]"/>Plan at a glance</div><div className="grid grid-cols-2 gap-2"><div className="rounded-lg bg-[#f5f8f3] p-2.5"><p className="text-[9px] text-[#839084]">Balance financed</p><p className="mt-1 text-xs font-bold tabular-nums text-[#36523c]">{money(creditBalance)}</p></div><div className="rounded-lg bg-[#f5f8f3] p-2.5"><p className="text-[9px] text-[#839084]">About per month</p><p className="mt-1 text-xs font-bold tabular-nums text-[#36523c]">{money(estimatedInstallment)}</p></div></div><div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[#eeece5] pt-2.5 text-[10px] text-[#7c857b]"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5"/>First due {firstDueDate || "next month"}</span><span>{creditTermMonths} equal monthly payments</span></div><p className="mt-2 text-[9px] leading-relaxed text-[#96988d]">Estimate only; the saved schedule shows exact dates and any rounding adjustment.</p></div>
                 <p className="flex items-start gap-1.5 text-[9px] leading-relaxed text-[#888a7e]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#7e9982]"/>Review the deposit with the customer before confirming. Checkout deducts stock and opens their payment account.</p>
               </div> : null}

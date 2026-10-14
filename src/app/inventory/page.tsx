@@ -155,8 +155,8 @@ export default function InventoryPage() {
 
   return (
     <AppShell>
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e2e6e2] pb-4">
+      <div className="inventory-workspace space-y-5">
+        <div className="inventory-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7">
           <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Stock control</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Inventory</h2></div>
           <button type="button" onClick={() => { setReceiving((current) => !current); setError(""); }} disabled={!items.length} className="inline-flex items-center gap-2 bg-[#173a2b] px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-[#24513a] disabled:opacity-40"><ArrowDownToLine className="h-4 w-4" /> Receive stock</button>
           <button type="button" onClick={() => { setAddingProduct((current) => !current); setError(""); }} className="border border-[#cbd5cc] px-3.5 py-2.5 text-sm font-semibold text-[#284a34] hover:bg-[#edf3e9]">Add product</button>
@@ -165,7 +165,7 @@ export default function InventoryPage() {
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#6a843f] bg-[#f2f6ec] px-4 py-3 text-sm text-[#31533a]">{notice}</p> : null}
 
-        <div className="grid border-y border-[#dfe4df] bg-white sm:grid-cols-3">
+        <div className="inventory-stats grid gap-3 sm:grid-cols-3">
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Units on hand</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : stockUnits.toLocaleString("en-KE")}</p></div>
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">At or below reorder level</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : lowStockCount}</p></div>
           <div className="px-4 py-4"><p className="text-xs text-[#69746c]">Cost value · listed stock</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : money(stockValue)}</p></div>
@@ -213,7 +213,7 @@ export default function InventoryPage() {
           <div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setAddingProduct(false)} className="border border-[#d6ddd6] px-3.5 py-2 text-sm font-medium">Cancel</button><button disabled={saving} className="bg-[#173a2b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Creating…" : "Create product"}</button></div>
         </form> : null}
 
-        <section className="border border-[#dfe4df] bg-white">
+        <section className="inventory-table-panel overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_4px_18px_rgba(24,54,37,.03)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8ebe8] p-3.5">
             <h3 className="text-sm font-semibold">Branch stock</h3>
             <div className="relative w-full sm:max-w-xs"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input aria-label="Search inventory" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, SKU or category" className="w-full border border-[#d6ddd6] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#315d3f]" /></div>
@@ -231,7 +231,7 @@ export default function InventoryPage() {
           </table></div>
         </section>
 
-        <section className="border border-[#dfe4df] bg-white">
+        <section className="inventory-movements-panel overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_4px_18px_rgba(24,54,37,.03)]">
           <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent stock movements</h3><span className="text-xs text-[#69746c]">Latest 20</span></div>
           <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Date</th><th className="px-4 py-3 font-medium">Movement</th><th className="px-4 py-3 font-medium">Product</th><th className="px-4 py-3 font-medium">Reference</th><th className="px-4 py-3 text-right font-medium">Units</th><th className="px-4 py-3 font-medium">Recorded by</th></tr></thead><tbody className="divide-y divide-[#edf0ed]">
             {movements.map((movement) => <tr key={movement.id}><td className="px-4 py-3 text-[#69746c]">{new Date(movement.createdAt).toLocaleString("en-KE")}</td><td className="px-4 py-3">{movement.type === "RECEIPT" ? "Receipt" : movement.type === "SALE" ? "Sale" : "Adjustment"}</td><td className="px-4 py-3 font-medium">{movement.product.name}</td><td className="px-4 py-3 font-mono text-xs text-[#69746c]">{movement.reference ?? "—"}</td><td className={`px-4 py-3 text-right font-semibold tabular-nums ${movement.quantity > 0 ? "text-[#42684a]" : "text-[#8a5149]"}`}>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td><td className="px-4 py-3 text-[#69746c]">{movement.user.name}</td></tr>)}

@@ -4,8 +4,9 @@ import { Check, Clock3, CreditCard, ShieldCheck } from "lucide-react";
 
 import { prisma } from "@/lib/prisma";
 import { PaymentSubmissionForm } from "./payment-submission-form";
+import { RescheduleForm } from "./reschedule-form";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 export const metadata = { robots: { index: false, follow: false } };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
@@ -58,6 +59,7 @@ export default async function CustomerPaymentPage({ params }: { params: Promise<
             {plan.paymentSubmissions.length ? <div className="mt-4 rounded-xl border border-[#eadfc7] bg-[#fbf7ed] px-4 py-3"><p className="text-xs font-semibold text-[#735d39]">Payment awaiting branch confirmation</p>{plan.paymentSubmissions.map((submission) => <p key={submission.id} className="mt-1 text-[10px] text-[#83755b]">{money(submission.amount)} · Ref {submission.reference} · Sent {submission.createdAt.toLocaleDateString("en-KE")}</p>)}</div> : null}
 
             <div className="mt-6 rounded-2xl border border-[#e9e3d5] bg-[#faf8f2] p-4 sm:p-5"><div className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f1eadb] text-[#8e7448]"><CreditCard className="h-4 w-4"/></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#39483a]">Pay by M-Pesa</p><p className="mt-1 text-xs leading-5 text-[#70766b]">Contact {plan.branch.name} at <a className="font-semibold text-[#315843] underline underline-offset-2" href={`tel:${plan.branch.phone}`}>{plan.branch.phone}</a> for the current payment instructions. Then submit your M-Pesa transaction code here.</p>{plan.balance > 0 ? <PaymentSubmissionForm token={token} scheduledAmount={plan.installments.find((item) => !item.paidAt)?.amount ?? plan.balance} balance={plan.balance}/> : <p className="mt-3 text-xs font-medium text-[#47744e]">This account has been paid in full. Thank you.</p>}<p className="mt-2 text-[10px] leading-4 text-[#8b887c]">Payment references are reviewed by the branch before your balance changes. Never share your M-Pesa PIN or password.</p></div></div></div>
+            {plan.balance > 0 ? <RescheduleForm token={token} /> : null}
             <p className="mt-6 text-center text-[10px] text-[#9a9a8d]">For account support, contact {plan.branch.name} · {plan.branch.phone}</p>
           </div>
         </section>

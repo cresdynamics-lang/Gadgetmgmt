@@ -36,6 +36,19 @@ export type LayawayPaymentReceiptData = {
   receivedBy: { name: string };
 };
 
+export type CreditAgreementData = {
+  planReference: string;
+  customer: { name: string; phone: string };
+  branch: { name: string };
+  product: { name: string; sku: string };
+  imei: string | null;
+  totalAmount: number;
+  depositAmount: number;
+  balance: number;
+  termMonths: number;
+  installments: { sequence: number; dueDate: string; amount: number }[];
+};
+
 export type InventoryReceiptData = {
   id: string;
   createdAt: string;
@@ -298,6 +311,29 @@ export function downloadLayawayPaymentReceipt(
 ) {
   createLayawayPaymentReceiptPdf(order, payment, balanceAfterPayment)
     .save(`${safeFilePart(`layaway-${order.id}-${payment.id}`) || "layaway-receipt"}.pdf`);
+}
+
+export function downloadCreditAgreementPdf(agreement: CreditAgreementData) {
+  const pdf = createDocument("Lipa payment agreement", agreement.branch.name, new Date().toLocaleDateString("en-KE", { dateStyle: "long", timeZone: "Africa/Nairobi" }));
+  pdf.line("Plan reference", agreement.planReference);
+  pdf.line("Customer", `${agreement.customer.name} | ${agreement.customer.phone}`);
+  pdf.line("Product", `${agreement.product.name} (${agreement.product.sku})`);
+  if (agreement.imei) pdf.line("Device IMEI", agreement.imei);
+  pdf.section("Payment terms");
+  pdf.line("Cash price", money(agreement.totalAmount));
+  pdf.line("Deposit received", money(agreement.depositAmount));
+  pdf.line("Financed balance", money(agreement.balance));
+  pdf.line("Repayment term", `${agreement.termMonths} months`);
+  pdf.section("Repayment schedule");
+  for (const installment of agreement.installments) {
+    pdf.line(`Payment ${installment.sequence} · ${new Date(installment.dueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Nairobi" })}`, money(installment.amount));
+  }
+  pdf.section("Acknowledgement");
+  pdf.line("Customer signature", "________________________________________");
+  pdf.line("Business representative", "____________________________________");
+  pdf.line("Date", "____________________");
+  pdf.line("Agreement note", "Payments are recorded against this plan reference. Please retain this schedule and contact the branch if you need support.");
+  pdf.finish().save(`${safeFilePart(`lipa-agreement-${agreement.planReference}`) || "gadgethub-lipa-agreement"}.pdf`);
 }
 
 export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
