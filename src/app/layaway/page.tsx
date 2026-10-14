@@ -2,12 +2,12 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Download } from "lucide-react";
+import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { downloadLayawayPaymentReceipt } from "@/lib/receipt-pdf";
 
 type LayawayStatus = "ACTIVE" | "READY_FOR_PICKUP" | "FULFILLED";
 type Customer = { id: string; name: string; phone: string };
-type Product = { id: string; sku: string; name: string; sellingPrice: number; available: number };
 type Payment = { id: string; amount: number; method: string; reference: string | null; createdAt: string; receivedBy: { name: string } };
 type Order = {
   id: string;
@@ -36,8 +36,6 @@ const statusLabel: Record<LayawayStatus, string> = {
 
 export default function LayawayPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState<"OPEN" | "ALL">("OPEN");
   const [loading, setLoading] = useState(true);
@@ -49,9 +47,7 @@ export default function LayawayPage() {
     const response = await fetch("/api/layaway", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not load layaway orders.");
-    setOrders(data.orders);
-    setProducts(data.products);
-    setCustomers(data.customers);
+    setOrders(data);
   }
 
   useEffect(() => {
@@ -72,40 +68,6 @@ export default function LayawayPage() {
   const activeCount = orders.filter((order) => order.status === "ACTIVE").length;
   const readyCount = orders.filter((order) => order.status === "READY_FOR_PICKUP").length;
   const openBalance = orders.filter((order) => order.status !== "FULFILLED").reduce((sum, order) => sum + order.balance, 0);
-
-  async function createOrder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (saving) return;
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch("/api/layaway", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId: formData.get("customerId"),
-          productId: formData.get("productId"),
-          quantity: Number(formData.get("quantity")),
-          initialAmount: Number(formData.get("initialAmount")),
-          method: formData.get("method"),
-          reference: formData.get("reference"),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Layaway order could not be created.");
-      await refresh();
-      setSelectedId(data.id);
-      form.reset();
-      setNotice(data.status === "READY_FOR_PICKUP" ? "Order fully paid and ready for customer pickup." : "Layaway started. Stock is reserved for this customer.");
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Layaway order could not be created.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function recordInstallment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -155,9 +117,10 @@ export default function LayawayPage() {
     <AppShell>
       <div className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e2e6e2] pb-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Reserve now, collect when paid</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Lipa Mdogo Mdogo</h2></div>
-          <p className="text-sm text-[#66736a]">Items remain in branch stock until customer pickup</p>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Legacy account close-out</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Existing layaway commitments</h2></div>
+          <p className="text-sm text-[#66736a]">New layaway orders are disabled</p>
         </div>
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e8e1d1] bg-[#fffdf8] px-4 py-3.5"><p className="max-w-2xl text-xs leading-5 text-[#766b54]">This legacy workflow is retired. Finish any existing customer balances here; use Lipa Mdogo Mdogo for all new installment purchases.</p><Link href="/credit" className="shrink-0 rounded-lg bg-[#254936] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#315943]">Open Lipa accounts</Link></section>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#6a843f] bg-[#f2f6ec] px-4 py-3 text-sm text-[#31533a]">{notice}</p> : null}
 
@@ -167,24 +130,10 @@ export default function LayawayPage() {
           <div className="px-4 py-4"><p className="text-xs text-[#69746c]">Remaining on open plans</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : money(openBalance)}</p></div>
         </div>
 
-        <form onSubmit={createOrder} className="border border-[#dfe4df] bg-white p-4 sm:p-5">
-          <div className="mb-4"><h3 className="text-sm font-semibold">Start a layaway order</h3><p className="mt-1 text-xs text-[#69746c]">The first payment reserves the selected quantity at today’s price.</p></div>
-          {!loading && !products.some((product) => product.available > 0) ? <p role="status" className="mb-4 border-l-2 border-[#c08b3d] bg-[#fff9ed] px-3 py-2 text-sm text-[#725322]">No unreserved stock is available at this branch. Receive verified stock in Inventory before starting a layaway.</p> : null}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <label className="text-xs font-medium text-[#526057] xl:col-span-2">Customer<select name="customerId" required defaultValue="" className="mt-1 w-full border border-[#d6ddd6] bg-white px-3 py-2.5 text-sm"><option value="" disabled>Select customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select></label>
-            <label className="text-xs font-medium text-[#526057] xl:col-span-2">Product<select name="productId" required defaultValue="" className="mt-1 w-full border border-[#d6ddd6] bg-white px-3 py-2.5 text-sm"><option value="" disabled>Select available product</option>{products.map((product) => <option key={product.id} value={product.id} disabled={product.available < 1}>{product.name} · {product.sku} · {product.available} available · {money(product.sellingPrice)}</option>)}</select></label>
-            <label className="text-xs font-medium text-[#526057]">Quantity<input name="quantity" type="number" min="1" max="1000" step="1" required defaultValue="1" className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm" /></label>
-            <label className="text-xs font-medium text-[#526057]">First payment (KES)<input name="initialAmount" type="number" min="1" max="2000000000" step="1" required className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm" /></label>
-            <label className="text-xs font-medium text-[#526057]">Payment method<select name="method" className="mt-1 w-full border border-[#d6ddd6] bg-white px-3 py-2.5 text-sm"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select></label>
-            <label className="text-xs font-medium text-[#526057] xl:col-span-2">Payment reference <span className="font-normal">(optional)</span><input name="reference" maxLength={100} className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm" /></label>
-          </div>
-          <div className="mt-4 flex justify-end"><button disabled={saving || !customers.length || !products.some((product) => product.available > 0)} className="bg-[#173a2b] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#24513a] disabled:cursor-not-allowed disabled:bg-[#aab5ac]">{saving ? "Saving…" : "Reserve and record payment"}</button></div>
-        </form>
-
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
           <section className="min-w-0 border border-[#dfe4df] bg-white">
             <div className="flex items-center justify-between gap-3 border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Layaway orders</h3><div className="flex border border-[#d6ddd6] text-xs"><button type="button" aria-pressed={filter === "OPEN"} onClick={() => setFilter("OPEN")} className={`px-3 py-1.5 ${filter === "OPEN" ? "bg-[#173a2b] text-white" : "bg-white"}`}>Open</button><button type="button" aria-pressed={filter === "ALL"} onClick={() => setFilter("ALL")} className={`px-3 py-1.5 ${filter === "ALL" ? "bg-[#173a2b] text-white" : "bg-white"}`}>All</button></div></div>
-            {loading ? <p className="p-5 text-sm text-[#69746c]">Loading layaway orders…</p> : visibleOrders.length ? <div className="divide-y divide-[#e8ebe8]">{visibleOrders.map((order) => <button key={order.id} type="button" onClick={() => setSelectedId(order.id)} className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 border-l-2 px-4 py-3 text-left hover:bg-[#f8faf7] ${selected?.id === order.id ? "border-[#315d3f] bg-[#f1f5ee]" : "border-transparent"}`}><span className="min-w-0"><span className="block truncate text-sm font-semibold">{order.customer.name} · {order.productName}</span><span className="mt-1 block text-xs text-[#69746c]">{order.quantity} unit{order.quantity === 1 ? "" : "s"} · {order.productSku} · {order.branch.name}</span><span className="mt-1 block text-xs text-[#69746c]">{statusLabel[order.status]} · {order.payments.length} payment{order.payments.length === 1 ? "" : "s"}</span></span><span className="text-right"><span className="block text-sm font-semibold tabular-nums">{money(order.balance)}</span><span className="mt-1 block text-xs text-[#69746c]">of {money(order.totalAmount)}</span></span></button>)}</div> : <p className="p-6 text-sm text-[#69746c]">{filter === "OPEN" && orders.length ? "No open layaway orders." : "No layaway orders yet."}</p>}
+            {loading ? <p className="p-5 text-sm text-[#69746c]">Loading layaway orders…</p> : visibleOrders.length ? <div className="divide-y divide-[#e8ebe8]">{visibleOrders.map((order) => <button key={order.id} type="button" onClick={() => setSelectedId(order.id)} className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 border-l-2 px-4 py-3.5 text-left transition-colors hover:bg-[#f8faf7] ${selected?.id === order.id ? "border-[#39815a] bg-[#f0f7f1]" : "border-transparent"}`}><span className="min-w-0"><span className="block truncate text-[13px] font-semibold text-[#2d4033]">{order.customer.name} · {order.productName}</span><span className="mt-1 block truncate text-[10px] text-[#89968d]">{order.quantity} unit{order.quantity === 1 ? "" : "s"} · {order.productSku} · {order.branch.name}</span><span className="mt-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-[#67816d] ring-1 ring-[#e7ede8]">{statusLabel[order.status]} · {order.payments.length} payment{order.payments.length === 1 ? "" : "s"}</span><span className="mt-2 block h-1 overflow-hidden rounded-full bg-[#e8efe9]"><span className="block h-full rounded-full bg-gradient-to-r from-[#4a9362] to-[#8fc99b]" style={{ width: `${Math.min(100, order.totalAmount ? (order.amountPaid / order.totalAmount) * 100 : 0)}%` }}/></span></span><span className="text-right"><span className="block text-sm font-bold tabular-nums text-[#2d4434]">{money(order.balance)}</span><span className="mt-1 block text-[10px] text-[#89968d]">remaining</span></span></button>)}</div> : <p className="p-6 text-sm text-[#69746c]">{filter === "OPEN" && orders.length ? "No open layaway orders." : "No layaway orders yet."}</p>}
           </section>
 
           <section className="min-w-0 border border-[#dfe4df] bg-white">

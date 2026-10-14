@@ -124,7 +124,12 @@ export async function POST(request: Request) {
   const inventory = await prisma.$transaction(async (transaction) => {
     const existing = await transaction.inventoryItem.findUnique({
       where: { branchId_productId: { branchId: session.user.branchId!, productId: parsed.data.productId } },
-      select: { id: true },
+      select: {
+        id: true,
+        stockOnHand: true,
+        product: { select: { name: true, sku: true, category: true, brand: true, costPrice: true } },
+        branch: { select: { name: true } },
+      },
     });
     if (!existing) return null;
 
@@ -133,7 +138,7 @@ export async function POST(request: Request) {
       data: { stockOnHand: { increment: parsed.data.quantity } },
       select: { id: true, stockOnHand: true, reservedStock: true },
     });
-    await transaction.inventoryMovement.create({
+    const movement = await transaction.inventoryMovement.create({
       data: {
         branchId: session.user.branchId!,
         productId: parsed.data.productId,
@@ -143,8 +148,18 @@ export async function POST(request: Request) {
         reference: parsed.data.reference || null,
         note: parsed.data.note || null,
       },
+      select: { id: true, createdAt: true },
     });
-    return updated;
+    return {
+      ...updated,
+      previousStock: existing.stockOnHand,
+      product: existing.product,
+      branchName: existing.branch.name,
+      receivedBy: session.user.name ?? "Staff member",
+      reference: parsed.data.reference || null,
+      note: parsed.data.note || null,
+      movement,
+    };
   });
 
   if (!inventory) return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });

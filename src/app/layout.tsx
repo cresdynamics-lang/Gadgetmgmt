@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full bg-[#fafafa] text-[#0a0a0a]"><AuthProvider>{children}</AuthProvider></body>
+    <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
+      <body className="min-h-full bg-[#f5f4ee] text-[#202820]"><AuthProvider>{children}</AuthProvider></body>
     </html>
   );
 }

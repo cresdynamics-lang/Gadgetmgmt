@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, UsersRound } from "lucide-react";
+import { ArrowUpRight, Plus, Search, ShieldCheck, UsersRound } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
@@ -29,6 +29,8 @@ export default function StaffPage() {
   const [savingMemberId, setSavingMemberId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
+  const [teamFilter, setTeamFilter] = useState<"ALL" | "ACTIVE" | "ATTENTION">("ALL");
 
   async function loadStaff() {
     const [staffResponse, branchesResponse] = await Promise.all([fetch("/api/staff", { cache: "no-store" }), fetch("/api/branches", { cache: "no-store" })]);
@@ -56,6 +58,12 @@ export default function StaffPage() {
   const activeCount = staff.filter((member) => member.status === "ACTIVE").length;
   const canManage = session?.user.role === "OWNER" || session?.user.role === "BRANCH_MANAGER";
   const canManageAccess = session?.user.role === "OWNER";
+  const attentionCount = staff.filter((member) => member.status !== "ACTIVE").length;
+  const filteredStaff = staff.filter((member) => {
+    const matchesSearch = `${member.name} ${member.email} ${member.branch?.name ?? ""} ${roleNames[member.role] ?? member.role}`.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = teamFilter === "ALL" || (teamFilter === "ACTIVE" ? member.status === "ACTIVE" : member.status !== "ACTIVE");
+    return matchesSearch && matchesStatus;
+  });
 
   async function createStaff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -107,14 +115,15 @@ export default function StaffPage() {
   return (
     <AppShell>
       <div className="space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e2e6e2] pb-4">
+        <div className="staff-welcome relative flex flex-wrap items-end justify-between gap-5 overflow-hidden rounded-[22px] border border-[#dcebe0] bg-[linear-gradient(115deg,#e8f5ec_0%,#f6faf6_55%,#eef6f1_100%)] px-6 py-6 sm:px-7">
+          <div className="pointer-events-none absolute -right-8 -top-20 h-60 w-60 rounded-full border border-[#d2e8d8]"/><div className="pointer-events-none absolute right-9 -top-14 h-44 w-44 rounded-full border border-[#d2e8d8]"/>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">People and access</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight">Staff <span className="ml-1 text-base font-normal text-[#69746c]">{staff.length}</span></h2>
+            <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#438061]"><ShieldCheck className="h-3.5 w-3.5"/>People make the difference</p>
+            <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[#20382c] sm:text-[31px]">Meet your team</h2><p className="mt-1.5 text-sm text-[#6f8376]">A thoughtful team makes every customer visit better.</p>
           </div>
           {canManage ? (
-            <button type="button" onClick={() => { setAdding((current) => !current); setError(""); }} className="inline-flex items-center gap-2 bg-[#173a2b] px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-[#24513a]">
-              <Plus className="h-4 w-4" /> Add staff account
+            <button type="button" onClick={() => { setAdding((current) => !current); setError(""); }} className="relative inline-flex items-center gap-2 rounded-xl bg-[#174b37] px-4 py-3 text-sm font-semibold text-white shadow-[0_7px_18px_rgba(23,75,55,.16)] hover:bg-[#236347]">
+              <Plus className="h-4 w-4" /> Add a teammate <ArrowUpRight className="ml-1 h-4 w-4 text-white/60"/>
             </button>
           ) : null}
         </div>
@@ -188,8 +197,14 @@ export default function StaffPage() {
         ) : null}
 
         <section className="border border-[#dfe4df] bg-white">
-          <div className="border-b border-[#e8ebe8] px-4 py-3.5">
-            <h3 className="text-sm font-semibold">Staff directory</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8ebe8] px-4 py-4 sm:px-5">
+            <div><h3 className="text-sm font-semibold text-[#23372b]">Your people</h3><p className="mt-1 text-xs text-[#819087]">{staff.length} team {staff.length === 1 ? "member" : "members"}</p></div>
+            <label className="flex min-w-[210px] items-center gap-2 rounded-xl border border-[#e5ece7] bg-[#fafcfa] px-3 py-2 text-xs text-[#839087] focus-within:border-[#8ebba2] focus-within:ring-4 focus-within:ring-[#dcefe3]"><Search className="h-4 w-4"/><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search team" placeholder="Find a teammate..." className="w-full border-0 bg-transparent outline-none placeholder:text-[#a2aea7]"/></label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#edf1ed] bg-[#fcfdfc] px-4 py-3 sm:px-5">
+            <span className="mr-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#98a49c]">View</span>
+            {[{ id: "ALL", label: "Everyone", count: staff.length }, { id: "ACTIVE", label: "Active", count: activeCount }, { id: "ATTENTION", label: "Needs attention", count: attentionCount }].map((option) => <button key={option.id} type="button" aria-pressed={teamFilter === option.id} onClick={() => setTeamFilter(option.id as typeof teamFilter)} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold transition ${teamFilter === option.id ? "border-[#cde2d2] bg-[#edf7ef] text-[#34724d]" : "border-transparent bg-white text-[#829087] hover:border-[#e3ebe4] hover:text-[#516858]"}`}><span>{option.label}</span><span className={`tabular-nums ${teamFilter === option.id ? "text-[#669274]" : "text-[#a0aba3]"}`}>{loading ? "—" : option.count}</span></button>)}
+            <span className="ml-auto hidden text-[10px] text-[#98a49c] sm:inline">Select a member to review access</span>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
@@ -205,11 +220,10 @@ export default function StaffPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf0ed]">
-                {staff.map((member) => (
+                {filteredStaff.map((member) => (
                   <tr key={member.id}>
                     <td className="px-4 py-3">
-                      <p className="font-medium">{member.name}</p>
-                      <p className="mt-1 text-xs text-[#69746c]">{member.email}</p>
+                      <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eaf4ed] text-xs font-bold tracking-wide text-[#326247] ring-1 ring-[#dcebe0]">{member.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><div className="min-w-0"><p className="truncate font-semibold text-[#263b2e]">{member.name}</p><p className="mt-1 truncate text-[11px] text-[#87948c]">{member.email}</p></div></div>
                     </td>
                     <td className="px-4 py-3">
                       {canManageAccess && member.id !== session?.user.id ? (
@@ -219,7 +233,7 @@ export default function StaffPage() {
                           <option value="CASHIER">Cashier</option>
                           <option value="INVENTORY_LEAD">Inventory lead</option>
                         </select>
-                      ) : roleNames[member.role] ?? member.role}
+                      ) : <span className="inline-flex rounded-full bg-[#f2f5f2] px-2.5 py-1 text-[11px] font-semibold text-[#5f7165]">{roleNames[member.role] ?? member.role}</span>}
                     </td>
                     <td className="px-4 py-3 text-[#69746c]">{member.branch?.name ?? "Unassigned"}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{member._count.sales}</td>
@@ -230,17 +244,17 @@ export default function StaffPage() {
                           <option value="OFF_SHIFT">Off shift</option>
                           <option value="SUSPENDED">Suspended</option>
                         </select>
-                      ) : <span className={`text-xs ${member.status === "ACTIVE" ? "text-[#42684a]" : "text-[#995338]"}`}>{member.status.replace("_", " ")}</span>}
+                      ) : <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${member.status === "ACTIVE" ? "bg-[#eaf6ed] text-[#367d50]" : member.status === "SUSPENDED" ? "bg-[#fff0ed] text-[#aa5543]" : "bg-[#f4f2ea] text-[#897948]"}`}><span className={`h-1.5 w-1.5 rounded-full ${member.status === "ACTIVE" ? "bg-[#50a56c]" : member.status === "SUSPENDED" ? "bg-[#d97864]" : "bg-[#c1a854]"}`}/>{member.status.replace("_", " ")}</span>}
                     </td>
                     {canManageAccess ? <td className="px-4 py-3 text-xs text-[#69746c]">{member.id === session?.user.id ? "Current account" : savingMemberId === member.id ? "Saving…" : "Changes save immediately"}</td> : null}
                     <td className="px-4 py-3 text-xs text-[#69746c]">{new Date(member.createdAt).toLocaleDateString("en-KE")}</td>
                   </tr>
                 ))}
-                {!loading && !staff.length ? (
+                {!loading && !filteredStaff.length ? (
                   <tr>
                     <td colSpan={canManageAccess ? 7 : 6} className="px-4 py-10 text-center">
-                      <p className="text-sm font-semibold">No staff accounts found</p>
-                      <p className="mt-1 text-sm text-[#69746c]">Create a staff account to grant a team member access.</p>
+                      <p className="text-sm font-semibold">{query ? "No teammates match that search" : staff.length ? "No teammates in this view" : "Your team is just getting started"}</p>
+                      <p className="mt-1 text-sm text-[#69746c]">{query ? "Try another name, role, email or branch." : staff.length ? "Choose another team filter to see more people." : "Create a staff account to welcome someone to the team."}</p>
                     </td>
                   </tr>
                 ) : null}

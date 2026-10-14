@@ -43,6 +43,8 @@ const customerSchema = z.object({
   phone: z.string().trim().min(7).max(30),
   email: z.union([z.string().trim().email().max(254), z.literal("")]).optional(),
   creditLimit: z.number().int().nonnegative().default(0),
+  smsRemindersEnabled: z.boolean().default(false),
+  emailRemindersEnabled: z.boolean().default(false),
   branchId: z.string().cuid().optional(),
 });
 
@@ -63,6 +65,9 @@ export async function POST(request: Request) {
       phone: parsed.data.phone,
       email: parsed.data.email || null,
       creditLimit: parsed.data.creditLimit,
+      smsRemindersEnabled: parsed.data.smsRemindersEnabled,
+      emailRemindersEnabled: parsed.data.emailRemindersEnabled,
+      remindersConsentAt: parsed.data.smsRemindersEnabled || parsed.data.emailRemindersEnabled ? new Date() : null,
       branchId,
     },
     include: { branch: { select: { name: true } } },

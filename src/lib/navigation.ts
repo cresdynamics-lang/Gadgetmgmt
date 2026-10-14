@@ -3,9 +3,9 @@ export const navItems = [
   { label: "Sales (POS)", href: "/sales" },
   { label: "Inventory", href: "/inventory" },
   { label: "Customers", href: "/customers" },
-  { label: "Credit Accounts", href: "/credit" },
-  { label: "Lipa Mdogo Mdogo", href: "/layaway" },
+  { label: "Lipa Mdogo Mdogo", href: "/credit" },
   { label: "Staff & Users", href: "/staff" },
-  { label: "Reports", href: "/reports" },
+  { label: "Business insights", href: "/insights" },
+  { label: "Messages & alerts", href: "/notifications" },
   { label: "Settings", href: "/settings" },
 ];
