@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 const policySchema = z.object({
   branchId: z.string().cuid(),
   graceDays: z.number().int().min(0).max(30),
-  lateFeeAmount: z.number().int().min(0).max(2_000_000_000),
+  lateFeeAmount: z.literal(0),
   minimumDepositPercent: z.number().int().min(0).max(100),
   defaultCreditLimit: z.number().int().min(0).max(2_000_000_000),
   earlySettlementDiscountPercent: z.number().int().min(0).max(100),

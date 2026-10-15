@@ -38,8 +38,8 @@ function dueLabel(daysUntilDue: number) {
 }
 
 async function refreshPlanStates(now: Date) {
-  const plans = await prisma.creditPlan.findMany({ where: { balance: { gt: 0 }, status: { not: "PAID_OFF" } }, select: { id: true, branchId: true, customerId: true, balance: true, lateFeeAppliedAt: true, nextDueDate: true, status: true, customer: { select: { name: true } }, branch: { select: { name: true } } } });
-  const policies = await prisma.creditPolicy.findMany({ select: { branchId: true, graceDays: true, lateFeeAmount: true, managerEscalationDays: true, ownerEscalationDays: true } });
+  const plans = await prisma.creditPlan.findMany({ where: { balance: { gt: 0 }, status: { not: "PAID_OFF" } }, select: { id: true, branchId: true, customerId: true, balance: true, nextDueDate: true, status: true, customer: { select: { name: true } }, branch: { select: { name: true } } } });
+  const policies = await prisma.creditPolicy.findMany({ select: { branchId: true, graceDays: true, managerEscalationDays: true, ownerEscalationDays: true } });
   const policyByBranch = new Map(policies.map((policy) => [policy.branchId, policy]));
   let changed = 0;
   for (const plan of plans) {
@@ -56,15 +56,7 @@ async function refreshPlanStates(now: Date) {
         if (customer) await transaction.customer.update({ where: { id: plan.customerId }, data: { reliabilityScore: Math.max(0, customer.reliabilityScore - 5) } });
       });
     }
-    const fee = policy?.lateFeeAmount ?? 0;
-    if (fee > 0 && overdueDays > (policy?.graceDays ?? 3) && !plan.lateFeeAppliedAt) {
-      await prisma.$transaction(async (transaction) => {
-        const installment = await transaction.creditInstallment.findFirst({ where: { creditPlanId: plan.id, paidAt: null }, orderBy: { sequence: "asc" }, select: { id: true } });
-        if (!installment) return;
-        const applied = await transaction.creditPlan.updateMany({ where: { id: plan.id, balance: plan.balance, lateFeeAppliedAt: null }, data: { balance: { increment: fee }, lateFeeAmount: fee, lateFeeAppliedAt: now } });
-        if (applied.count === 1) await transaction.creditInstallment.update({ where: { id: installment.id }, data: { amount: { increment: fee } } });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    }
+    // Automatic fees remain disabled until each plan stores auditable customer consent.
     const escalation = overdueDays >= (policy?.ownerEscalationDays ?? 7) ? "OWNER" : overdueDays >= (policy?.managerEscalationDays ?? 3) ? "MANAGER" : null;
     if (!escalation) continue;
     const date = nairobiDate(now);

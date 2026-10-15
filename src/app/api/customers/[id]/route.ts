@@ -30,6 +30,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         select: {
           id: true,
           totalAmount: true,
+          lateFeeAmount: true,
           depositAmount: true,
           balance: true,
           installmentCount: true,

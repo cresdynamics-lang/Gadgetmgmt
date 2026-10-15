@@ -14,7 +14,7 @@ export async function GET() {
   const [items, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { branchId: session.user.branchId },
-      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, costPrice: true, sellingPrice: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, costPrice: true, sellingPrice: true, reorderLevel: true } } },
       orderBy: { product: { name: "asc" } },
     }),
     prisma.inventoryMovement.findMany({
@@ -31,6 +31,7 @@ export async function GET() {
 const receiptSchema = z.object({
   productId: z.string().cuid(),
   quantity: z.number().int().min(1).max(10000),
+  reorderLevel: z.number().int().nonnegative().max(100000).optional(),
   reference: z.string().trim().max(100).optional(),
   note: z.string().trim().max(300).optional(),
 });
@@ -135,7 +136,7 @@ export async function POST(request: Request) {
 
     const updated = await transaction.inventoryItem.update({
       where: { id: existing.id },
-      data: { stockOnHand: { increment: parsed.data.quantity } },
+      data: { stockOnHand: { increment: parsed.data.quantity }, ...(parsed.data.reorderLevel !== undefined ? { reorderLevel: parsed.data.reorderLevel } : {}) },
       select: { id: true, stockOnHand: true, reservedStock: true },
     });
     const movement = await transaction.inventoryMovement.create({

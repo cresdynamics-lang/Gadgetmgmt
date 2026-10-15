@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { ArrowRight, AlertCircle, CalendarClock, ChevronLeft, ChevronRight, CreditCard, Mail, Pencil, Phone, Plus, Search, UserRoundPlus } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { creditProgress } from "@/lib/credit-progress";
 
 type Customer = {
   id: string;
@@ -40,6 +41,7 @@ type CustomerCreditAccount = {
   id: string;
   imei: string | null;
   totalAmount: number;
+  lateFeeAmount: number;
   depositAmount: number;
   balance: number;
   installmentCount: number;
@@ -290,7 +292,7 @@ export default function CustomersPage() {
                 {accountsLoading ? <p className="px-5 py-8 text-center text-xs text-[#879187]">Loading payment history…</p> : accountsError && !creditAccounts.length ? <p role="alert" className="m-4 rounded-lg border border-[#f0ded8] bg-[#fffaf8] px-3 py-2.5 text-xs text-[#914c3d]">{accountsError}</p> : creditAccounts.length ? <div className="space-y-3 p-3 sm:p-4">
                   {accountsError ? <p role="status" className="rounded-lg bg-[#fffaf0] px-3 py-2 text-[10px] text-[#8a6938]">Showing the latest saved activity. Live refresh is temporarily unavailable.</p> : null}
                   {creditAccounts.map((account) => {
-                    const repaid = account.totalAmount - account.balance;
+                    const { totalObligation, paidToDate: repaid, percent: progressPercent } = creditProgress(account.totalAmount, account.balance, account.lateFeeAmount);
                     const paidInstallments = account.installments.filter((installment) => installment.paidAt).length;
                     const overdueInstallments = account.installments.filter((installment) => !installment.paidAt && nairobiDay(installment.dueDate) < nairobiDay(new Date()));
                     const alertRequests = account.paymentRequests.filter((request) => request.status === "REVIEW" || request.status === "PROCESSING");
@@ -304,8 +306,8 @@ export default function CustomersPage() {
                         <div className="text-left sm:text-right"><p className="text-[9px] font-semibold uppercase tracking-[.1em] text-[#8a978e]">Balance remaining</p><p className="mt-1 text-lg font-bold tracking-tight text-[#294533]">{money(account.balance)}</p></div>
                       </div>
                       <div className="px-4 py-3.5">
-                        <div className="flex items-center justify-between gap-3 text-[10px]"><span className="font-medium text-[#637267]">{money(repaid)} paid of {money(account.totalAmount)}</span><span className="text-[#879187]">{paidInstallments} / {account.installmentCount} installments</span></div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf1eb]"><div className="h-full rounded-full bg-[#65a475] transition-all" style={{ width: `${account.totalAmount > 0 ? Math.min(100, (repaid / account.totalAmount) * 100) : 0}%` }}/></div>
+                        <div className="flex items-center justify-between gap-3 text-[10px]"><span className="font-medium text-[#637267]">{money(repaid)} paid of {money(totalObligation)}{account.lateFeeAmount ? ` · includes ${money(account.lateFeeAmount)} late fee` : ""}</span><span className="text-[#879187]">{paidInstallments} / {account.installmentCount} installments</span></div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf1eb]"><div className="h-full rounded-full bg-[#65a475] transition-all" style={{ width: `${progressPercent}%` }}/></div>
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="inline-flex items-center gap-1.5 text-[10px] text-[#758177]"><CalendarClock className="h-3.5 w-3.5"/>{account.status === "PAID_OFF" ? "No balance due" : `Next due ${new Date(account.nextDueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}`}</p><Link href={`/credit?account=${account.id}`} className="inline-flex items-center gap-1 rounded-lg border border-[#dfe8df] bg-[#fafcf9] px-2.5 py-1.5 text-[10px] font-semibold text-[#3d684a] hover:bg-[#eff6ef]">Open account in Lipa<ArrowRight className="h-3 w-3"/></Link></div>
                       </div>
                       <div className="grid border-t border-[#edf0eb] lg:grid-cols-2">

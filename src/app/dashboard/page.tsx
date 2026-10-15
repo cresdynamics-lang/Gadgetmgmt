@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessPage } from "@/lib/access";
 import { AiBriefing } from "@/app/insights/ai-briefing";
+import { needsReorder } from "@/lib/stock-levels";
 
 export const instant = false;
 
@@ -68,7 +69,8 @@ export default async function DashboardPage() {
   const weekTotal = currentWeekSales.reduce((sum, sale) => sum + sale.total, 0);
   const previousTotal = previousWeekSales.reduce((sum, sale) => sum + sale.total, 0);
   const units = inventory.reduce((sum, item) => sum + item.stockOnHand, 0);
-  const lowStock = inventory.filter((item) => item.stockOnHand - item.reservedStock <= Math.max(item.reorderLevel, item.product.reorderLevel));
+  const lowStock = inventory.filter((item) => needsReorder(item.stockOnHand - item.reservedStock, item.reorderLevel, item.product.reorderLevel));
+  const monitoredStockCount = inventory.filter((item) => Math.max(item.reorderLevel, item.product.reorderLevel) > 0).length;
   const dailyTotals = Array.from({ length: 7 }, (_, offset) => {
     const day = new Date(startWeek);
     day.setDate(day.getDate() + offset);
@@ -108,13 +110,13 @@ export default async function DashboardPage() {
           <MetricCard label="Sales today" value={money(todayTotal)} delta={`${todaySales.length} transactions`} tone="green" />
           <MetricCard label="Sales · 7 days" value={money(weekTotal)} delta={weekChange} tone={weekTotal >= previousTotal ? "green" : "amber"} />
           <MetricCard label="Units on hand" value={units.toLocaleString("en-KE")} delta={`${inventory.length} stocked products`} tone="neutral" />
-          <MetricCard label="Reorder attention" value={String(lowStock.length)} delta="at or below minimum" tone={lowStock.length ? "amber" : "green"} />
+          <MetricCard label="Reorder attention" value={String(lowStock.length)} delta={`${monitoredStockCount} products have a reorder point`} tone={lowStock.length ? "amber" : "green"} />
         </div>
 
         <section aria-labelledby="action-desk-heading" className="dashboard-action-desk overflow-hidden rounded-[18px] border border-[#e6e8df] bg-white shadow-[0_3px_14px_rgba(42,46,34,.03)]">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#edf0e9] px-4 py-3.5 sm:px-5"><div><p className="text-[9px] font-semibold uppercase tracking-[.17em] text-[#839084]">A clear next step</p><h3 id="action-desk-heading" className="mt-1 text-sm font-semibold text-[#2e4034]">Today’s action desk</h3></div><span className="rounded-full bg-[#f5f7f2] px-2.5 py-1 text-[9px] font-medium text-[#7b877d]">Live from this branch</span></div>
           <div className="grid divide-y divide-[#edf0e9] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3">
-            <Link href="/inventory" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${lowStock.length ? "bg-[#fff2e8] text-[#a15d3d]" : "bg-[#eaf4eb] text-[#477452]"}`}>{lowStock.length ? <AlertTriangle className="h-4 w-4"/> : <PackageCheck className="h-4 w-4"/>}</span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 text-xs font-semibold text-[#344638]">{lowStock.length ? `${lowStock.length} stock items need attention` : "Stock levels look healthy"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{lowStock.length ? "Review quantities and reorder points" : "Open inventory to check availability"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link>
+            <Link href="/inventory" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${lowStock.length ? "bg-[#fff2e8] text-[#a15d3d]" : "bg-[#eaf4eb] text-[#477452]"}`}>{lowStock.length ? <AlertTriangle className="h-4 w-4"/> : <PackageCheck className="h-4 w-4"/>}</span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 text-xs font-semibold text-[#344638]">{lowStock.length ? `${lowStock.length} stock items need attention` : "No configured reorder alerts"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{lowStock.length ? "Review quantities and reorder points" : `${monitoredStockCount} products monitored · set a reorder point in inventory`}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link>
             <Link href="/credit" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${overduePlanCount ? "bg-[#fff0e8] text-[#a15d3d]" : "bg-[#f3f3eb] text-[#81764f]"}`}><CreditCard className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#344638]">{overduePlanCount ? `${overduePlanCount} overdue Lipa plans` : "Collections are on track"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{overduePlanCount ? "Review balances and follow-up status" : "Open Lipa Mdogo Mdogo"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link>
             {canAccessPage(session?.user.role ?? "", "/notifications") ? <Link href="/notifications" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${paymentReviewCount ? "bg-[#fff0e8] text-[#a15d3d]" : "bg-[#edf3f1] text-[#55746a]"}`}><BellRing className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#344638]">{paymentReviewCount ? `${paymentReviewCount} payment checks need review` : "Payment messages are clear"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{paymentReviewCount ? "Resolve unmatched M-Pesa confirmations" : "Open messages and delivery activity"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link> : null}
           </div>

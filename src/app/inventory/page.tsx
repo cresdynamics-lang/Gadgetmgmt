@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowDownToLine, Check, Download, FileText, Package, Search } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { downloadInventoryReceipt, type InventoryReceiptData } from "@/lib/receipt-pdf";
+import { needsReorder, reorderThreshold } from "@/lib/stock-levels";
 
 type InventoryItem = {
   id: string;
@@ -11,7 +12,7 @@ type InventoryItem = {
   reservedStock: number;
   reorderLevel: number;
   lastUpdatedAt: string;
-  product: { id: string; sku: string; name: string; category: string; brand: string | null; costPrice: number; sellingPrice: number };
+  product: { id: string; sku: string; name: string; category: string; brand: string | null; costPrice: number; sellingPrice: number; reorderLevel: number };
 };
 
 type Movement = {
@@ -68,7 +69,7 @@ export default function InventoryPage() {
   const receiveMatches = useMemo(() => items.filter((item) => `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(productSearch.trim().toLowerCase())).slice(0, 30), [items, productSearch]);
   const selectedProduct = items.find((item) => item.product.id === selectedProductId) ?? null;
   const stockUnits = items.reduce((sum, item) => sum + item.stockOnHand, 0);
-  const lowStockCount = items.filter((item) => item.stockOnHand - item.reservedStock <= item.reorderLevel).length;
+  const lowStockCount = items.filter((item) => needsReorder(item.stockOnHand - item.reservedStock, item.reorderLevel, item.product.reorderLevel)).length;
   const stockValue = items.reduce((sum, item) => sum + item.stockOnHand * item.product.costPrice, 0);
 
   async function receiveStock(event: FormEvent<HTMLFormElement>) {
@@ -87,7 +88,7 @@ export default function InventoryPage() {
       const response = await fetch("/api/inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: selectedProductId, quantity: Number(data.get("quantity")), reference: data.get("reference"), note: data.get("note") }),
+        body: JSON.stringify({ productId: selectedProductId, quantity: Number(data.get("quantity")), reorderLevel: Number(data.get("reorderLevel")), reference: data.get("reference"), note: data.get("note") }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Stock receipt failed.");
@@ -167,7 +168,7 @@ export default function InventoryPage() {
 
         <div className="inventory-stats grid gap-3 sm:grid-cols-3">
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Units on hand</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : stockUnits.toLocaleString("en-KE")}</p></div>
-          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">At or below reorder level</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : lowStockCount}</p></div>
+          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Configured reorder alerts</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : lowStockCount}</p></div>
           <div className="px-4 py-4"><p className="text-xs text-[#69746c]">Cost value · listed stock</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : money(stockValue)}</p></div>
         </div>
 
@@ -191,6 +192,7 @@ export default function InventoryPage() {
               {selectedProduct ? <p className="mt-1.5 text-[10px] font-medium text-[#58806a]">Selected · {selectedProduct.product.category} · current stock {selectedProduct.stockOnHand}</p> : <p className="mt-1.5 text-[10px] font-normal text-[#8a948b]">Type a product name, SKU, category, or brand.</p>}
             </div>
             <label className="text-xs font-medium text-[#526057]">Quantity received<input name="quantity" type="number" min="1" max="10000" step="1" required className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm text-[#17211b]" /></label>
+            <label className="text-xs font-medium text-[#526057]">Reorder point<input name="reorderLevel" type="number" min="0" max="100000" step="1" value={selectedProduct ? Math.max(selectedProduct.reorderLevel, selectedProduct.product.reorderLevel) : 0} onChange={(event) => { const value = Number(event.target.value); if (selectedProductId) setItems((current) => current.map((item) => item.product.id === selectedProductId ? { ...item, reorderLevel: value } : item)); }} className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm text-[#17211b]"/><span className="mt-1 block text-[10px] text-[#7e897f]">Alert at this available stock level. Zero disables reorder alerts.</span></label>
             <label className="text-xs font-medium text-[#526057]">Supplier invoice / reference<input name="reference" maxLength={100} className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm text-[#17211b]" /></label>
             <label className="text-xs font-medium text-[#526057]">Note <span className="font-normal">(optional)</span><input name="note" maxLength={300} className="mt-1 w-full border border-[#d6ddd6] px-3 py-2.5 text-sm text-[#17211b]" /></label>
           </div>
@@ -223,8 +225,10 @@ export default function InventoryPage() {
             <tbody className="divide-y divide-[#edf0ed]">
               {loading ? <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-[#69746c]">Loading live branch stock…</td></tr> : filteredItems.map((item) => {
                 const available = item.stockOnHand - item.reservedStock;
-                const low = available <= item.reorderLevel;
-                return <tr key={item.id} className="hover:bg-[#f9faf8]"><td className="px-4 py-3 font-medium">{item.product.name}</td><td className="px-4 py-3 font-mono text-xs text-[#69746c]">{item.product.sku}</td><td className="px-4 py-3 text-[#69746c]">{item.product.category}</td><td className="px-4 py-3 text-right tabular-nums">{item.stockOnHand}</td><td className="px-4 py-3 text-right tabular-nums">{item.reservedStock}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{available}</td><td className="px-4 py-3 text-right tabular-nums">{money(item.product.costPrice)}</td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${low ? "bg-[#fff1ed] text-[#a85644]" : "bg-[#ebf6ed] text-[#39794e]"}`}><span className={`h-1.5 w-1.5 rounded-full ${low ? "bg-[#bd724e]" : "bg-[#739464]"}`} />{low ? "Reorder" : "In stock"}</span></td></tr>;
+                const threshold = reorderThreshold(item.reorderLevel, item.product.reorderLevel);
+                const low = needsReorder(available, item.reorderLevel, item.product.reorderLevel);
+                const stockLabel = low ? "Reorder" : threshold === 0 ? "No alert set" : available <= 0 ? "Out of stock" : "In stock";
+                return <tr key={item.id} className="hover:bg-[#f9faf8]"><td className="px-4 py-3 font-medium">{item.product.name}</td><td className="px-4 py-3 font-mono text-xs text-[#69746c]">{item.product.sku}</td><td className="px-4 py-3 text-[#69746c]">{item.product.category}</td><td className="px-4 py-3 text-right tabular-nums">{item.stockOnHand}</td><td className="px-4 py-3 text-right tabular-nums">{item.reservedStock}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{available}</td><td className="px-4 py-3 text-right tabular-nums">{money(item.product.costPrice)}</td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${low ? "bg-[#fff1ed] text-[#a85644]" : "bg-[#ebf6ed] text-[#39794e]"}`}><span className={`h-1.5 w-1.5 rounded-full ${low ? "bg-[#bd724e]" : "bg-[#739464]"}`} />{stockLabel}</span></td></tr>;
               })}
               {!loading && !filteredItems.length ? <tr><td colSpan={8} className="px-4 py-9 text-center"><p className="text-sm font-semibold">{items.length ? "No matching stock records" : "No stock records for this branch"}</p><p className="mt-1 text-sm text-[#69746c]">{items.length ? "Try another search." : "Products must be configured for this branch before stock can be received."}</p></td></tr> : null}
             </tbody>
