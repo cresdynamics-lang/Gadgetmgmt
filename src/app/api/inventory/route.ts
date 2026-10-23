@@ -2,19 +2,21 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability, hasPermission } from "@/lib/access";
+import { denied } from "@/lib/authz";
+import { recordActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "inventory")) return NextResponse.json({ error: "Your role cannot access inventory." }, { status: 403 });
+  if (!canUseCapability(session.user, "inventory")) return denied(session.user, "inventory", "Your role cannot access inventory.");
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
   const [items, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { branchId: session.user.branchId },
-      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, costPrice: true, sellingPrice: true, reorderLevel: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, imei: true, costPrice: true, sellingPrice: true, reorderLevel: true } } },
       orderBy: { product: { name: "asc" } },
     }),
     prisma.inventoryMovement.findMany({
@@ -25,7 +27,13 @@ export async function GET() {
     }),
   ]);
 
-  return NextResponse.json({ items, movements });
+  // Buying prices are part of the financial position, so they need the finance permission.
+  const canSeeCost = hasPermission(session.user, "finance.view");
+  return NextResponse.json({
+    items: canSeeCost ? items : items.map((item) => ({ ...item, product: { ...item.product, costPrice: null } })),
+    movements,
+    canSeeCost,
+  });
 }
 
 const receiptSchema = z.object({
@@ -40,6 +48,8 @@ const productSchema = z.object({
   sku: z.string().trim().min(2).max(64).transform((sku) => sku.toUpperCase()),
   name: z.string().trim().min(2).max(160),
   category: z.string().trim().min(2).max(80),
+  // New stock comes in as new or ex-UK. Trade-ins are added from the POS at checkout.
+  condition: z.enum(["NEW", "EX_UK"]).default("NEW"),
   brand: z.string().trim().max(80).optional(),
   costPrice: z.number().int().nonnegative().max(2_000_000_000),
   sellingPrice: z.number().int().positive().max(2_000_000_000),
@@ -51,10 +61,10 @@ const productSchema = z.object({
 export async function PUT(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "inventory")) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
+  if (!canUseCapability(session.user, "inventory")) return denied(session.user, "inventory", "Your role cannot manage inventory.");
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
-  if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
-    return NextResponse.json({ error: "Your role cannot set up products." }, { status: 403 });
+  if (!hasPermission(session.user, "inventory.receive")) {
+    return denied(session.user, "inventory.receive", "Your permissions cannot set up products.");
   }
 
   const parsed = productSchema.safeParse(await request.json().catch(() => null));
@@ -67,6 +77,7 @@ export async function PUT(request: Request) {
           sku: parsed.data.sku,
           name: parsed.data.name,
           category: parsed.data.category,
+          condition: parsed.data.condition,
           brand: parsed.data.brand || null,
           costPrice: parsed.data.costPrice,
           sellingPrice: parsed.data.sellingPrice,
@@ -100,6 +111,14 @@ export async function PUT(request: Request) {
       return created;
     });
 
+    await recordActivity({
+      userId: session.user.id,
+      sessionId: session.user.sessionId,
+      action: "PRODUCT_CREATED",
+      summary: `Added Apple product ${product.name} (${product.sku})`,
+      entityType: "Product",
+      entityId: product.id,
+    });
     return NextResponse.json(product, { status: 201 });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
@@ -113,10 +132,10 @@ export async function PUT(request: Request) {
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "inventory")) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
+  if (!canUseCapability(session.user, "inventory")) return denied(session.user, "inventory", "Your role cannot manage inventory.");
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
-  if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
-    return NextResponse.json({ error: "Your role cannot receive inventory." }, { status: 403 });
+  if (!hasPermission(session.user, "inventory.receive")) {
+    return denied(session.user, "inventory.receive", "Your permissions cannot receive inventory.");
   }
 
   const parsed = receiptSchema.safeParse(await request.json().catch(() => null));
@@ -164,5 +183,13 @@ export async function POST(request: Request) {
   });
 
   if (!inventory) return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });
+  await recordActivity({
+    userId: session.user.id,
+    sessionId: session.user.sessionId,
+    action: "STOCK_RECEIVED",
+    summary: `Received ${parsed.data.quantity} of ${inventory.product.name}`,
+    entityType: "InventoryItem",
+    entityId: inventory.id,
+  });
   return NextResponse.json(inventory, { status: 201 });
 }

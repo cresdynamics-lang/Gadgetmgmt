@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 
+import { brandMarkDataUrl } from "@/lib/brand";
+
 export type SaleReceiptData = {
   invoiceNumber: string;
   total: number;
@@ -7,12 +9,16 @@ export type SaleReceiptData = {
   taxAmount?: number;
   paidAmount: number;
   paymentMethod: string;
+  tradeInBrand?: string | null;
+  tradeInModel?: string | null;
+  tradeInValue?: number;
   createdAt: string;
   branch: { name: string; address: string; phone: string };
   cashier: { name: string };
   customer: { name: string; phone: string } | null;
   saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string } }[];
   payments: { amount: number; method: string }[];
+  paymentLinks?: { label: string; url: string }[];
 };
 
 export type LayawayReceiptData = {
@@ -47,6 +53,7 @@ export type CreditAgreementData = {
   balance: number;
   termMonths: number;
   installments: { sequence: number; dueDate: string; amount: number }[];
+  payUrl?: string;
 };
 
 export type InventoryReceiptData = {
@@ -59,7 +66,7 @@ export type InventoryReceiptData = {
   quantity: number;
   previousStock: number;
   newStock: number;
-  product: { name: string; sku: string; category: string; brand: string | null; costPrice: number };
+  product: { name: string; sku: string; category: string; brand: string | null; costPrice: number | null };
 };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
@@ -71,9 +78,10 @@ function createDocument(title: string, branchName: string, date: string) {
   const margin = 18;
   let y = 20;
 
+  doc.addImage(brandMarkDataUrl, "PNG", margin, y - 6, 10, 10);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(19);
-  doc.text("GadgetHub", margin, y);
+  doc.text("GadgetHub", margin + 13, y);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   doc.text(branchName, pageWidth - margin, y, { align: "right" });
@@ -86,7 +94,7 @@ function createDocument(title: string, branchName: string, date: string) {
   doc.setFontSize(9);
   doc.text(date, margin, y);
   y += 5;
-  doc.setDrawColor(190, 198, 190);
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin, y, pageWidth - margin, y);
   y += 8;
 
@@ -96,6 +104,18 @@ function createDocument(title: string, branchName: string, date: string) {
     pageWidth,
     get y() { return y; },
     set y(value: number) { y = value; },
+    link(label: string, url: string) {
+      doc.setFont("helvetica", "bold");
+      doc.text(label, margin, y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(17, 17, 17);
+      doc.textWithLink(url, margin + 40, y, { url });
+      y += 6;
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+    },
     line(label: string, value: string) {
       doc.setFont("helvetica", "bold");
       doc.text(label, margin, y);
@@ -119,7 +139,7 @@ function createDocument(title: string, branchName: string, date: string) {
     },
     finish() {
       doc.setFontSize(8);
-      doc.setTextColor(110, 120, 112);
+      doc.setTextColor(107, 107, 107);
       doc.text("Thank you for choosing GadgetHub.", margin, Math.min(y + 8, 285));
       return doc;
     },
@@ -132,17 +152,12 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   const margin = 18;
   const right = pageWidth - margin;
   let y = 19;
-  const ink: [number, number, number] = [39, 56, 43];
-  const muted: [number, number, number] = [111, 117, 106];
-  const gold: [number, number, number] = [138, 112, 71];
+  const ink: [number, number, number] = [17, 17, 17];
+  const muted: [number, number, number] = [107, 107, 107];
+  const gold: [number, number, number] = [17, 17, 17];
   const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
 
-  doc.setFillColor(31, 73, 53);
-  doc.roundedRect(margin, y - 6, 13, 13, 2, 2, "F");
-  doc.setTextColor(245, 231, 199);
-  doc.setFont("times", "bold");
-  doc.setFontSize(16);
-  doc.text("G", margin + 6.5, y + 2.8, { align: "center" });
+  doc.addImage(brandMarkDataUrl, "PNG", margin, y - 6, 13, 13);
   doc.setTextColor(...gold);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
@@ -157,7 +172,7 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   const branchLines = doc.splitTextToSize(`${receipt.branch.address}\n${receipt.branch.phone}`, 58);
   doc.text(branchLines, right, y - 1, { align: "right" });
   y += 19;
-  doc.setDrawColor(226, 223, 212);
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin, y, right, y);
   y += 10;
 
@@ -190,7 +205,7 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.text(`Served by ${receipt.cashier.name}`, right, y, { align: "right" });
   y += 5;
   const tableWidth = pageWidth - margin * 2;
-  doc.setFillColor(248, 247, 242);
+  doc.setFillColor(245, 245, 245);
   doc.rect(margin, y, tableWidth, 9, "F");
   doc.setTextColor(...muted);
   doc.setFont("helvetica", "bold");
@@ -208,7 +223,7 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
       doc.addPage();
       y = 20;
     }
-    doc.setDrawColor(239, 237, 230);
+    doc.setDrawColor(229, 229, 229);
     doc.line(margin, y + rowHeight, right, y + rowHeight);
     doc.setTextColor(...ink);
     doc.setFont("helvetica", "normal");
@@ -252,18 +267,38 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.text(paymentLines, margin, y + 7);
   y += 7;
 
-  doc.setDrawColor(226, 223, 212);
+  doc.setDrawColor(229, 229, 229);
   doc.line(totalLabelX, y, right, y);
   y += 7;
   amountRow("Subtotal", money(subtotal));
   if ((receipt.discountAmount ?? 0) > 0) amountRow("Discount", `- ${money(receipt.discountAmount ?? 0)}`);
+  if ((receipt.tradeInValue ?? 0) > 0) amountRow(receipt.tradeInModel ? `Trade-in · ${receipt.tradeInModel}` : "Trade-in", `- ${money(receipt.tradeInValue ?? 0)}`);
   if ((receipt.taxAmount ?? 0) > 0) amountRow("Tax", money(receipt.taxAmount ?? 0));
   amountRow("Total", money(receipt.total), { strong: true, color: ink });
   amountRow("Paid", money(receipt.paidAmount));
   amountRow("Balance due", money(Math.max(receipt.total - receipt.paidAmount, 0)), { strong: true, color: gold });
+  if (receipt.paymentLinks?.length) {
+    y += 4;
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("PAY ONLINE", margin, y);
+    y += 6;
+    for (const link of receipt.paymentLinks) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(link.label, margin, y);
+      y += 5;
+      doc.setTextColor(17, 17, 17);
+      doc.setFontSize(8);
+      doc.textWithLink(link.url, margin, y, { url: link.url });
+      doc.setTextColor(...muted);
+      y += 7;
+    }
+  }
 
   const footerY = Math.min(Math.max(y + 8, 275), 285);
-  doc.setDrawColor(226, 223, 212);
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin, footerY - 5, right, footerY - 5);
   doc.setTextColor(...ink);
   doc.setFont("times", "italic");
@@ -324,6 +359,10 @@ export function downloadCreditAgreementPdf(agreement: CreditAgreementData) {
   pdf.line("Deposit received", money(agreement.depositAmount));
   pdf.line("Financed balance", money(agreement.balance));
   pdf.line("Repayment term", `${agreement.termMonths} months`);
+  if (agreement.payUrl) {
+    pdf.section("Pay this plan");
+    pdf.link("Payment page", agreement.payUrl);
+  }
   pdf.section("Repayment schedule");
   for (const installment of agreement.installments) {
     pdf.line(`Payment ${installment.sequence} · ${new Date(installment.dueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Nairobi" })}`, money(installment.amount));
@@ -341,36 +380,31 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   const width = doc.internal.pageSize.getWidth();
   const margin = 18;
   const right = width - margin;
-  const ink: [number, number, number] = [35, 55, 44];
-  const muted: [number, number, number] = [111, 122, 113];
-  const jade: [number, number, number] = [53, 111, 88];
-  const brass: [number, number, number] = [164, 131, 77];
+  const ink: [number, number, number] = [17, 17, 17];
+  const muted: [number, number, number] = [107, 107, 107];
+  const jade: [number, number, number] = [17, 17, 17];
+  const brass: [number, number, number] = [17, 17, 17];
   const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
 
-  doc.setFillColor(29, 69, 56);
+  doc.setFillColor(17, 17, 17);
   doc.roundedRect(margin, 17, right - margin, 48, 4, 4, "F");
-  doc.setFillColor(231, 201, 141);
-  doc.roundedRect(margin + 9, 27, 13, 13, 3, 3, "F");
-  doc.setTextColor(...ink);
-  doc.setFont("times", "bold");
-  doc.setFontSize(15);
-  doc.text("G", margin + 15.5, 36, { align: "center" });
+  doc.addImage(brandMarkDataUrl, "PNG", margin + 9, 27, 13, 13);
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.text("GadgetHub", margin + 28, 32);
-  doc.setTextColor(207, 225, 212);
+  doc.setTextColor(196, 196, 196);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.text(receipt.branchName, margin + 28, 38);
-  doc.setTextColor(233, 207, 159);
+  doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.text("GOODS RECEIVED NOTE", right - 8, 29, { align: "right" });
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(10);
   doc.text(`GRN-${receipt.id.slice(-8).toUpperCase()}`, right - 8, 37, { align: "right" });
-  doc.setTextColor(209, 224, 214);
+  doc.setTextColor(196, 196, 196);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.text(date, right - 8, 44, { align: "right" });
@@ -391,7 +425,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   doc.text(receipt.reference || "Not provided", margin + 86, y + 7);
 
   y += 22;
-  doc.setDrawColor(226, 231, 224);
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin, y, right, y);
   y += 13;
   label("Product received", margin, y);
@@ -406,7 +440,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   doc.text(`${receipt.product.brand ? `${receipt.product.brand} · ` : ""}${receipt.product.category} · SKU ${receipt.product.sku}`, margin, y + 18 + (productLines.length - 1) * 7);
 
   const boxY = y + 32 + (productLines.length - 1) * 7;
-  doc.setFillColor(242, 247, 242);
+  doc.setFillColor(245, 245, 245);
   doc.roundedRect(margin, boxY, right - margin, 34, 3, 3, "F");
   doc.setTextColor(...muted);
   doc.setFont("helvetica", "bold");
@@ -416,7 +450,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   doc.setFont("times", "bold");
   doc.setFontSize(23);
   doc.text(`+${receipt.quantity.toLocaleString("en-KE")}`, margin + 8, boxY + 24);
-  doc.setDrawColor(213, 224, 215);
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin + 63, boxY + 7, margin + 63, boxY + 27);
   doc.setTextColor(...muted);
   doc.setFont("helvetica", "bold");
@@ -432,7 +466,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   doc.text(receipt.newStock.toLocaleString("en-KE"), right - 8, boxY + 21, { align: "right" });
 
   const tableY = boxY + 50;
-  doc.setFillColor(248, 247, 241);
+  doc.setFillColor(245, 245, 245);
   doc.roundedRect(margin, tableY, right - margin, 11, 2, 2, "F");
   label("Item details", margin + 5, tableY + 7);
   label("Unit cost", right - 38, tableY + 7);
@@ -440,8 +474,8 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.text("Received into branch inventory", margin + 5, tableY + 21);
-  doc.text(money(receipt.product.costPrice), right - 5, tableY + 21, { align: "right" });
-  doc.setDrawColor(226, 231, 224);
+  doc.text(receipt.product.costPrice === null ? "—" : money(receipt.product.costPrice), right - 5, tableY + 21, { align: "right" });
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin, tableY + 28, right, tableY + 28);
 
   if (receipt.note) {
@@ -453,7 +487,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   }
 
   const footerY = Math.max(tableY + (receipt.note ? 72 : 56), 249);
-  doc.setDrawColor(225, 229, 221);
+  doc.setDrawColor(229, 229, 229);
   doc.line(margin, footerY, right, footerY);
   doc.setTextColor(...brass);
   doc.setFont("helvetica", "bold");

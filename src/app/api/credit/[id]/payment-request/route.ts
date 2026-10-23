@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
+import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({ amount: z.number().int().positive().max(2_000_000_000) }).strict();
@@ -11,7 +12,7 @@ const schema = z.object({ amount: z.number().int().positive().max(2_000_000_000)
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "credit")) return NextResponse.json({ error: "Your role cannot manage credit accounts." }, { status: 403 });
+  if (!canUseCapability(session.user, "credit")) return denied(session.user, "credit", "Your role cannot manage credit accounts.");
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid payment amount." }, { status: 400 });
 

@@ -11,7 +11,7 @@ const reconciliationSchema = z.object({ verified: z.literal(true), receipt: z.st
 export async function POST(_request: Request, { params }: { params: Promise<{ token: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "credit") || !["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can reconcile M-Pesa payments." }, { status: 403 });
+  if (!canUseCapability(session.user, "credit") || !["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can reconcile M-Pesa payments." }, { status: 403 });
   const parsed = reconciliationSchema.safeParse(await _request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Confirm the M-Pesa statement check and enter a valid receipt if missing." }, { status: 400 });
   const { token: requestId } = await params;

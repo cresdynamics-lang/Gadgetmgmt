@@ -3,16 +3,18 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canSeeAllBranches, canUseCapability, hasPermission } from "@/lib/access";
+import { denied } from "@/lib/authz";
+import { recordActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "staff")) return NextResponse.json({ error: "Your role cannot view staff accounts." }, { status: 403 });
+  if (!canUseCapability(session.user, "staff")) return denied(session.user, "staff", "Your role cannot view staff accounts.");
 
   const users = await prisma.user.findMany({
-    where: session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" },
+    where: canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" },
     select: {
       id: true,
       name: true,
@@ -22,6 +24,7 @@ export async function GET() {
       createdAt: true,
       branch: { select: { id: true, name: true, code: true } },
       _count: { select: { sales: true } },
+      permissionGrants: { select: { permission: true, mode: true } },
     },
     orderBy: [{ status: "asc" }, { name: "asc" }],
   });
@@ -40,15 +43,15 @@ const staffSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "staff")) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403 });
+  if (!hasPermission(session.user, "staff.manage")) return denied(session.user, "staff.manage", "Your permissions cannot manage staff accounts.");
 
   const parsed = staffSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400 });
-  if (session.user.role === "BRANCH_MANAGER" && parsed.data.role !== "CASHIER" && parsed.data.role !== "INVENTORY_LEAD") {
-    return NextResponse.json({ error: "Branch managers can create cashier or inventory lead accounts only." }, { status: 403 });
+  if (!canSeeAllBranches(session.user) && parsed.data.role !== "CASHIER" && parsed.data.role !== "INVENTORY_LEAD") {
+    return NextResponse.json({ error: "Your permissions can create cashier or inventory lead accounts only." }, { status: 403 });
   }
 
-  const branchId = session.user.role === "OWNER" ? parsed.data.branchId ?? session.user.branchId : session.user.branchId;
+  const branchId = canSeeAllBranches(session.user) ? parsed.data.branchId ?? session.user.branchId : session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Assign this staff member to an active branch." }, { status: 400 });
   const branch = await prisma.branch.findFirst({ where: { id: branchId, isActive: true }, select: { id: true } });
   if (!branch) return NextResponse.json({ error: "Selected branch is unavailable." }, { status: 400 });
@@ -58,6 +61,14 @@ export async function POST(request: Request) {
     const user = await prisma.user.create({
       data: { name: parsed.data.name, email: parsed.data.email, passwordHash, role: parsed.data.role, branchId },
       select: { id: true, name: true, email: true, role: true, status: true, branch: { select: { id: true, name: true, code: true } } },
+    });
+    await recordActivity({
+      userId: session.user.id,
+      sessionId: session.user.sessionId,
+      action: "STAFF_CREATED",
+      summary: `Created ${user.role} account for ${user.name}`,
+      entityType: "User",
+      entityId: user.id,
     });
     return NextResponse.json(user, { status: 201 });
   } catch (error) {

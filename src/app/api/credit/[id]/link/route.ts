@@ -2,12 +2,13 @@ import { randomBytes, createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
+import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "credit")) return NextResponse.json({ error: "Your role cannot manage credit accounts." }, { status: 403 });
+  if (!canUseCapability(session.user, "credit")) return denied(session.user, "credit", "Your role cannot manage credit accounts.");
   const { id } = await params;
   const branchId = session.user.branchId;
   if (!branchId && session.user.role !== "OWNER") return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });

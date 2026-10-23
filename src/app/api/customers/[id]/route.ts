@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
+import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 const customerUpdateSchema = z.object({
@@ -19,7 +20,7 @@ const customerUpdateSchema = z.object({
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot access customer accounts." }, { status: 403 });
+  if (!canUseCapability(session.user, "customers")) return denied(session.user, "customers", "Your role cannot access customer accounts.");
   const { id } = await params;
   const customer = await prisma.customer.findFirst({
     where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) },
@@ -57,7 +58,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot manage customer preferences." }, { status: 403 });
+  if (!canUseCapability(session.user, "customers")) return denied(session.user, "customers", "Your role cannot manage customer preferences.");
   const parsed = customerUpdateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter valid customer details or reminder preferences." }, { status: 400 });
   const profileFields = ["name", "phone", "email", "creditLimit", "status"] as const;

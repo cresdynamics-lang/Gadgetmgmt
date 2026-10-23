@@ -19,7 +19,9 @@
     "test:catalog-csv": "node --import tsx --test scripts/catalog-csv.test.ts",
     "test:money-allocation": "node --import tsx --test scripts/money-allocation.test.ts",
     "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts",
-    "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts"
+    "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts",
+    "test:access": "node --import tsx --test scripts/access.test.ts",
+    "test:sales-periods": "node --import tsx --test scripts/sales-periods.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -33,6 +35,7 @@
     "lucide-react": "^1.54.0",
     "next": "16.4.0",
     "next-auth": "^5.0.0-beta.32",
+    "nodemailer": "^8.0.11",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "recharts": "^3.10.1",
@@ -43,6 +46,7 @@
     "@tailwindcss/turbopack": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

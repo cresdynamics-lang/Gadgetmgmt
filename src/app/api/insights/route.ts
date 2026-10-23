@@ -1,5 +1,7 @@
 import { auth } from "@/auth";
 import { getBusinessInsights } from "@/lib/business-insights";
+import { canSeeAllBranches, hasPermission } from "@/lib/access";
+import { denied } from "@/lib/authz";
 import { z } from "zod";
 
 const insightSchema = z.object({
@@ -61,15 +63,14 @@ function getResponseText(payload: unknown) {
 
 export async function POST() {
   const session = await auth();
-  const role = session?.user?.role;
   if (!session?.user?.id) return Response.json({ error: "Sign in to generate business insights." }, { status: 401 });
-  if (role !== "OWNER" && role !== "BRANCH_MANAGER") return Response.json({ error: "Business insights are available to owners and branch managers." }, { status: 403 });
+  if (!hasPermission(session.user, "insights.view")) return denied(session.user, "insights.view", "Business insights need the business insights permission.");
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return Response.json({ error: "AI insights are not configured yet. Add OPENAI_API_KEY to the server environment." }, { status: 503 });
 
   try {
-    const scope = role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" };
+    const scope = canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" };
     const metrics = await getBusinessInsights(scope);
     const model = process.env.AI_INSIGHTS_MODEL || "gpt-4.1-mini";
     const modelResponse = await fetch("https://api.openai.com/v1/responses", {

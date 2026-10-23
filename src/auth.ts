@@ -3,6 +3,9 @@ import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { z } from "zod";
 
+import { resolvePermissions } from "@/lib/access";
+import { endUserSession, startUserSession } from "@/lib/activity";
+import { loadPermissionGrants } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 if (process.env.NODE_ENV === "production") {
@@ -51,23 +54,28 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
-      if (user) {
+    async jwt({ token, user }) {
+      if (user?.id) {
         token.userId = user.id;
         token.role = user.role;
         token.branchId = user.branchId;
         token.branchName = user.branchName;
-      } else if (typeof token.userId === "string" && token.userId) {
-        return prisma.user.findUnique({
+        token.sessionId = await startUserSession(user.id);
+        const { grants, unlocked } = await loadPermissionGrants(user.id);
+        Object.assign(token, resolvePermissions(user.role, grants, unlocked));
+        return token;
+      }
+      if (typeof token.userId === "string" && token.userId) {
+        const currentUser = await prisma.user.findUnique({
           where: { id: token.userId },
           select: { role: true, status: true, branchId: true, branch: { select: { name: true } } },
-        }).then((currentUser) => {
-          if (!currentUser || currentUser.status !== "ACTIVE") return null;
-          token.role = currentUser.role;
-          token.branchId = currentUser.branchId;
-          token.branchName = currentUser.branch?.name ?? null;
-          return token;
         });
+        if (!currentUser || currentUser.status !== "ACTIVE") return null;
+        token.role = currentUser.role;
+        token.branchId = currentUser.branchId;
+        token.branchName = currentUser.branch?.name ?? null;
+        const { grants, unlocked } = await loadPermissionGrants(token.userId);
+        Object.assign(token, resolvePermissions(currentUser.role, grants, unlocked));
       }
       return token;
     },
@@ -77,8 +85,19 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.role = typeof token.role === "string" ? token.role : "CASHIER";
         session.user.branchId = typeof token.branchId === "string" ? token.branchId : null;
         session.user.branchName = typeof token.branchName === "string" ? token.branchName : null;
+        session.user.sessionId = typeof token.sessionId === "string" ? token.sessionId : null;
+        session.user.permissions = Array.isArray(token.permissions) ? token.permissions : [];
+        session.user.restricted = Array.isArray(token.restricted) ? token.restricted : [];
       }
       return session;
+    },
+  },
+  events: {
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      if (token && typeof token.sessionId === "string") {
+        await endUserSession(token.sessionId);
+      }
     },
   },
 });

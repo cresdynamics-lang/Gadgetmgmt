@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { canSeeAllBranches, hasPermission } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 const accessSchema = z.object({
@@ -13,7 +14,9 @@ const accessSchema = z.object({
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (session.user.role !== "OWNER") return NextResponse.json({ error: "Only an administrator can change account access." }, { status: 403 });
+  if (!hasPermission(session.user, "staff.manage") || !canSeeAllBranches(session.user)) {
+    return NextResponse.json({ error: "Your permissions cannot change account access." }, { status: 403 });
+  }
 
   const parsed = accessSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid role or account status." }, { status: 400 });

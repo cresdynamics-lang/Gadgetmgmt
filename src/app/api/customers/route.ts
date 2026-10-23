@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
+import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 const lateStatuses = ["DUE", "GRACE", "LATE_1", "LATE_2", "LATE_3", "RECOVERY", "OVERDUE"] as const;
@@ -21,7 +22,7 @@ const customerSchema = z.object({
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot access customers." }, { status: 403 });
+  if (!canUseCapability(session.user, "customers")) return denied(session.user, "customers", "Your role cannot access customers.");
 
   const params = new URL(request.url).searchParams;
   const query = (params.get("q") ?? "").trim().slice(0, 100);
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot create customers." }, { status: 403 });
+  if (!canUseCapability(session.user, "customers")) return denied(session.user, "customers", "Your role cannot create customers.");
 
   const parsed = customerSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, phone, email and credit limit." }, { status: 400 });

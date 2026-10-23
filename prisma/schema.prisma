@@ -103,6 +103,19 @@ enum InventoryMovementType {
 enum ProductCondition {
   NEW
   EX_UK
+  TRADE_IN
+}
+
+enum PermissionGrantMode {
+  FULL
+  RESTRICTED
+}
+
+enum SalesTargetPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
 }
 
 model Branch {
@@ -123,8 +136,10 @@ model Branch {
   creditPlans   CreditPlan[]
   layawayOrders LayawayOrder[]
   creditPolicy  CreditPolicy?
+  salesTargets  SalesTarget[]
   movements     InventoryMovement[]
   notifications CustomerNotification[]
+  followUps     CollectionFollowUp[]
 }
 
 model User {
@@ -141,6 +156,13 @@ model User {
   layawayOrdersCreated      LayawayOrder[]            @relation("LayawayCreatedBy")
   layawayPaymentsReceived   LayawayPayment[]          @relation("LayawayReceivedBy")
   creditSubmissionsReviewed CreditPaymentSubmission[] @relation("CreditSubmissionReviewer")
+  sessions                  UserSession[]
+  activityEvents            ActivityEvent[]
+  followUps                 CollectionFollowUp[]
+  permissionGrants          UserPermission[]          @relation("PermissionGrantee")
+  permissionsGranted        UserPermission[]          @relation("PermissionGrantor")
+  permissionApprovals       PermissionApproval[]
+  salesTargets              SalesTarget[]
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
 }
@@ -187,8 +209,10 @@ model Product {
   costPrice       Int
   sellingPrice    Int
   reorderLevel    Int                 @default(0)
+  imei            String?             @unique
   branchId        String
   branch          Branch              @relation(fields: [branchId], references: [id])
+  tradeInSales    Sale[]              @relation("TradeInProduct")
   inventory       InventoryItem[]
   saleItems       SaleItem[]
   creditPlans     CreditPlan[]
@@ -216,29 +240,35 @@ model InventoryItem {
 }
 
 model Sale {
-  id              String                @id @default(cuid())
-  invoiceNumber   String                @unique
-  branchId        String
-  branch          Branch                @relation(fields: [branchId], references: [id])
-  cashierId       String
-  cashier         User                  @relation(fields: [cashierId], references: [id])
-  customerId      String?
-  customer        Customer?             @relation(fields: [customerId], references: [id])
-  total           Int
-  discountAmount  Int                   @default(0)
-  taxAmount       Int                   @default(0)
-  paidAmount      Int                   @default(0)
-  paymentMethod   String                @default("CASH")
-  status          SaleStatus            @default(PAID)
-  saleItems       SaleItem[]
-  payments        SalePayment[]
-  creditPlans     CreditPlan[]
-  paymentRequests PaymentRequest[]
-  layawayOrderId  String?               @unique
-  layawayOrder    LayawayOrder?         @relation(fields: [layawayOrderId], references: [id])
-  movements       InventoryMovement[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id               String              @id @default(cuid())
+  invoiceNumber    String              @unique
+  branchId         String
+  branch           Branch              @relation(fields: [branchId], references: [id])
+  cashierId        String
+  cashier          User                @relation(fields: [cashierId], references: [id])
+  customerId       String?
+  customer         Customer?           @relation(fields: [customerId], references: [id])
+  total            Int
+  discountAmount   Int                 @default(0)
+  taxAmount        Int                 @default(0)
+  paidAmount       Int                 @default(0)
+  paymentMethod    String              @default("CASH")
+  tradeInBrand     String?
+  tradeInModel     String?
+  tradeInImei      String?
+  tradeInValue     Int                 @default(0)
+  tradeInProductId String?
+  tradeInProduct   Product?            @relation("TradeInProduct", fields: [tradeInProductId], references: [id], onDelete: SetNull)
+  status           SaleStatus          @default(PAID)
+  saleItems        SaleItem[]
+  payments         SalePayment[]
+  creditPlans      CreditPlan[]
+  paymentRequests  PaymentRequest[]
+  layawayOrderId   String?             @unique
+  layawayOrder     LayawayOrder?       @relation(fields: [layawayOrderId], references: [id])
+  movements        InventoryMovement[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
   @@index([branchId, createdAt])
 }
@@ -277,37 +307,38 @@ model SaleItem {
 }
 
 model CreditPlan {
-  id                   String                    @id @default(cuid())
-  branchId             String
-  branch               Branch                    @relation(fields: [branchId], references: [id])
-  customerId           String
-  customer             Customer                  @relation(fields: [customerId], references: [id])
-  productId            String
-  product              Product                   @relation(fields: [productId], references: [id])
-  totalAmount          Int
-  planReference        String                    @unique @default(cuid())
-  kind                 CreditPlanKind            @default(INSTALLMENT)
-  saleId               String?
-  sale                 Sale?                     @relation(fields: [saleId], references: [id])
-  depositAmount        Int                       @default(0)
-  balance              Int
-  lateFeeAmount        Int                       @default(0)
-  lateFeeAppliedAt     DateTime?
-  earlySettlementDiscountAmount Int              @default(0)
-  imei                 String?                   @unique
-  installmentCount     Int
-  termMonths           Int                       @default(1)
-  nextDueDate          DateTime
-  portalTokenHash      String?                   @unique
-  status               CreditStatus              @default(ACTIVE)
-  payments             Payment[]
-  installments         CreditInstallment[]
-  rescheduleRequests   CreditRescheduleRequest[]
-  paymentSubmissions   CreditPaymentSubmission[]
-  paymentRequests      PaymentRequest[]
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
-  mpesaC2BTransactions MpesaC2BTransaction[]
+  id                            String                    @id @default(cuid())
+  branchId                      String
+  branch                        Branch                    @relation(fields: [branchId], references: [id])
+  customerId                    String
+  customer                      Customer                  @relation(fields: [customerId], references: [id])
+  productId                     String
+  product                       Product                   @relation(fields: [productId], references: [id])
+  totalAmount                   Int
+  planReference                 String                    @unique @default(cuid())
+  kind                          CreditPlanKind            @default(INSTALLMENT)
+  saleId                        String?
+  sale                          Sale?                     @relation(fields: [saleId], references: [id])
+  depositAmount                 Int                       @default(0)
+  balance                       Int
+  lateFeeAmount                 Int                       @default(0)
+  lateFeeAppliedAt              DateTime?
+  earlySettlementDiscountAmount Int                       @default(0)
+  imei                          String?                   @unique
+  installmentCount              Int
+  termMonths                    Int                       @default(1)
+  nextDueDate                   DateTime
+  portalTokenHash               String?                   @unique
+  status                        CreditStatus              @default(ACTIVE)
+  payments                      Payment[]
+  installments                  CreditInstallment[]
+  rescheduleRequests            CreditRescheduleRequest[]
+  paymentSubmissions            CreditPaymentSubmission[]
+  paymentRequests               PaymentRequest[]
+  createdAt                     DateTime                  @default(now())
+  updatedAt                     DateTime                  @updatedAt
+  mpesaC2BTransactions          MpesaC2BTransaction[]
+  followUps                     CollectionFollowUp[]
 
   @@index([branchId, status, nextDueDate])
 }
@@ -318,7 +349,7 @@ model CreditPolicy {
   branch                         Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   graceDays                      Int      @default(3)
   lateFeeAmount                  Int      @default(0)
-  minimumDepositPercent          Int      @default(20)
+  minimumDepositPercent          Int      @default(40)
   defaultCreditLimit             Int      @default(0)
   earlySettlementDiscountPercent Int      @default(0)
   managerEscalationDays          Int      @default(3)
@@ -531,17 +562,115 @@ model InventoryMovement {
 }
 
 model ScheduledJobRun {
-  id               String    @id @default(cuid())
-  jobName          String
-  status           String    @default("RUNNING")
-  updatedPlans     Int       @default(0)
-  queuedReminders  Int       @default(0)
-  queuedDigests    Int       @default(0)
-  sentCount        Int       @default(0)
-  failedCount      Int       @default(0)
-  errorMessage     String?
-  startedAt        DateTime  @default(now())
-  finishedAt       DateTime?
+  id              String    @id @default(cuid())
+  jobName         String
+  status          String    @default("RUNNING")
+  updatedPlans    Int       @default(0)
+  queuedReminders Int       @default(0)
+  queuedDigests   Int       @default(0)
+  sentCount       Int       @default(0)
+  failedCount     Int       @default(0)
+  errorMessage    String?
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
 
   @@index([jobName, startedAt])
+}
+
+model UserSession {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt  DateTime        @default(now())
+  lastSeenAt DateTime        @default(now())
+  endedAt    DateTime?
+  events     ActivityEvent[]
+
+  @@index([userId, startedAt])
+}
+
+model ActivityEvent {
+  id         String       @id @default(cuid())
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessionId  String?
+  session    UserSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  action     String
+  summary    String
+  entityType String?
+  entityId   String?
+  createdAt  DateTime     @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}
+
+model CollectionFollowUp {
+  id           String     @id @default(cuid())
+  branchId     String
+  branch       Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  creditPlanId String
+  creditPlan   CreditPlan @relation(fields: [creditPlanId], references: [id], onDelete: Cascade)
+  customerName String
+  amount       Int
+  dueDate      DateTime
+  milestone    String
+  status       String     @default("OPEN")
+  assignedToId String?
+  assignedTo   User?      @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  note         String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([creditPlanId, milestone])
+  @@index([branchId, status, dueDate])
+  @@index([assignedToId, status])
+}
+
+model UserPermission {
+  id          String              @id @default(cuid())
+  userId      String
+  user        User                @relation("PermissionGrantee", fields: [userId], references: [id], onDelete: Cascade)
+  permission  String
+  mode        PermissionGrantMode @default(FULL)
+  grantedById String?
+  grantedBy   User?               @relation("PermissionGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([userId, permission])
+}
+
+model PermissionApproval {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, permission, expiresAt])
+}
+
+model SalesTarget {
+  id          String            @id @default(cuid())
+  branchId    String?
+  branch      Branch?           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  period      SalesTargetPeriod
+  amount      Int
+  unitsTarget Int?
+  label       String?
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isActive    Boolean           @default(true)
+  createdById String
+  createdBy   User              @relation(fields: [createdById], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([period, isActive])
 }

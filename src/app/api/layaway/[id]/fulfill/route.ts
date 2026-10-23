@@ -4,13 +4,14 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
+import { denied } from "@/lib/authz";
 import { fulfillLayawayOrder } from "@/lib/layaway";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "layaway")) return NextResponse.json({ error: "Your role cannot fulfill layaway orders." }, { status: 403 });
+  if (!canUseCapability(session.user, "layaway")) return denied(session.user, "layaway", "Your role cannot fulfill layaway orders.");
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   const { id } = await context.params;

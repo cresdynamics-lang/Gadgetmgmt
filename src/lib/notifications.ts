@@ -1,17 +1,16 @@
 import type { NotificationChannel } from "@prisma/client";
 
+import { emailConfigured, extractPayLink, sendEmail } from "@/lib/mail";
+
+export { emailConfigured };
+
 export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string }) {
   if (input.channel === "EMAIL") {
-    const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM;
-    if (!apiKey || !from) throw new Error("Email delivery needs RESEND_API_KEY and EMAIL_FROM.");
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({ from, to: [input.recipient], subject: input.subject ?? "GadgetHub update", text: input.body }),
+    await sendEmail({
+      to: input.recipient,
+      subject: input.subject ?? "Gadget Hub update",
+      text: input.body,
     });
-    if (!response.ok) throw new Error(`Email provider returned ${response.status}.`);
     return;
   }
 
@@ -20,7 +19,7 @@ export async function deliverNotification(input: { channel: NotificationChannel;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
     const templateName = process.env.WHATSAPP_PAYMENT_TEMPLATE;
     if (!accessToken || !phoneNumberId || !templateName) throw new Error("WhatsApp delivery needs WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_PAYMENT_TEMPLATE.");
-    const token = input.body.match(/\/request\/([a-f0-9]{64})/i)?.[1];
+    const token = extractPayLink(input.body)?.split("/").pop();
     const buttonIndex = process.env.WHATSAPP_PAY_BUTTON_INDEX || "0";
     const bodyText = input.body.replace(/\s*Pay securely here: https?:\/\/\S+/i, "").slice(0, 1024);
     const response = await fetch(`https://graph.facebook.com/v22.0/${encodeURIComponent(phoneNumberId)}/messages`, {

@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
+import { auth } from "@/auth";
+import { hasPermission } from "@/lib/access";
 import { normalizeKenyanPhone } from "@/lib/mpesa";
 import { creditStatusForDays, daysUntilDue as calculateDaysUntilDue } from "@/lib/credit-lifecycle";
 import { deliverNotification } from "@/lib/notifications";
@@ -25,7 +27,8 @@ function nairobiDate(date: Date) {
 }
 
 function scheduledReminder(daysUntilDue: number) {
-  if (daysUntilDue === 3) return "before-3-days";
+  if (daysUntilDue === 7) return "before-7-days";
+  if (daysUntilDue === 2) return "before-2-days";
   if (daysUntilDue === 0) return "due-today";
   if (daysUntilDue < 0 && (-daysUntilDue === 3 || -daysUntilDue % 7 === 0)) return `overdue-${-daysUntilDue}-days`;
   return null;
@@ -76,7 +79,7 @@ async function refreshPlanStates(now: Date) {
 async function queueReminders(now: Date) {
   const start = new Date(`${nairobiDate(now)}T00:00:00+03:00`);
   const rangeStart = new Date(start.getTime() - 21 * 86_400_000);
-  const rangeEnd = new Date(start.getTime() + 4 * 86_400_000);
+  const rangeEnd = new Date(start.getTime() + 8 * 86_400_000);
   const installments = await prisma.creditInstallment.findMany({
     where: {
       paidAt: null,
@@ -124,7 +127,8 @@ async function queueReminders(now: Date) {
           },
         });
         const link = `${baseUrl}/request/${token}`;
-        const salutation = `Hello ${customer.name}, installment ${installment.sequence} of your GadgetHub payment plan ${dueLabel(daysUntilDue)}.`;
+        const dueDate = installment.dueDate.toLocaleDateString("en-KE", { dateStyle: "medium", timeZone: "Africa/Nairobi" });
+        const salutation = `Hello ${customer.name}, installment ${installment.sequence} of your Gadget Hub payment plan ${dueLabel(daysUntilDue)} (${dueDate}).`;
         const body = `${salutation} Amount due: KES ${amount.toLocaleString("en-KE")}. Pay securely here: ${link}. Need help? Call ${plan.branch.name} on ${plan.branch.phone}.`;
         await transaction.customerNotification.createMany({
           data: channels.map(({ channel, recipient }) => ({
@@ -133,10 +137,39 @@ async function queueReminders(now: Date) {
             channel,
             kind: `INSTALLMENT_${milestone.toUpperCase().replaceAll("-", "_")}`,
             recipient,
-            subject: `GadgetHub payment reminder · KES ${amount.toLocaleString("en-KE")}`,
+            subject: `Gadget Hub payment reminder · KES ${amount.toLocaleString("en-KE")}`,
             body,
             dedupeKey: `${dedupeKey}:${channel}`,
           })),
+        });
+        await transaction.collectionFollowUp.upsert({
+          where: { creditPlanId_milestone: { creditPlanId: plan.id, milestone } },
+          create: {
+            branchId: plan.branch.id,
+            creditPlanId: plan.id,
+            customerName: customer.name,
+            amount,
+            dueDate: installment.dueDate,
+            milestone,
+            status: "OPEN",
+          },
+          update: { amount, dueDate: installment.dueDate, customerName: customer.name, status: "OPEN" },
+        });
+        const staff = await transaction.user.findMany({
+          where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId: plan.branch.id }] },
+          select: { email: true },
+        });
+        await transaction.customerNotification.createMany({
+          data: [...new Set(staff.map((user) => user.email.toLowerCase()))].map((recipient) => ({
+            branchId: plan.branch.id,
+            channel: "EMAIL" as const,
+            kind: "BUSINESS_COLLECTION_ALERT",
+            recipient,
+            subject: `${customer.name} · KES ${amount.toLocaleString("en-KE")} due ${dueDate}`,
+            body: `${customer.name} needs to clear KES ${amount.toLocaleString("en-KE")} by ${dueDate} (${dueLabel(daysUntilDue)}). Assign this follow-up in Messages & alerts.`,
+            dedupeKey: `biz-alert:${plan.id}:${milestone}:${recipient}`,
+          })),
+          skipDuplicates: true,
         });
         queued += channels.length;
         void paymentRequest;
@@ -294,24 +327,41 @@ async function deliverQueued() {
   return { sent, failed };
 }
 
-export async function GET(request: Request) {
-  if (!authorized(request)) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  let runId: string | null = null;
+async function runCollectionsJob() {
+  const run = await prisma.scheduledJobRun.create({ data: { jobName: "COLLECTIONS_DAILY" }, select: { id: true } });
   try {
-    const run = await prisma.scheduledJobRun.create({ data: { jobName: "COLLECTIONS_DAILY" }, select: { id: true } });
-    runId = run.id;
     const updatedPlans = await refreshPlanStates(new Date());
     const queuedReminders = await queueReminders(new Date());
     const queuedDigests = await queueOwnerDigests(new Date());
     const delivery = await deliverQueued();
     const finishedAt = new Date();
-    await prisma.scheduledJobRun.update({ where: { id: runId }, data: { status: "SUCCEEDED", updatedPlans, queuedReminders, queuedDigests, sentCount: delivery.sent, failedCount: delivery.failed, finishedAt } });
-    return NextResponse.json({ ok: true, updatedPlans, queuedReminders, queuedDigests, ...delivery, ranAt: finishedAt.toISOString() });
+    await prisma.scheduledJobRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", updatedPlans, queuedReminders, queuedDigests, sentCount: delivery.sent, failedCount: delivery.failed, finishedAt } });
+    return { ok: true as const, updatedPlans, queuedReminders, queuedDigests, ...delivery, ranAt: finishedAt.toISOString() };
   } catch (error) {
-    if (runId) {
-      try { await prisma.scheduledJobRun.update({ where: { id: runId }, data: { status: "FAILED", errorMessage: "Collections job failed. Check server logs.", finishedAt: new Date() } }); }
-      catch (recordError) { console.error("Could not save collections job failure status", recordError instanceof Error ? recordError.message : "unknown error"); }
-    }
+    try { await prisma.scheduledJobRun.update({ where: { id: run.id }, data: { status: "FAILED", errorMessage: "Collections job failed. Check server logs.", finishedAt: new Date() } }); }
+    catch (recordError) { console.error("Could not save collections job failure status", recordError instanceof Error ? recordError.message : "unknown error"); }
+    throw error;
+  }
+}
+
+export async function GET(request: Request) {
+  if (!authorized(request)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    return NextResponse.json(await runCollectionsJob());
+  } catch (error) {
+    console.error("Collections notification job failed", error instanceof Error ? error.message : "unknown error");
+    return NextResponse.json({ error: "Notification job failed. Review server logs." }, { status: 500 });
+  }
+}
+
+export async function POST() {
+  const session = await auth();
+  if (!session?.user || !hasPermission(session.user, "notifications.view") || !hasPermission(session.user, "scope.allBranches")) {
+    return NextResponse.json({ error: "Only a super admin can run reminders now." }, { status: 403 });
+  }
+  try {
+    return NextResponse.json(await runCollectionsJob());
+  } catch (error) {
     console.error("Collections notification job failed", error instanceof Error ? error.message : "unknown error");
     return NextResponse.json({ error: "Notification job failed. Review server logs." }, { status: 500 });
   }
