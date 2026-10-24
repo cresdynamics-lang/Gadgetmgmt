@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { seedPriceList } from "./price-list";
+
 const prisma = new PrismaClient();
 
 const appleCatalogue = [
@@ -12,7 +14,7 @@ const appleCatalogue = [
   { sku: "IPAD-AIR-M2", name: "iPad Air M2", category: "iPad", costPrice: 95000, sellingPrice: 125000, stockOnHand: 4, reorderLevel: 2 },
   { sku: "MBA-M3-13", name: "MacBook Air 13 M3", category: "Mac", costPrice: 165000, sellingPrice: 215000, stockOnHand: 3, reorderLevel: 2 },
   { sku: "AW-S10", name: "Apple Watch Series 10", category: "Apple Watch", costPrice: 52000, sellingPrice: 68000, stockOnHand: 9, reorderLevel: 4 },
-  { sku: "APP-PRO-2", name: "AirPods Pro 2", category: "AirPods", costPrice: 28000, sellingPrice: 38000, stockOnHand: 15, reorderLevel: 6 },
+  { sku: "APP-PRO-2", name: "AirPods Pro 2", category: "AirPods", costPrice: 28000, sellingPrice: 30000, stockOnHand: 15, reorderLevel: 6 },
 ];
 
 async function main() {
@@ -119,6 +121,9 @@ async function main() {
       create: { branchId: branch.id, minimumDepositPercent: 40 },
     });
   }
+
+  const prices = await seedPriceList(prisma, shop.id);
+  console.log(`Price list: ${prices.created} new of ${prices.total} products.`);
 
   console.log("Database seed completed successfully.");
 }

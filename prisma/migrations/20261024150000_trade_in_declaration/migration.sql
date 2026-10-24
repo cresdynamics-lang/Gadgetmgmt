@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "TradeIn" ADD COLUMN     "confirmedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN     "declaration" TEXT NOT NULL DEFAULT '';
+

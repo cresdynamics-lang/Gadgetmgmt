@@ -7,6 +7,7 @@ export type Permission =
   | "sales.adjust"
   | "inventory.view"
   | "inventory.receive"
+  | "products.price"
   | "customers.view"
   | "customers.manage"
   | "credit.view"
@@ -40,6 +41,7 @@ export const permissionLabels: Record<Permission, string> = {
   "sales.adjust": "Adjust checkout totals",
   "inventory.view": "View stock",
   "inventory.receive": "Receive stock",
+  "products.price": "Edit product prices",
   "customers.view": "View customers",
   "customers.manage": "Manage customers",
   "credit.view": "View Lipa accounts",
@@ -67,7 +69,7 @@ const rolePermissions: Record<string, readonly Permission[]> = {
   OWNER: allPermissions,
   BRANCH_MANAGER: [
     "dashboard.view", "sales.view", "sales.create",
-    "inventory.view", "inventory.receive", "customers.view", "customers.manage",
+    "inventory.view", "inventory.receive", "products.price", "customers.view", "customers.manage",
     "credit.view", "credit.collect", "credit.policy", "staff.view", "staff.manage",
     "settings.view", "notifications.view",
   ],

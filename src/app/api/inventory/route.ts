@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability, hasPermission } from "@/lib/access";
+import { canSeeAllBranches, canUseCapability, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { recordActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
@@ -33,6 +33,7 @@ export async function GET() {
     items: canSeeCost ? items : items.map((item) => ({ ...item, product: { ...item.product, costPrice: null } })),
     movements,
     canSeeCost,
+    canEditPrices: hasPermission(session.user, "products.price"),
   });
 }
 
@@ -192,4 +193,52 @@ export async function POST(request: Request) {
     entityId: inventory.id,
   });
   return NextResponse.json(inventory, { status: 201 });
+}
+
+const priceSchema = z.object({
+  productId: z.string().cuid(),
+  sellingPrice: z.number().int().positive().max(2_000_000_000).optional(),
+  costPrice: z.number().int().nonnegative().max(2_000_000_000).optional(),
+}).strict().refine((data) => data.sellingPrice !== undefined || data.costPrice !== undefined);
+
+/** Change a product's selling price, and its buying price for people who can see finances. */
+export async function PATCH(request: Request) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (!hasPermission(session.user, "products.price")) return denied(session.user, "products.price", "Your permissions cannot change product prices.");
+  const parsed = priceSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Enter a valid price." }, { status: 400 });
+  if (parsed.data.costPrice !== undefined && !hasPermission(session.user, "finance.view")) {
+    return denied(session.user, "finance.view", "Buying prices need the financial permission.");
+  }
+
+  const product = await prisma.product.findFirst({
+    where: { id: parsed.data.productId, ...(canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" }) },
+    select: { id: true, name: true, sellingPrice: true, costPrice: true },
+  });
+  if (!product) return NextResponse.json({ error: "That product was not found." }, { status: 404 });
+
+  const updated = await prisma.product.update({
+    where: { id: product.id },
+    data: {
+      ...(parsed.data.sellingPrice !== undefined ? { sellingPrice: parsed.data.sellingPrice } : {}),
+      ...(parsed.data.costPrice !== undefined ? { costPrice: parsed.data.costPrice } : {}),
+    },
+    select: { id: true, sellingPrice: true, costPrice: true },
+  });
+  const changes = [
+    parsed.data.sellingPrice !== undefined && parsed.data.sellingPrice !== product.sellingPrice ? `selling price KES ${product.sellingPrice.toLocaleString("en-KE")} → ${parsed.data.sellingPrice.toLocaleString("en-KE")}` : null,
+    parsed.data.costPrice !== undefined && parsed.data.costPrice !== product.costPrice ? "buying price updated" : null,
+  ].filter(Boolean);
+  if (changes.length) {
+    await recordActivity({
+      userId: session.user.id,
+      sessionId: session.user.sessionId,
+      action: "PRICE_UPDATED",
+      summary: `Changed ${product.name}: ${changes.join(", ")}`,
+      entityType: "Product",
+      entityId: product.id,
+    });
+  }
+  return NextResponse.json(hasPermission(session.user, "finance.view") ? updated : { ...updated, costPrice: null });
 }

@@ -12,7 +12,7 @@ import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
-import { tradeInBrandLabel, tradeInCategory } from "@/lib/trade-in";
+import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, type TradeInCheckId } from "@/lib/trade-in";
 
 export async function GET() {
   const session = await auth();
@@ -77,7 +77,21 @@ const checkoutSchema = z.object({
     deviceType: z.string().trim().min(2).max(40),
     model: z.string().trim().min(2).max(80),
     // IMEI for phones and cellular iPads/watches, serial number for Macs and others.
-    imei: z.union([z.string().trim().toUpperCase().regex(/^[A-Z0-9]{8,20}$/), z.literal("")]).optional(),
+    imei: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{8,20}$/),
+    storage: z.string().trim().max(10).optional(),
+    color: z.string().trim().max(40).optional(),
+    grade: z.enum(["EXCELLENT", "GOOD", "FAIR", "FAULTY"]),
+    batteryHealth: z.number().int().min(1).max(100).optional(),
+    ownershipProof: z.enum(["RECEIPT", "BOX", "BOTH"]),
+    receiptReference: z.string().trim().max(80).optional(),
+    hasBox: z.boolean().default(false),
+    hasCharger: z.boolean().default(false),
+    checks: z.record(z.string(), z.boolean()),
+    sellerName: z.string().trim().min(2).max(120),
+    sellerPhone: z.string().trim().min(9).max(20),
+    notes: z.string().trim().max(300).optional(),
+    // The cashier's sign-off that they inspected the device and documents themselves.
+    staffConfirmed: z.boolean().default(false),
     value: z.number().int().positive().max(2_000_000_000),
     resalePrice: z.number().int().positive().max(2_000_000_000),
   }).optional(),
@@ -155,6 +169,12 @@ export async function POST(request: Request) {
   }
   if ((parsed.data.discountAmount > 0 || parsed.data.taxAmount > 0) && !hasPermission(session.user, "sales.adjust")) {
     return NextResponse.json({ error: "Your permissions cannot apply checkout adjustments." }, { status: 403 });
+  }
+
+  if (parsed.data.tradeIn) {
+    const tradeIn = parsed.data.tradeIn;
+    const assessment = assessTradeIn({ ...tradeIn, serial: tradeIn.imei, checks: tradeIn.checks as Partial<Record<TradeInCheckId, boolean>> });
+    if (!assessment.eligible) return NextResponse.json({ error: `Trade-in cannot be accepted: ${assessment.blockers[0]}`, tradeInBlockers: assessment.blockers }, { status: 400 });
   }
 
   const quantities = new Map<string, number>();
@@ -274,11 +294,23 @@ export async function POST(request: Request) {
       let tradeInProduct: { id: string; name: string; sku: string } | null = null;
       if (parsed.data.tradeIn) {
         const tradeIn = parsed.data.tradeIn;
-        if (tradeIn.imei && await transaction.product.findUnique({ where: { imei: tradeIn.imei }, select: { id: true } })) throw new Error("TRADE_IN_IMEI_IN_STOCK");
+        const onLipa = await transaction.creditPlan.findFirst({ where: { imei: tradeIn.imei, balance: { gt: 0 } }, select: { id: true } });
+        if (onLipa) throw new Error("TRADE_IN_ON_LIPA");
+        const known = await transaction.product.findUnique({ where: { imei: tradeIn.imei }, select: { id: true, inventory: { select: { stockOnHand: true } } } });
+        if (known && known.inventory.some((item) => item.stockOnHand > 0)) throw new Error("TRADE_IN_IMEI_IN_STOCK");
+        // A device we sold before can come back. Free its IMEI from the old, sold-out stock item.
+        if (known) await transaction.product.update({ where: { id: known.id }, data: { imei: null } });
         tradeInProduct = await transaction.product.create({
           data: {
-            sku: `TI-${tradeIn.imei || randomBytes(4).toString("hex").toUpperCase()}`,
-            imei: tradeIn.imei || null,
+            sku: `TI-${tradeIn.imei}-${randomBytes(2).toString("hex").toUpperCase()}`,
+            imei: tradeIn.imei,
+            configuration: [tradeIn.storage, tradeIn.color].filter(Boolean).join(" · ") || null,
+            catalogNotes: [
+              `Grade: ${tradeInGrades[tradeIn.grade].label}`,
+              tradeIn.batteryHealth ? `Battery ${tradeIn.batteryHealth}%` : null,
+              tradeIn.hasBox ? "With box" : "No box",
+              tradeIn.hasCharger ? "With charger" : "No charger",
+            ].filter(Boolean).join(" · "),
             name: `${tradeInBrandLabel(tradeIn.brand)} ${tradeIn.model} (trade-in)`,
             category: tradeInCategory(tradeIn.brand, tradeIn.deviceType),
             brand: tradeInBrandLabel(tradeIn.brand),
@@ -405,6 +437,34 @@ export async function POST(request: Request) {
       }
 
       if (tradeInProduct && parsed.data.tradeIn) {
+        const tradeIn = parsed.data.tradeIn;
+        await transaction.tradeIn.create({
+          data: {
+            saleId: createdSale.id,
+            productId: tradeInProduct.id,
+            brand: tradeIn.brand,
+            deviceType: tradeIn.deviceType,
+            model: tradeIn.model,
+            storage: tradeIn.storage || null,
+            color: tradeIn.color || null,
+            serial: tradeIn.imei,
+            grade: tradeIn.grade,
+            batteryHealth: tradeIn.batteryHealth ?? null,
+            ownershipProof: tradeIn.ownershipProof,
+            receiptReference: tradeIn.receiptReference || null,
+            hasBox: tradeIn.hasBox,
+            hasCharger: tradeIn.hasCharger,
+            checks: Object.fromEntries(tradeInChecks.map((check) => [check.id, tradeIn.checks[check.id] === true])),
+            sellerName: tradeIn.sellerName,
+            sellerPhone: tradeIn.sellerPhone,
+            value: tradeIn.value,
+            resalePrice: tradeIn.resalePrice,
+            notes: tradeIn.notes || null,
+            assessedById: session.user.id,
+            declaration: tradeInDeclaration(session.user.name ?? session.user.email ?? "staff member"),
+            confirmedAt: new Date(),
+          },
+        });
         await transaction.inventoryMovement.create({
           data: {
             branchId, productId: tradeInProduct.id, userId: session.user.id, saleId: createdSale.id,
@@ -599,6 +659,7 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "DEPOSIT_BELOW_POLICY") return NextResponse.json({ error: "The deposit is below the minimum required by this branch's Lipa policy." }, { status: 400 });
     if (error instanceof Error && error.message === "CREDIT_LIMIT_EXCEEDED") return NextResponse.json({ error: "This sale would exceed the customer's available Lipa credit limit." }, { status: 409 });
     if (error instanceof Error && error.message === "CUSTOMER_CREDIT_HOLD") return NextResponse.json({ error: "This customer is on credit hold. Cash and card purchases can still be recorded." }, { status: 409 });
+    if (error instanceof Error && error.message === "TRADE_IN_ON_LIPA") return NextResponse.json({ error: "Trade-in cannot be accepted: this device is still being paid for on Lipa Mdogo Mdogo. It can be traded in once the balance is cleared." }, { status: 409 });
     if (error instanceof Error && error.message === "TRADE_IN_IMEI_IN_STOCK") return NextResponse.json({ error: "A device with this IMEI or serial number is already in stock." }, { status: 409 });
     if (error instanceof Error && error.message === "IMEI_ALREADY_REGISTERED") return NextResponse.json({ error: "This IMEI is already attached to a Lipa account." }, { status: 409 });
     if (error instanceof Error && error.message === "INVALID_PAID_AMOUNT") return NextResponse.json({ error: "Use two distinct payment methods whose amounts add up to the sale total." }, { status: 400 });

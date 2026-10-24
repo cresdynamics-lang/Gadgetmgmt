@@ -15,7 +15,8 @@ export type ActivityAction =
   | "APPROVAL_GRANTED"
   | "SALES_GOAL_UPDATED"
   | "TRADE_IN_STOCKED"
-  | "MPESA_PROMPT_SENT";
+  | "MPESA_PROMPT_SENT"
+  | "PRICE_UPDATED";
 
 export async function startUserSession(userId: string) {
   const session = await prisma.userSession.create({ data: { userId }, select: { id: true } });

@@ -111,6 +111,13 @@ enum PermissionGrantMode {
   RESTRICTED
 }
 
+enum TradeInGrade {
+  EXCELLENT
+  GOOD
+  FAIR
+  FAULTY
+}
+
 enum SalesTargetPeriod {
   DAILY
   WEEKLY
@@ -163,6 +170,7 @@ model User {
   permissionsGranted        UserPermission[]          @relation("PermissionGrantor")
   permissionApprovals       PermissionApproval[]
   salesTargets              SalesTarget[]
+  tradeInsAssessed          TradeIn[]
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
 }
@@ -213,6 +221,7 @@ model Product {
   branchId        String
   branch          Branch              @relation(fields: [branchId], references: [id])
   tradeInSales    Sale[]              @relation("TradeInProduct")
+  tradeInRecord   TradeIn?
   inventory       InventoryItem[]
   saleItems       SaleItem[]
   creditPlans     CreditPlan[]
@@ -259,6 +268,7 @@ model Sale {
   tradeInValue     Int                 @default(0)
   tradeInProductId String?
   tradeInProduct   Product?            @relation("TradeInProduct", fields: [tradeInProductId], references: [id], onDelete: SetNull)
+  tradeIn          TradeIn?
   status           SaleStatus          @default(PAID)
   saleItems        SaleItem[]
   payments         SalePayment[]
@@ -673,4 +683,38 @@ model SalesTarget {
   updatedAt   DateTime          @updatedAt
 
   @@index([period, isActive])
+}
+
+model TradeIn {
+  id               String       @id @default(cuid())
+  saleId           String       @unique
+  sale             Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId        String?      @unique
+  product          Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  brand            String
+  deviceType       String
+  model            String
+  storage          String?
+  color            String?
+  serial           String
+  grade            TradeInGrade
+  batteryHealth    Int?
+  ownershipProof   String
+  receiptReference String?
+  hasBox           Boolean      @default(false)
+  hasCharger       Boolean      @default(false)
+  checks           Json
+  sellerName       String
+  sellerPhone      String
+  value            Int
+  resalePrice      Int
+  notes            String?
+  assessedById     String
+  assessedBy       User         @relation(fields: [assessedById], references: [id])
+  declaration      String       @default("")
+  confirmedAt      DateTime     @default(now())
+  createdAt        DateTime     @default(now())
+
+  @@index([serial])
+  @@index([createdAt])
 }

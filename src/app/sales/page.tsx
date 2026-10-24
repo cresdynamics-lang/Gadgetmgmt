@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Repeat2, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
+import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 import { downloadSaleReceipt } from "@/lib/receipt-pdf";
 import { BrandLogo } from "@/components/brand-logo";
-import { tradeInBrandLabel, tradeInDevices, type TradeInBrand } from "@/lib/trade-in";
+import { tradeInBrandLabel, tradeInDeclaration, tradeInGrades, tradeInChecks } from "@/lib/trade-in";
+import { assessTradeInForm, blankTradeInForm, TradeInPanel, tradeInPayload, tradeInValue, type TradeInForm } from "@/components/trade-in-panel";
 
 type Product = { id: string; sku: string; name: string; category: string; sellingPrice: number; available: number };
 type Customer = { id: string; name: string; phone: string };
@@ -66,12 +68,10 @@ export default function SalesPage() {
   const [mpesaPhone, setMpesaPhone] = useState("");
   const [resendingPrompt, setResendingPrompt] = useState(false);
   const [creditTermMonths, setCreditTermMonths] = useState<3 | 6 | 12>(3);
-  const [tradeInBrand, setTradeInBrand] = useState<TradeInBrand | "">("");
-  const [tradeInDevice, setTradeInDevice] = useState("");
-  const [tradeInModel, setTradeInModel] = useState("");
-  const [tradeInImei, setTradeInImei] = useState("");
-  const [tradeInValue, setTradeInValue] = useState("");
-  const [tradeInResale, setTradeInResale] = useState("");
+  const [tradeIn, setTradeIn] = useState<TradeInForm>(blankTradeInForm);
+  const [confirmingTradeIn, setConfirmingTradeIn] = useState(false);
+  const { data: session } = useSession();
+  const staffName = session?.user?.name ?? "the staff member";
   const [creditDepositAmount, setCreditDepositAmount] = useState("");
   const [creditDepositMethod, setCreditDepositMethod] = useState<"CASH" | "MPESA" | "CARD">("MPESA");
   const [creditDepositReference, setCreditDepositReference] = useState("");
@@ -177,14 +177,18 @@ export default function SalesPage() {
     .map(([id, quantity]) => ({ product: products.find((item) => item.id === id), quantity }))
     .filter((item): item is { product: Product; quantity: number } => Boolean(item.product));
   const subtotal = cartItems.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0);
-  const acceptedTradeIn = Math.min(subtotal, Math.max(0, Math.trunc(Number(tradeInValue) || 0)));
+  const acceptedTradeIn = tradeInValue(tradeIn, subtotal);
   const total = Math.max(0, subtotal - acceptedTradeIn);
   const deposit = Number(creditDepositAmount) || 0;
   const previewDeposit = Number.isFinite(deposit) ? Math.min(total, Math.max(0, Math.trunc(deposit))) : 0;
   const creditBalance = Math.max(0, total - previewDeposit);
   const estimatedInstallment = creditTermMonths > 0 ? Math.ceil(creditBalance / creditTermMonths) : 0;
-  const tradeInReady = !tradeInBrand || (Boolean(tradeInDevice) && tradeInModel.trim().length >= 2 && acceptedTradeIn > 0 && acceptedTradeIn < subtotal && Number(tradeInResale) > 0);
+  const tradeInAssessment = assessTradeInForm(tradeIn, subtotal);
+  const tradeInReady = !tradeIn.active || (tradeInAssessment.eligible && acceptedTradeIn < subtotal);
+  const selectedCustomer = customers.find((customer) => customer.id === customerId);
+  const tradeInCustomer = selectedCustomer ?? (showNewCustomer && newCustomer.name.trim() ? newCustomer : null);
   const newCustomerReady = newCustomer.name.trim().length >= 2 && newCustomer.phone.trim().length >= 7;
+  const checkoutBlocked = !cartItems.length || submitting || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100) || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "MPESA_STK" && mpesaPhone.trim().length < 9) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod));
   const receiptSubtotal = receipt?.saleItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) ?? 0;
   const categories = ["All items", ...Array.from(new Set(products.map((product) => product.category))).sort((a, b) => a.localeCompare(b))];
   const filteredProducts = products.filter((product) => (activeCategory === "All items" || product.category === activeCategory) && `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase()));
@@ -199,8 +203,16 @@ export default function SalesPage() {
     setReceipt(null);
   }
 
-  async function completeSale(event: FormEvent<HTMLFormElement>) {
+  function completeSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!cartItems.length || submitting) return;
+    // A trade-in gets one last look before the sale is recorded.
+    if (tradeIn.active && acceptedTradeIn > 0) { setConfirmingTradeIn(true); return; }
+    void submitSale();
+  }
+
+  async function submitSale() {
+    setConfirmingTradeIn(false);
     if (!cartItems.length || submitting) return;
     setSubmitting(true);
     setError("");
@@ -215,16 +227,7 @@ export default function SalesPage() {
           paymentMethod,
           ...(paymentMethod === "PAY_LINK" ? { payerPhone, payerConsent } : {}),
           ...(paymentMethod === "MPESA_STK" ? { mpesaPhone } : {}),
-          ...(tradeInBrand && tradeInModel && acceptedTradeIn > 0 ? {
-            tradeIn: {
-              brand: tradeInBrand,
-              deviceType: tradeInDevice,
-              model: tradeInModel,
-              ...(tradeInImei ? { imei: tradeInImei } : {}),
-              value: acceptedTradeIn,
-              resalePrice: Math.trunc(Number(tradeInResale)),
-            },
-          } : {}),
+          ...(tradeIn.active && acceptedTradeIn > 0 ? { tradeIn: tradeInPayload(tradeIn, subtotal) } : {}),
           ...(paymentMethod === "CREDIT" ? {
             creditTermMonths,
             creditDepositAmount: Number(creditDepositAmount),
@@ -252,12 +255,7 @@ export default function SalesPage() {
       setCreditDepositAmount("");
       setCreditDepositReference("");
       setCreditImei("");
-      setTradeInBrand("");
-      setTradeInDevice("");
-      setTradeInModel("");
-      setTradeInImei("");
-      setTradeInValue("");
-      setTradeInResale("");
+      setTradeIn(blankTradeInForm);
       await loadCatalogue();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Sale could not be completed.");
@@ -287,6 +285,29 @@ export default function SalesPage() {
   return (
     <AppShell>
       <div className={`sales-workspace space-y-5 ${cashierMode ? "cashier-mode" : ""}`}>
+        {confirmingTradeIn ? <div className="fixed inset-0 z-[85] flex items-center justify-center bg-[#111111]/50 px-4 backdrop-blur-[2px]">
+          <section role="dialog" aria-modal="true" aria-labelledby="trade-in-confirm-title" className="w-full max-w-md rounded-2xl border border-[#e5e5e5] bg-white p-5 shadow-[0_28px_100px_rgba(0,0,0,.28)]">
+            <h2 id="trade-in-confirm-title" className="text-base font-semibold text-[#111111]">Confirm this trade-in</h2>
+            <p className="mt-1 text-xs text-[#6b6b6b]">Check the details with the seller before completing the sale. This cannot be undone from the till.</p>
+            <dl className="mt-4 divide-y divide-[#e5e5e5] rounded-xl border border-[#e5e5e5] text-xs">
+              {[
+                ["Device", `${tradeIn.brand ? tradeInBrandLabel(tradeIn.brand) : ""} ${tradeIn.model}${tradeIn.storage ? ` · ${tradeIn.storage}` : ""}`],
+                ["IMEI / serial", tradeIn.serial],
+                ["Condition", `${tradeIn.grade ? tradeInGrades[tradeIn.grade].label : "—"}${tradeIn.batteryHealth ? ` · battery ${tradeIn.batteryHealth}%` : ""}`],
+                ["Proof of ownership", [tradeIn.receiptSeen ? "Receipt" : null, tradeIn.boxSeen ? "Box" : null].filter(Boolean).join(" and ")],
+                ["Seller", `${tradeIn.sellerName} · ${tradeIn.sellerPhone}`],
+                ["Trade-in value", money(acceptedTradeIn)],
+                ["Resale price", money(Number(tradeIn.resalePrice) || 0)],
+                ["Customer pays", money(total)],
+              ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 px-3 py-2"><dt className="text-[#6b6b6b]">{label}</dt><dd className="text-right font-semibold text-[#111111]">{value}</dd></div>)}
+            </dl>
+            <p className="mt-3 text-[10px] leading-4 text-[#4a4a4a]">{tradeInDeclaration(staffName)} {tradeInChecks.length} of {tradeInChecks.length} checks ticked.</p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-[auto_1fr]">
+              <button type="button" disabled={submitting} onClick={() => void submitSale()} className="min-h-12 rounded-xl bg-[#111111] px-4 text-sm font-semibold text-white disabled:opacity-60 sm:order-2">{submitting ? "Recording…" : "Confirm and complete sale"}</button>
+              <button type="button" onClick={() => setConfirmingTradeIn(false)} className="min-h-12 whitespace-nowrap rounded-xl border border-[#c4c4c4] px-4 text-sm font-semibold sm:order-1">Go back</button>
+            </div>
+          </section>
+        </div> : null}
         <div className="sales-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e5e5e5] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(0,0,0,.035)] sm:px-7"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Point of sale</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">New sale</h2><p className="mt-1.5 text-sm text-[#77837a]">Search the catalogue, build the basket, and check out in one place.</p></div><div className="flex items-center gap-3"><p className="hidden text-sm text-[#66736a] sm:block">Live prices and available stock</p><button type="button" aria-pressed={cashierMode} onClick={() => setCashierMode((active) => !active)} className="inline-flex items-center gap-2 rounded-xl border border-[#e5e5e5] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#2d2d2d] transition hover:bg-[#f5f5f5]">{cashierMode ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}{cashierMode ? "Exit cashier mode" : "Cashier mode"}</button></div></div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {receipt ? (
@@ -376,17 +397,7 @@ export default function SalesPage() {
                 </div> : <div className="flex gap-2"><select value={customerId} onChange={(event) => { setCustomerId(event.target.value); setShowNewCustomer(false); setNewCustomer(blankCustomer); }} className="min-w-0 flex-1 rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#1a1a1a]"><option value="">Walk-in customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select><button type="button" onClick={() => { setCustomerId(""); setShowNewCustomer(true); }} aria-label="Add a new customer" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#e5e5e5] bg-[#f5f5f5] px-3 text-[11px] font-semibold text-[#2d2d2d] transition hover:bg-[#e5e5e5]"><Plus className="h-3.5 w-3.5"/>New</button></div>}
               </div>
               <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#69746c]">How are they paying?</legend><div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#c4c4c4] sm:grid-cols-4">{paymentMethods.map((method) => <button key={method.value} type="button" aria-pressed={paymentMethod === method.value} onClick={() => { setPaymentMethod(method.value); if (method.value === "CREDIT" && !customerId) setShowNewCustomer(true); }} className={`px-1 py-2.5 text-[10px] font-semibold transition sm:text-xs ${paymentMethod === method.value ? "bg-[#111111] text-white" : "bg-white text-[#5f6e63] hover:bg-[#f5f5f5]"}`}>{method.label}</button>)}</div>{paymentMethod === "CREDIT" ? <p className="mt-1.5 text-[10px] text-[#78867b]">Start a Lipa plan and collect the customer details below.</p> : paymentMethod === "MPESA_STK" ? <div className="mt-3 space-y-2 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#68796d]">Customer’s Safaricom number<input required type="tel" autoComplete="tel" minLength={9} maxLength={20} value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} placeholder="07xx xxx xxx" className="mt-1.5 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label><p className="text-[9px] text-[#879287]">The customer gets an M-Pesa prompt for the total and enters their PIN on their phone. The sale completes when M-Pesa confirms, and the money settles to the business Stanbic account.</p></div> : paymentMethod === "PAY_LINK" ? <div className="mt-3 space-y-2.5 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#68796d]">Payer’s mobile number<input required type="tel" autoComplete="tel" minLength={7} maxLength={30} value={payerPhone} onChange={(event) => setPayerPhone(event.target.value)} placeholder="07xx xxx xxx" className="mt-1.5 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label><label className="flex items-start gap-2 text-[10px] leading-4 text-[#707c72]"><input type="checkbox" required checked={payerConsent} onChange={(event) => setPayerConsent(event.target.checked)} className="mt-0.5 accent-[#1a1a1a]"/><span>I have the payer’s permission to text them this one-time link.</span></label><p className="text-[9px] text-[#879287]">The secure link will be sent by SMS after recording the sale. The number will be prefilled for the M-Pesa prompt.</p></div> : null}</fieldset>
-              <div className="space-y-3 rounded-xl border border-[#e5e5e5] bg-[#f8f8f8] p-3.5">
-                <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-white text-[#2d2d2d] ring-1 ring-[#e5e5e5]"><Repeat2 className="h-4 w-4"/></span><div><p className="text-xs font-semibold text-[#1a1a1a]">Device trade-in</p><p className="mt-0.5 text-[10px] text-[#7d8175]">iPhone, iPad, MacBook, Apple Watch, AirPods or a Samsung device. Value comes off today&apos;s total, including Lipa plans.</p></div></div>
-                <div className="grid grid-cols-2 gap-1.5">{(["APPLE", "SAMSUNG"] as const).map((brand) => <button key={brand} type="button" aria-pressed={tradeInBrand === brand} onClick={() => { setTradeInBrand((current) => current === brand ? "" : brand); setTradeInDevice(""); setTradeInModel(""); }} className={`rounded-lg border px-2 py-2 text-center text-xs font-semibold transition ${tradeInBrand === brand ? "border-[#111111] bg-[#111111] text-white" : "border-[#e5e5e5] bg-white text-[#5f6e63] hover:border-[#c4c4c4]"}`}>{tradeInBrandLabel(brand)}</button>)}</div>
-                {tradeInBrand ? <div className="space-y-2.5">
-                  <div className="flex flex-wrap gap-1.5">{Object.keys(tradeInDevices[tradeInBrand]).map((device) => <button key={device} type="button" aria-pressed={tradeInDevice === device} onClick={() => { setTradeInDevice(device); setTradeInModel(""); }} className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${tradeInDevice === device ? "border-[#111111] bg-[#111111] text-white" : "border-[#e5e5e5] bg-white text-[#5f6e63] hover:border-[#c4c4c4]"}`}>{device}</button>)}</div>
-                  {tradeInDevice ? <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Model<input required list="trade-in-models" value={tradeInModel} onChange={(event) => setTradeInModel(event.target.value)} placeholder={`Choose or type the ${tradeInDevice} model`} className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal"/><datalist id="trade-in-models">{tradeInDevices[tradeInBrand][tradeInDevice]?.models.map((model) => <option key={model} value={model}/>)}</datalist></label> : null}
-                  <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Trade-in value (KES)<input required type="number" min="1" max={Math.max(1, subtotal - 1)} step="1" value={tradeInValue} onChange={(event) => setTradeInValue(event.target.value)} placeholder="Amount allowed" className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal"/></label>
-                  <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Resale price (KES)<input required type="number" min="1" step="1" value={tradeInResale} onChange={(event) => setTradeInResale(event.target.value)} placeholder="What the shop will sell it for" className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal"/><span className="mt-1 block text-[9px] font-normal normal-case tracking-normal text-[#8a8a8a]">The traded-in device goes into stock at this price.</span></label>
-                  <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">IMEI or serial number <span className="font-normal normal-case tracking-normal">(optional)</span><input minLength={8} maxLength={20} value={tradeInImei} onChange={(event) => setTradeInImei(event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())} placeholder="IMEI for phones, serial for Macs" className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal"/></label>
-                </div> : null}
-              </div>
+              <TradeInPanel form={tradeIn} onChange={setTradeIn} subtotal={subtotal} staffName={staffName} customer={tradeInCustomer}/>
               {paymentMethod === "CREDIT" ? <div className="space-y-3 rounded-xl border border-[#e6e1d5] bg-[#fbfaf6] p-3.5">
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e5e5e5] text-[#2d2d2d]"><CreditCard className="h-4 w-4"/></span><div><p className="text-xs font-semibold text-[#1a1a1a]">Lipa Mdogo Mdogo</p><p className="mt-0.5 text-[10px] text-[#7d8175]">Minimum 40% deposit. The rest is split over the plan.</p></div></div><span className="rounded-full bg-[#f1eadb] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#886d3e]">Take home</span></div>
                 <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Repayment term</p><div className="grid grid-cols-3 gap-1.5">{([3, 6, 12] as const).map((months) => <button key={months} type="button" aria-pressed={creditTermMonths === months} onClick={() => setCreditTermMonths(months)} className={`rounded-lg border px-2 py-2 text-center transition ${creditTermMonths === months ? "border-[#2d2d2d] bg-[#e5e5e5] text-[#2d2d2d] shadow-[inset_0_0_0_1px_#2d2d2d]" : "border-[#e5e2d8] bg-white text-[#74796d] hover:border-[#c4c4c4]"}`}><span className="block text-xs font-bold">{months}</span><span className="text-[9px]">months</span></button>)}</div></div>
@@ -398,8 +409,8 @@ export default function SalesPage() {
                 <p className="flex items-start gap-1.5 text-[9px] leading-relaxed text-[#888a7e]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#6b6b6b]"/>Review the deposit with the customer before confirming. Checkout deducts stock and opens their payment account.</p>
               </div> : null}
               {paymentMethod === "SPLIT" ? <div className="space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Split tender</p><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="First payment method" value={firstTenderMethod} onChange={(event) => setFirstTenderMethod(event.target.value as typeof firstTenderMethod)} className="border border-[#c4c4c4] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select><input aria-label="First payment amount in KES" type="number" min="1" max={Math.max(1, total - 1)} step="1" required value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="w-full border border-[#c4c4c4] px-2 py-2 text-sm" /></div><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="Second payment method" value={secondTenderMethod} onChange={(event) => setSecondTenderMethod(event.target.value as typeof secondTenderMethod)} className="border border-[#c4c4c4] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select><p className="border border-[#e5e5e5] bg-[#f5f5f5] px-2 py-2 text-sm">{money(Math.max(0, total - Number(paidAmount || 0)))}</p></div>{firstTenderMethod === secondTenderMethod ? <p role="alert" className="text-xs text-red-700">Choose two different payment methods.</p> : null}</div> : null}
-              <div className="rounded-xl bg-[#f5f5f5] px-3.5 py-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-[#708076]">Total due</span><span className="text-xl font-bold tracking-[-.04em] tabular-nums text-[#1a1a1a]">{money(total)}</span></div>{acceptedTradeIn > 0 ? <p className="mt-1.5 text-[10px] text-[#92a096]">After {money(acceptedTradeIn)} {tradeInBrand ? tradeInBrandLabel(tradeInBrand) : "phone"} trade-in</p> : <p className="mt-1.5 text-[10px] text-[#92a096]">Prices include all selected Apple items</p>}</div>
-              <button type="submit" disabled={!cartItems.length || submitting || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100) || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "MPESA_STK" && mpesaPhone.trim().length < 9) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod))} className="w-full rounded-xl bg-[#111111] px-4 py-3 text-sm font-semibold text-white shadow-[0_5px_16px_rgba(0,0,0,.13)] transition hover:bg-[#1a1a1a] disabled:cursor-not-allowed disabled:bg-[#aab5ac]">{submitting ? "Recording sale…" : paymentMethod === "CREDIT" ? "Collect deposit & start plan" : paymentMethod === "PAY_LINK" ? "Record sale & text payer" : paymentMethod === "MPESA_STK" ? "Send M-Pesa prompt" : "Complete sale"}</button>
+              <div className="rounded-xl bg-[#f5f5f5] px-3.5 py-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-[#708076]">Total due</span><span className="text-xl font-bold tracking-[-.04em] tabular-nums text-[#1a1a1a]">{money(total)}</span></div>{acceptedTradeIn > 0 ? <p className="mt-1.5 text-[10px] text-[#92a096]">After {money(acceptedTradeIn)} {tradeIn.model || "device"} trade-in</p> : <p className="mt-1.5 text-[10px] text-[#92a096]">Prices include all selected Apple items</p>}</div>
+              <button type="submit" disabled={checkoutBlocked} className={`min-h-12 w-full rounded-xl px-4 py-3 text-sm font-semibold transition ${checkoutBlocked ? "cursor-not-allowed bg-[#d4d4d4] text-[#6b6b6b]" : "bg-[#111111] text-white shadow-[0_5px_16px_rgba(0,0,0,.13)] hover:bg-[#1a1a1a]"}`}>{submitting ? "Recording sale…" : paymentMethod === "CREDIT" ? "Collect deposit & start plan" : paymentMethod === "PAY_LINK" ? "Record sale & text payer" : paymentMethod === "MPESA_STK" ? "Send M-Pesa prompt" : "Complete sale"}</button>
               {paymentMethod === "CREDIT" ? <p className="flex items-center justify-center gap-1.5 text-[9px] text-[#93988d]"><ShieldCheck className="h-3 w-3"/>Sale, deposit, customer and schedule are recorded together</p> : null}
             </div>
           </form>
