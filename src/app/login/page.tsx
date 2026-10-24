@@ -7,7 +7,8 @@ import { ArrowRight, Boxes, ChartNoAxesCombined, ShieldCheck } from "lucide-reac
 
 import { BrandLogo } from "@/components/brand-logo";
 
-const SAMPLE_OWNER = {
+// Local development only: production builds drop these values entirely.
+const SAMPLE_OWNER = process.env.NODE_ENV === "production" ? null : {
   email: "gadgethub@gmail.co",
   password: "GadgetHubOwner1",
 };
@@ -83,6 +84,7 @@ export default function LoginPage() {
             </button>
           </form>
           <div className="mt-8 border-t border-[#e5e5e5] pt-5">
+            {SAMPLE_OWNER ? <>
             <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#6b6b6b]">Sample owner login</p>
             <button type="button" onClick={() => { setEmail(SAMPLE_OWNER.email); setPassword(SAMPLE_OWNER.password); setError(""); }} className="mt-3 flex w-full items-start justify-between gap-3 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] px-3.5 py-3 text-left transition hover:border-black hover:bg-white">
               <span>
@@ -92,6 +94,7 @@ export default function LoginPage() {
               </span>
               <span className="shrink-0 text-[11px] font-semibold text-[#111111]">Use</span>
             </button>
+            </> : null}
             <p className="mt-3 text-xs leading-5 text-[#6b6b6b]">Need another account? Ask your branch manager to create or reactivate it.</p>
           </div>
         </div>

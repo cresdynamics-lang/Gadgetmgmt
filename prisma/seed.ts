@@ -77,41 +77,44 @@ async function main() {
     });
   }
 
-  for (const item of appleCatalogue) {
-    const product = await prisma.product.upsert({
-      where: { sku: item.sku },
-      update: {
-        name: item.name,
-        category: item.category,
-        brand: "Apple",
-        costPrice: item.costPrice,
-        sellingPrice: item.sellingPrice,
-        reorderLevel: item.reorderLevel,
-        branchId: shop.id,
-      },
-      create: {
-        sku: item.sku,
-        name: item.name,
-        category: item.category,
-        brand: "Apple",
-        costPrice: item.costPrice,
-        sellingPrice: item.sellingPrice,
-        reorderLevel: item.reorderLevel,
-        branchId: shop.id,
-      },
-    });
+  // Demo stock for local development. Set SEED_DEMO_CATALOGUE=false on a live shop.
+  if (process.env.SEED_DEMO_CATALOGUE !== "false") {
+    for (const item of appleCatalogue) {
+      const product = await prisma.product.upsert({
+        where: { sku: item.sku },
+        update: {
+          name: item.name,
+          category: item.category,
+          brand: "Apple",
+          costPrice: item.costPrice,
+          sellingPrice: item.sellingPrice,
+          reorderLevel: item.reorderLevel,
+          branchId: shop.id,
+        },
+        create: {
+          sku: item.sku,
+          name: item.name,
+          category: item.category,
+          brand: "Apple",
+          costPrice: item.costPrice,
+          sellingPrice: item.sellingPrice,
+          reorderLevel: item.reorderLevel,
+          branchId: shop.id,
+        },
+      });
 
-    await prisma.inventoryItem.upsert({
-      where: { branchId_productId: { branchId: shop.id, productId: product.id } },
-      update: { stockOnHand: item.stockOnHand, reorderLevel: item.reorderLevel },
-      create: {
-        branchId: shop.id,
-        productId: product.id,
-        stockOnHand: item.stockOnHand,
-        reservedStock: item.sku === "IPH-15-PRO" ? 2 : 0,
-        reorderLevel: item.reorderLevel,
-      },
-    });
+      await prisma.inventoryItem.upsert({
+        where: { branchId_productId: { branchId: shop.id, productId: product.id } },
+        update: { stockOnHand: item.stockOnHand, reorderLevel: item.reorderLevel },
+        create: {
+          branchId: shop.id,
+          productId: product.id,
+          stockOnHand: item.stockOnHand,
+          reservedStock: item.sku === "IPH-15-PRO" ? 2 : 0,
+          reorderLevel: item.reorderLevel,
+        },
+      });
+    }
   }
 
   for (const branch of [shop]) {
