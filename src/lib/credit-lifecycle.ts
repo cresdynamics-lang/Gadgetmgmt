@@ -10,12 +10,28 @@ export function daysUntilDue(dueDate: Date, now: Date) {
   return Math.round((Date.parse(`${nairobiDay(dueDate)}T00:00:00Z`) - Date.parse(`${nairobiDay(now)}T00:00:00Z`)) / 86_400_000);
 }
 
+/** Customers are reminded this many days before a payment is due, and again on the due day. */
+export const REMINDER_DAYS_BEFORE_DUE = 3;
+
+/** The reminder (if any) a customer gets today for a payment due in `daysUntilDue` days. */
+export function reminderMilestone(daysUntilDue: number) {
+  if (daysUntilDue === REMINDER_DAYS_BEFORE_DUE) return `before-${REMINDER_DAYS_BEFORE_DUE}-days`;
+  if (daysUntilDue === 0) return "due-today";
+  return null;
+}
+
+export const flaggedCreditStatuses: readonly AutomatedCreditStatus[] = ["LATE_1", "LATE_2", "LATE_3", "RECOVERY"];
+
+/**
+ * An unpaid account is flagged (late) once it is `graceDays` days past due. With the default
+ * policy of 3 days, a payment due on the 10th is flagged on the 13th.
+ */
 export function creditStatusForDays(days: number, graceDays: number): AutomatedCreditStatus {
   if (days > 3) return "ACTIVE";
   if (days > 0) return "DUE_SOON";
   if (days === 0) return "DUE";
   const overdueDays = -days;
-  if (overdueDays <= graceDays) return "GRACE";
+  if (overdueDays < graceDays) return "GRACE";
   const lateDays = overdueDays - graceDays;
   if (lateDays <= 3) return "LATE_1";
   if (lateDays <= 6) return "LATE_2";

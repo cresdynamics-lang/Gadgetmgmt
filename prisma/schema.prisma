@@ -185,6 +185,9 @@ model Customer {
   status                   CustomerStatus             @default(ACTIVE)
   creditLimit              Int                        @default(0)
   reliabilityScore         Int                        @default(100)
+  // Set by the daily job when a Lipa payment is overdue; cleared automatically once the account is current.
+  flaggedAt                DateTime?
+  flagReason               String?
   smsRemindersEnabled      Boolean                    @default(false)
   emailRemindersEnabled    Boolean                    @default(false)
   remindersConsentAt       DateTime?

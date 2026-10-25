@@ -53,7 +53,7 @@ export function CreditPolicyForm({ owner }: { owner: boolean }) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {field("minimumDepositPercent", "Minimum deposit (%)", "Cannot be below 40%. Plans then split the remaining amount over 3, 6 or 12 months.", 100, 40)}
         {field("defaultCreditLimit", "Default customer limit (KES)", "Zero means no branch default limit; a customer limit still applies.")}
-        {field("graceDays", "Grace period (days)", "Days after the due date before late follow-up.", 30)}
+        {field("graceDays", "Flag after (days)", "Days after the due date before an unpaid account is flagged and new Lipa purchases are paused.", 30)}
         <label className="block text-xs font-medium text-[#343941]">Late fee (KES)<input type="number" value="0" readOnly disabled className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[#f5f5f5] px-3 py-2.5 text-sm tabular-nums text-[#788178]"/><span className="mt-1 block text-[10px] leading-4 text-[var(--muted)]">Unavailable until the system can record signed customer consent and the agreed fee terms.</span></label>
         {field("earlySettlementDiscountPercent", "Early settlement discount (%)", "Reserved for early-payoff calculation in the signed agreement.", 100)}
         {field("managerEscalationDays", "Manager escalation (days late)", "Notify the branch manager after this many days.", 60)}
