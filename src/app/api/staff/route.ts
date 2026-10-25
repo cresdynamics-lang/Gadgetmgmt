@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { canSeeAllBranches, canUseCapability, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { recordActivity } from "@/lib/activity";
+import { queueAndSendNotice } from "@/lib/customer-notice";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -69,6 +70,17 @@ export async function POST(request: Request) {
       summary: `Created ${user.role} account for ${user.name}`,
       entityType: "User",
       entityId: user.id,
+    });
+    const appUrl = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
+    // The password is never emailed; the admin shares it privately.
+    await queueAndSendNotice({
+      branchId,
+      channel: "EMAIL",
+      kind: "STAFF_WELCOME",
+      recipient: user.email,
+      subject: "Your Gadget Hub staff account is ready",
+      body: `Hello ${user.name}, a Gadget Hub staff account has been created for you at ${user.branch?.name ?? "the shop"}.${appUrl ? ` Sign in at ${appUrl}/login` : " Sign in on the Gadget Hub app"} with ${user.email}. Your manager will give you your first password in person. If you did not expect this email, please ignore it.`,
+      dedupeKey: `staff-welcome:${user.id}`,
     });
     return NextResponse.json(user, { status: 201 });
   } catch (error) {

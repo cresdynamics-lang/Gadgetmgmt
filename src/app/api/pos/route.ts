@@ -8,6 +8,7 @@ import { canUseCapability, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { recordActivity } from "@/lib/activity";
 import { queueAndSendNotice } from "@/lib/customer-notice";
+import { sendSaleReceiptEmail } from "@/lib/sale-receipt-email";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
@@ -646,6 +647,8 @@ export async function POST(request: Request) {
         body: `Hello ${created.customer?.name ?? "there"}, here is invoice ${created.invoiceNumber} for KES ${created.total.toLocaleString("en-KE")}. Paid so far: KES ${created.paidAmount.toLocaleString("en-KE")}. Open a link below to review or pay:\n${links}`,
         dedupeKey: `sale-links:${created.id}`,
       });
+    } else if (customerEmail && (created.status === "PAID" || created.status === "PARTIAL")) {
+      await sendSaleReceiptEmail(created.id);
     }
     return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt }, { status: 201 });
   } catch (error) {

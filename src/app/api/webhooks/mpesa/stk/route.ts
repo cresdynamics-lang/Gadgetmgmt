@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { recordCreditPayment } from "@/lib/credit-payment";
 import { getDarajaConfig, normalizeKenyanPhone } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
+import { sendSaleReceiptEmail } from "@/lib/sale-receipt-email";
 
 type StkCallback = {
   Body?: { stkCallback?: {
@@ -143,6 +144,10 @@ export async function POST(request: Request) {
         console.error("Could not queue M-Pesa reconciliation alert", paymentRequest.id, alertError instanceof Error ? alertError.message : "unknown error");
       }
     }
+  }
+  if (paymentRequest.saleId) {
+    const settled = await prisma.paymentRequest.findUnique({ where: { id: paymentRequest.id }, select: { status: true } });
+    if (settled?.status === "PAID") await sendSaleReceiptEmail(paymentRequest.saleId);
   }
   return Response.json({ Result: "Accepted" });
 }

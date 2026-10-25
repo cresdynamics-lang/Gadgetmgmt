@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
   const admins = await prisma.user.findMany({ where: { role: "OWNER", status: "ACTIVE" }, select: { email: true } });
   if (!admins.length) return NextResponse.json({ error: "No active super admin is available to approve this request." }, { status: 503 });
-  const mailReady = emailConfigured();
+  const mailReady = emailConfigured("accounts");
   if (!mailReady && process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Email is not configured, so an approval code cannot be sent to the super admin." }, { status: 503 });
   }
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     </div></body></html>`;
 
   if (mailReady) {
-    const results = await Promise.allSettled(admins.map((admin) => sendEmail({ to: admin.email, subject, text, html })));
+    const results = await Promise.allSettled(admins.map((admin) => sendEmail({ to: admin.email, subject, text, html, category: "accounts" })));
     if (results.every((result) => result.status === "rejected")) {
       await prisma.permissionApproval.delete({ where: { id: approval.id } });
       console.error("Approval code email failed", results.map((result) => result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "unknown"));

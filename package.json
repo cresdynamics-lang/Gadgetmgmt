@@ -12,6 +12,7 @@
     "db:studio": "prisma studio",
     "db:seed": "node --env-file=.env --import tsx prisma/seed.ts",
     "db:seed-prices": "node --env-file=.env --import tsx scripts/seed-price-list.ts",
+    "email:test": "node --env-file=.env --import tsx scripts/test-email.ts",
     "db:import-catalog": "node --env-file=.env --import tsx scripts/import-catalog.ts",
     "db:verify-catalog": "node --env-file=.env --import tsx scripts/verify-catalog.ts",
     "db:test-pos-transaction": "node --env-file=.env --import tsx scripts/test-pos-transaction.ts",
@@ -23,7 +24,8 @@
     "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts",
     "test:access": "node --import tsx --test scripts/access.test.ts",
     "test:sales-periods": "node --import tsx --test scripts/sales-periods.test.ts",
-    "test:trade-in": "node --import tsx --test scripts/trade-in.test.ts"
+    "test:trade-in": "node --import tsx --test scripts/trade-in.test.ts",
+    "test:mail": "node --import tsx --test scripts/mail.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

@@ -1,15 +1,16 @@
 import type { NotificationChannel } from "@prisma/client";
 
-import { emailConfigured, extractPayLink, sendEmail } from "@/lib/mail";
+import { emailConfigured, extractPayLink, mailCategoryForKind, sendEmail } from "@/lib/mail";
 
 export { emailConfigured };
 
-export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string }) {
+export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string; kind?: string | null }) {
   if (input.channel === "EMAIL") {
     await sendEmail({
       to: input.recipient,
       subject: input.subject ?? "Gadget Hub update",
       text: input.body,
+      category: mailCategoryForKind(input.kind),
     });
     return;
   }
