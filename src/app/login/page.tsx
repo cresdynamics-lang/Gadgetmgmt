@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Boxes, ChartNoAxesCombined, ShieldCheck } from "lucide-react";
+import { ArrowRight, Boxes, ChartNoAxesCombined, Eye, EyeOff, ShieldCheck } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 
@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [pending, setPending] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -76,7 +77,10 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <label htmlFor="password" className="text-xs font-semibold text-[#2d2d2d]">Password</label>
-              <input id="password" name="password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" className="w-full rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] px-3.5 py-3 text-sm outline-none transition placeholder:text-[#a3a3a3] focus:border-black focus:bg-white focus:ring-4 focus:ring-black/10" />
+              <div className="relative">
+                <input id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" className="w-full rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] py-3 pl-3.5 pr-12 text-sm outline-none transition placeholder:text-[#a3a3a3] focus:border-black focus:bg-white focus:ring-4 focus:ring-black/10" />
+                <button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute inset-y-0 right-0 grid w-12 place-items-center rounded-r-xl text-[#6b6b6b] transition hover:text-[#111111]">{showPassword ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}</button>
+              </div>
             </div>
             {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
             <button type="submit" disabled={pending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,0,0,.16)] transition hover:bg-[#1a1a1a] disabled:cursor-wait disabled:opacity-60">
