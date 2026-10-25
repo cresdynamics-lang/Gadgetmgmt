@@ -535,6 +535,11 @@ export async function POST(request: Request) {
           }
           creditPlanLinks.push({ token, planReference, productName: line.product.name, ...(payerToken ? { payerToken, payerAmount: lineBalance } : {}) });
         }
+        // Payment reminders by email are part of the Lipa agreement for customers with an email address.
+        await transaction.customer.updateMany({
+          where: { id: customerId!, email: { not: null }, NOT: { email: "" }, emailRemindersEnabled: false },
+          data: { emailRemindersEnabled: true, remindersConsentAt: receiptDate },
+        });
       }
 
       await transaction.inventoryMovement.createMany({
