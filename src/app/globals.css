@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* On the server pm2 keeps sockets and logs in the app folder; never scan them for classes. */
+@source not "../../.pm2";
 
 :root {
   --background: #f5f5f5;

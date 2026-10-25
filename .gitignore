@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# server-only files (pm2 home, build log, deployed revision)
+/.pm2/
+/.build.log
+/REVISION
+/.owner-password
