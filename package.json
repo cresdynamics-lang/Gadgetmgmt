@@ -25,7 +25,8 @@
     "test:access": "node --import tsx --test scripts/access.test.ts",
     "test:sales-periods": "node --import tsx --test scripts/sales-periods.test.ts",
     "test:trade-in": "node --import tsx --test scripts/trade-in.test.ts",
-    "test:mail": "node --import tsx --test scripts/mail.test.ts"
+    "test:mail": "node --import tsx --test scripts/mail.test.ts",
+    "test:assistant": "node --env-file=.env --import tsx --test scripts/assistant.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

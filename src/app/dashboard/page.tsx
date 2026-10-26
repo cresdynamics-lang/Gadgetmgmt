@@ -6,7 +6,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessPage, canSeeAllBranches, hasPermission, needsApproval } from "@/lib/access";
 import { LockedPanel } from "@/components/locked-panel";
-import { AiBriefing } from "@/app/insights/ai-briefing";
+import { AssistantPanel } from "@/components/assistant-panel";
+import { assistantConfigured } from "@/lib/assistant/agent";
 import { needsReorder } from "@/lib/stock-levels";
 
 export const instant = false;
@@ -132,7 +133,7 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {hasPermission(user, "insights.view") ? <AiBriefing configured={Boolean(process.env.OPENAI_API_KEY)} /> : null}
+        {hasPermission(user, "assistant.use") ? <AssistantPanel configured={assistantConfigured()} /> : null}
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
           {canSeeSales ? <section className="dashboard-panel dashboard-chart">

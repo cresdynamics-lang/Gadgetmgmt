@@ -20,6 +20,7 @@ export type Permission =
   | "finance.view"
   | "goals.manage"
   | "insights.view"
+  | "assistant.use"
   | "settings.view"
   | "notifications.view"
   | "activity.view"
@@ -54,6 +55,7 @@ export const permissionLabels: Record<Permission, string> = {
   "finance.view": "View financial position",
   "goals.manage": "Set sales goals",
   "insights.view": "View business insights",
+  "assistant.use": "Use AI assistant",
   "settings.view": "View settings",
   "notifications.view": "View messages",
   "activity.view": "View activity log",
