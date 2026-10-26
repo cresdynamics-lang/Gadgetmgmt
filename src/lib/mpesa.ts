@@ -55,7 +55,8 @@ export async function requestMpesaStk(input: { phone: string; amount: number; ac
 
   const timestamp = nairobiTimestamp();
   const password = Buffer.from(`${config.shortcode}${config.passkey}${timestamp}`).toString("base64");
-  const callback = new URL("/api/webhooks/mpesa/stk", config.baseUrl);
+  // Daraja rejects callback URLs containing "mpesa", "safaricom", "query" and similar words.
+  const callback = new URL("/api/webhooks/payments/stk", config.baseUrl);
   callback.searchParams.set("request", input.accountReference);
   callback.searchParams.set("signature", createHmac("sha256", config.callbackSecret).update(input.accountReference).digest("hex"));
   const response = await fetch(`${host}/mpesa/stkpush/v1/processrequest`, {

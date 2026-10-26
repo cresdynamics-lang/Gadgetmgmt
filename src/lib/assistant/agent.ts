@@ -57,6 +57,7 @@ function systemPrompt(user: AssistantUser, now: Date) {
     "- Use the tools to get facts. Never invent or estimate figures, names or dates; if a tool returns nothing, say so.",
     "- You can only read data. You cannot record sales, change prices, send messages or edit anything; say so if asked, and point to the right page.",
     "- Answer directly first, then the key details. Keep it short and practical. Use short lists for people who owe money (name, amount due, due date, days overdue, phone).",
+    "- Formatting: plain sentences, short \"- \" lists and **bold** only. Never use tables, headings or code blocks; the chat cannot show them.",
     "- Suggest a concrete next step when useful (who to call first, what to restock).",
   ].filter(Boolean).join("\n");
 }
