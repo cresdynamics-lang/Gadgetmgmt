@@ -223,21 +223,26 @@ async function queueReminders(now: Date) {
   return queued;
 }
 
-/** The owner's report covers the previous full day, so it is useful whenever the morning run happens. */
+/**
+ * The owner's report covers the previous full day. It is shown on the dashboard
+ * (to people who can see sales) and is no longer emailed: it is saved as SKIPPED
+ * with recipient "dashboard", so the delivery worker never picks it up.
+ */
 async function queueOwnerDigests(now: Date) {
+  // Reports queued before this change should not go out by email either.
+  await prisma.customerNotification.updateMany({ where: { kind: "OWNER_DAILY_DIGEST", status: { in: ["QUEUED", "FAILED"] } }, data: { status: "SKIPPED" } });
   const date = nairobiDate(new Date(now.getTime() - 86_400_000));
   const start = new Date(`${date}T00:00:00+03:00`);
   const end = new Date(start.getTime() + 86_400_000);
   const branches = await prisma.branch.findMany({ where: { isActive: true }, select: { id: true, name: true } });
   let queued = 0;
   for (const branch of branches) {
-    const [sales, salePayments, creditPayments, overduePlans, pendingReferences, recipients, inventory] = await Promise.all([
+    const [sales, salePayments, creditPayments, overduePlans, pendingReferences, inventory] = await Promise.all([
       prisma.sale.aggregate({ where: { branchId: branch.id, createdAt: { gte: start, lt: end }, status: { in: ["PAID", "PARTIAL"] } }, _sum: { total: true }, _count: true }),
       prisma.salePayment.aggregate({ where: { sale: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { creditPlan: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
       prisma.creditPlan.aggregate({ where: { branchId: branch.id, balance: { gt: 0 }, nextDueDate: { lt: start }, status: { not: "PAID_OFF" } }, _sum: { balance: true }, _count: true }),
       prisma.creditPaymentSubmission.count({ where: { status: "PENDING", creditPlan: { branchId: branch.id } } }),
-      prisma.user.findMany({ where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId: branch.id }] }, select: { email: true } }),
       prisma.inventoryItem.findMany({ where: { branchId: branch.id }, select: { stockOnHand: true, reservedStock: true, reorderLevel: true } }),
     ]);
     // Fulfilled layaway payments are copied to SalePayment as part of the sale ledger.
@@ -252,9 +257,9 @@ async function queueOwnerDigests(now: Date) {
       pendingMpesaReferences: pendingReferences,
       lowStockLines: lowStock,
     };
-    const digestKeys = recipients.map((user) => `owner-digest:${branch.id}:${date}:${user.email.toLowerCase()}`);
-    const existingDigests = digestKeys.length ? await prisma.customerNotification.count({ where: { dedupeKey: { in: digestKeys } } }) : 0;
-    const aiNote = recipients.length && existingDigests < new Set(digestKeys).size ? await dailyAiNote(facts) : null;
+    const dedupeKey = `owner-digest:${branch.id}:${date}:dashboard`;
+    if (await prisma.customerNotification.count({ where: { dedupeKey } })) continue;
+    const aiNote = await dailyAiNote(facts);
     const body = [
       `GadgetHub daily operations · ${branch.name} · ${date}`,
       `Sales: ${sales._count} transactions · KES ${(sales._sum.total ?? 0).toLocaleString("en-KE")}`,
@@ -265,15 +270,13 @@ async function queueOwnerDigests(now: Date) {
       ...(aiNote ? ["", `AI operations note: ${aiNote}`] : []),
       "This report uses recorded transactions and current account balances.",
     ].join("\n");
-    for (const recipient of new Set(recipients.map((user) => user.email.toLowerCase()))) {
-      try {
-        const created = await prisma.customerNotification.createMany({
-          data: [{ branchId: branch.id, channel: "EMAIL", status: "QUEUED", kind: "OWNER_DAILY_DIGEST", recipient, subject: `GadgetHub daily report · ${branch.name} · ${date}`, body, dedupeKey: `owner-digest:${branch.id}:${date}:${recipient}` }],
-          skipDuplicates: true,
-        });
-        queued += created.count;
-      } catch { console.error("Could not queue owner daily digest", branch.id); }
-    }
+    try {
+      const created = await prisma.customerNotification.createMany({
+        data: [{ branchId: branch.id, channel: "EMAIL", status: "SKIPPED", kind: "OWNER_DAILY_DIGEST", recipient: "dashboard", subject: `GadgetHub daily report · ${branch.name} · ${date}`, body, dedupeKey }],
+        skipDuplicates: true,
+      });
+      queued += created.count;
+    } catch { console.error("Could not save owner daily report", branch.id); }
   }
   return queued;
 }
@@ -367,7 +370,7 @@ export async function runCollectionsJob(now: Date = new Date()) {
   const run = await prisma.scheduledJobRun.create({ data: { jobName: "COLLECTIONS_DAILY" }, select: { id: true } });
   try {
     // The job runs every 30 minutes. Flags and customer reminders only happen between 8am and 8pm,
-    // so nobody is messaged overnight; the owner's report goes out after 7am.
+    // so nobody is messaged overnight; the owner's report is prepared for the dashboard after 7am.
     const hour = nairobiHour(now);
     const daytime = hour >= 8 && hour < 20;
     const updatedPlans = daytime ? await refreshPlanStates(now) : 0;

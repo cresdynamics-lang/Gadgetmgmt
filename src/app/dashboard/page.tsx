@@ -67,6 +67,16 @@ export default async function DashboardPage() {
     prisma.sale.findMany({ where: { ...scope, createdAt: { gte: startPreviousWeek }, status: { in: ["PAID", "PARTIAL"] } }, include: { branch: { select: { name: true } }, cashier: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
 
+  // The morning report (no longer emailed), for people who can see sales.
+  const dailyReports = canSeeSales
+    ? await prisma.customerNotification.findMany({
+        where: { ...scope, kind: "OWNER_DAILY_DIGEST" },
+        orderBy: { createdAt: "desc" },
+        take: canSeeAllBranches(user) ? 3 : 1,
+        select: { id: true, subject: true, body: true, createdAt: true },
+      })
+    : [];
+
   const completedSales = sales.filter((sale) => sale.status === "PAID" || sale.status === "PARTIAL");
   const todaySales = completedSales.filter((sale) => sale.createdAt >= startToday);
   const previousWeekSales = completedSales.filter((sale) => sale.createdAt < startWeek);
@@ -122,6 +132,13 @@ export default async function DashboardPage() {
           </> : null}
         </div> : null}
         {needsApproval(user, "reports.view") ? <LockedPanel permission="reports.view" title="Sales figures"/> : null}
+
+        {dailyReports.length ? <section aria-labelledby="daily-report-heading" className="dashboard-panel overflow-hidden rounded-[18px] border border-[#e5e5e5] bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5e5e5] px-4 py-3.5 sm:px-5"><div><p className="text-[9px] font-semibold uppercase tracking-[.17em] text-[#839084]">Prepared every morning</p><h3 id="daily-report-heading" className="mt-1 text-sm font-semibold text-[#1a1a1a]">Daily report</h3></div><span className="rounded-full bg-[#f5f5f5] px-2.5 py-1 text-[9px] font-medium text-[#7b877d]">Shown here, not emailed</span></div>
+          <div className="divide-y divide-[#e5e5e5]">
+            {dailyReports.map((report) => <div key={report.id} className="px-4 py-4 sm:px-5"><p className="text-xs font-semibold text-[#1a1a1a]">{report.subject}</p><p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-[#4a4a4a]">{report.body}</p></div>)}
+          </div>
+        </section> : null}
         {needsApproval(user, "inventory.view") ? <LockedPanel permission="inventory.view" title="Stock levels"/> : null}
 
         <section aria-labelledby="action-desk-heading" className="dashboard-action-desk overflow-hidden rounded-[18px] border border-[#e5e5e5] bg-white shadow-[0_3px_14px_rgba(0,0,0,.03)]">
