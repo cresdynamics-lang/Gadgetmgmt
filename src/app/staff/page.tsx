@@ -4,7 +4,8 @@ import { ArrowUpRight, KeyRound, Plus, Search, ShieldCheck, UsersRound } from "l
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
-import { allPermissions, canSeeAllBranches, hasPermission, ownerOnlyPermissions, permissionLabels, permissionsForRole, roleNames, type Permission, type PermissionGrantMode } from "@/lib/access";
+import { canSeeAllBranches, hasPermission, permissionLabels, permissionsForRole, roleNames, type Permission, type PermissionGrantMode } from "@/lib/access";
+import { draftsFromGrants, grantsFromDrafts, PermissionGrantGrid, type GrantDraft } from "@/components/permission-grants";
 
 type StaffMember = {
   id: string;
@@ -15,7 +16,7 @@ type StaffMember = {
   createdAt: string;
   branch: { id: string; name: string; code: string } | null;
   _count: { sales: number };
-  permissionGrants: { permission: string; mode: PermissionGrantMode }[];
+  permissionGrants: { permission: string; mode: PermissionGrantMode; sessionMinutes?: number | null }[];
 };
 
 type Branch = { id: string; name: string; code: string };
@@ -33,7 +34,9 @@ export default function StaffPage() {
   const [query, setQuery] = useState("");
   const [teamFilter, setTeamFilter] = useState<"ALL" | "ACTIVE" | "ATTENTION">("ALL");
   const [grantingId, setGrantingId] = useState("");
-  const [draftGrants, setDraftGrants] = useState<Record<string, PermissionGrantMode>>({});
+  const [draftGrants, setDraftGrants] = useState<GrantDraft>({});
+  const [createRole, setCreateRole] = useState("CASHIER");
+  const [createGrants, setCreateGrants] = useState<GrantDraft>({});
 
   async function loadStaff() {
     const [staffResponse, branchesResponse] = await Promise.all([fetch("/api/staff", { cache: "no-store" }), fetch("/api/branches", { cache: "no-store" })]);
@@ -80,14 +83,23 @@ export default function StaffPage() {
       const response = await fetch("/api/staff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: data.get("name"), email: data.get("email"), password: data.get("password"), role: data.get("role"), branchId: data.get("branchId") || undefined }),
+        body: JSON.stringify({
+          name: data.get("name"),
+          email: data.get("email"),
+          password: data.get("password"),
+          role: data.get("role"),
+          branchId: data.get("branchId") || branches[0]?.id || undefined,
+          grants: grantsFromDrafts(createGrants),
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Staff account could not be created.");
       await loadStaff();
       form.reset();
       setAdding(false);
-      setNotice(`Account created for ${result.name}. Share the initial password securely.`);
+      setCreateRole("CASHIER");
+      setCreateGrants({});
+      setNotice(`Staff account created for ${result.name}. Share the initial password securely.`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Staff account could not be created.");
     } finally {
@@ -119,7 +131,7 @@ export default function StaffPage() {
   function openGrants(member: StaffMember) {
     if (grantingId === member.id) { setGrantingId(""); return; }
     setGrantingId(member.id);
-    setDraftGrants(Object.fromEntries(member.permissionGrants.map((grant) => [grant.permission, grant.mode])));
+    setDraftGrants(draftsFromGrants(member.permissionGrants));
   }
 
   async function saveGrants(member: StaffMember) {
@@ -130,7 +142,7 @@ export default function StaffPage() {
       const response = await fetch(`/api/staff/${member.id}/permissions`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ grants: Object.entries(draftGrants).map(([permission, mode]) => ({ permission, mode })) }),
+        body: JSON.stringify({ grants: grantsFromDrafts(draftGrants) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Permissions could not be saved.");
@@ -155,7 +167,7 @@ export default function StaffPage() {
           </div>
           {canManage ? (
             <button type="button" onClick={() => { setAdding((current) => !current); setError(""); }} className="relative inline-flex items-center gap-2 rounded-xl bg-[#111111] px-4 py-3 text-sm font-semibold text-white shadow-[0_7px_18px_rgba(0,0,0,.16)] hover:bg-[#1a1a1a]">
-              <Plus className="h-4 w-4" /> Add a teammate <ArrowUpRight className="ml-1 h-4 w-4 text-white/60"/>
+              <Plus className="h-4 w-4" /> Add staff <ArrowUpRight className="ml-1 h-4 w-4 text-white/60"/>
             </button>
           ) : null}
         </div>
@@ -179,7 +191,7 @@ export default function StaffPage() {
 
         <section className="rounded-2xl border border-[#e5e5e5] bg-white p-4 sm:p-5">
           <h3 className="text-sm font-semibold">Access by role</h3>
-          <p className="mt-1 text-xs text-[#819087]">Each role is a set of permissions. The super admin can add more per person from the Permissions button, either Full or Restricted (needs an emailed code that lasts 5 minutes).</p>
+          <p className="mt-1 text-xs text-[#819087]">Each role starts with a default set. Super admin can add any extra permission. Inventory and finance extras can be free, or on condition: a 5-minute code is emailed, then the person stays signed in for the minutes you set.</p>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {Object.entries(roleNames).map(([role, name]) => (
               <div key={role} className="rounded-xl border border-[#e5e5e5] bg-[#f8f8f8] p-3.5">
@@ -198,7 +210,7 @@ export default function StaffPage() {
           <form onSubmit={createStaff} className="border border-[#e5e5e5] bg-white p-4">
             <div className="mb-4 flex items-center gap-2">
               <UsersRound className="h-4 w-4 text-[#1a1a1a]" />
-              <h3 className="text-sm font-semibold">Create staff login</h3>
+              <h3 className="text-sm font-semibold">Add a staff account</h3>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <label className="text-xs font-medium text-[#526057]">Full name
@@ -208,10 +220,10 @@ export default function StaffPage() {
                 <input name="email" type="email" required maxLength={254} autoComplete="email" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
               </label>
               <label className="text-xs font-medium text-[#526057]">Initial password
-                <input name="password" type="password" required minLength={12} maxLength={72} autoComplete="new-password" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
+                <input name="password" type="password" required minLength={8} maxLength={72} autoComplete="new-password" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
               </label>
               <label className="text-xs font-medium text-[#526057]">Role
-                <select name="role" className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm">
+                <select name="role" value={createRole} onChange={(event) => { setCreateRole(event.target.value); setCreateGrants({}); }} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm">
                   {canManageAccess ? (
                     <>
                       <option value="CASHIER">Cashier</option>
@@ -229,14 +241,21 @@ export default function StaffPage() {
               </label>
               {canManageAccess ? (
                 <label className="text-xs font-medium text-[#526057]">Branch
-                  <select name="branchId" defaultValue={session?.user.branchId ?? ""} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm">
+                  <select name="branchId" defaultValue={session?.user.branchId || branches[0]?.id || ""} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm">
                     {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                   </select>
                 </label>
               ) : null}
             </div>
+            {createRole !== "OWNER" && canGrant ? (
+              <div className="mt-5 border-t border-[#e5e5e5] pt-4">
+                <p className="text-xs font-semibold text-[#111111]">Extra permissions</p>
+                <p className="mt-1 text-[11px] text-[#69746c]">Optional. Inventory and finance can be free, or need a super-admin code. The code lasts 5 minutes; after they enter it they stay signed in for the minutes you set, then they are logged out.</p>
+                <div className="mt-3"><PermissionGrantGrid role={createRole} drafts={createGrants} onChange={setCreateGrants} /></div>
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-[#69746c]">Use a unique 12+ character password and share it through a private channel.</p>
+              <p className="text-xs text-[#69746c]">Use a unique password of at least 8 characters and share it through a private channel.</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setAdding(false)} className="border border-[#c4c4c4] px-3.5 py-2 text-sm font-medium">Cancel</button>
                 <button disabled={saving} className="bg-[#111111] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Creating…" : "Create account"}</button>
@@ -298,7 +317,7 @@ export default function StaffPage() {
                     </td>
                     {canManageAccess ? <td className="px-4 py-3 text-xs text-[#69746c]">
                       {member.id === session?.user.id ? "Current account" : member.role === "OWNER" ? "Holds every permission" : canGrant ? <button type="button" onClick={() => openGrants(member)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4c4c4] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#2d2d2d] hover:bg-[#f5f5f5]"><KeyRound className="h-3.5 w-3.5"/>Permissions{member.permissionGrants.length ? ` · ${member.permissionGrants.length}` : ""}</button> : "Changes save immediately"}
-                      {member.permissionGrants.length && member.role !== "OWNER" ? <div className="mt-1.5 flex max-w-64 flex-wrap gap-1">{member.permissionGrants.map((grant) => <span key={grant.permission} className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${grant.mode === "RESTRICTED" ? "bg-[#fff2e8] text-[#8a4b2f]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}>{permissionLabels[grant.permission as Permission] ?? grant.permission}{grant.mode === "RESTRICTED" ? " · code" : ""}</span>)}</div> : null}
+                      {member.permissionGrants.length && member.role !== "OWNER" ? <div className="mt-1.5 flex max-w-64 flex-wrap gap-1">{member.permissionGrants.map((grant) => <span key={grant.permission} className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${grant.mode === "RESTRICTED" ? "bg-[#fff2e8] text-[#8a4b2f]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}>{permissionLabels[grant.permission as Permission] ?? grant.permission}{grant.mode === "RESTRICTED" ? ` · code · ${grant.sessionMinutes ?? 15}m` : ""}</span>)}</div> : null}
                     </td> : null}
                     <td className="px-4 py-3 text-xs text-[#69746c]">{new Date(member.createdAt).toLocaleDateString("en-KE")}</td>
                   </tr>
@@ -306,21 +325,8 @@ export default function StaffPage() {
                     <tr className="bg-[#fafafa]">
                       <td colSpan={canManageAccess ? 7 : 6} className="px-4 py-4">
                         <p className="text-xs font-semibold text-[#111111]">Extra permissions for {member.name}</p>
-                        <p className="mt-1 text-[11px] text-[#69746c]">Full works straight away. Restricted needs a 6-digit code emailed to the super admin each time, and the code lasts 5 minutes.</p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                          {allPermissions.filter((permission) => !ownerOnlyPermissions.includes(permission)).map((permission) => {
-                            const fromRole = permissionsForRole(member.role).includes(permission);
-                            const mode = draftGrants[permission] ?? "OFF";
-                            return <div key={permission} className="flex items-center justify-between gap-2 rounded-xl border border-[#e5e5e5] bg-white px-3 py-2">
-                              <span className="min-w-0 text-[11px] font-medium text-[#2d2d2d]">{permissionLabels[permission as Permission]}</span>
-                              {fromRole ? <span className="shrink-0 rounded-full bg-[#f5f5f5] px-2 py-1 text-[9px] font-semibold text-[#6b6b6b]">From role</span> : (
-                                <div role="group" aria-label={`${permissionLabels[permission as Permission]} access`} className="flex shrink-0 overflow-hidden rounded-lg border border-[#d4d4d4] text-[9px] font-semibold">
-                                  {(["OFF", "FULL", "RESTRICTED"] as const).map((option) => <button key={option} type="button" aria-pressed={mode === option} onClick={() => setDraftGrants((current) => { const next = { ...current }; if (option === "OFF") delete next[permission]; else next[permission] = option; return next; })} className={`px-2 py-1 transition ${mode === option ? option === "RESTRICTED" ? "bg-[#a15d3d] text-white" : "bg-[#111111] text-white" : "bg-white text-[#6b6b6b] hover:bg-[#f5f5f5]"}`}>{option === "OFF" ? "Off" : option === "FULL" ? "Full" : "Restricted"}</button>)}
-                                </div>
-                              )}
-                            </div>;
-                          })}
-                        </div>
+                        <p className="mt-1 text-[11px] text-[#69746c]">Free works immediately. Code means the super admin must send a 5-minute email code; after they enter it they stay signed in for the minutes you set, then they are logged out.</p>
+                        <div className="mt-3"><PermissionGrantGrid role={member.role} drafts={draftGrants} onChange={setDraftGrants} /></div>
                         <div className="mt-3 flex justify-end gap-2">
                           <button type="button" onClick={() => setGrantingId("")} className="rounded-lg border border-[#c4c4c4] px-3 py-1.5 text-xs font-medium">Cancel</button>
                           <button type="button" disabled={savingMemberId === member.id} onClick={() => void saveGrants(member)} className="rounded-lg bg-[#111111] px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60">{savingMemberId === member.id ? "Saving…" : "Save permissions"}</button>

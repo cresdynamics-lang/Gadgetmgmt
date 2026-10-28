@@ -129,10 +129,10 @@ export function ApprovalGate() {
         <button type="button" onClick={() => close(false)} aria-label="Cancel" className="rounded-lg p-1.5 text-[#6b6b6b] hover:bg-[#f5f5f5]"><X className="h-4 w-4"/></button>
       </div>
       <h2 id="approval-title" className="mt-3 text-base font-semibold text-[#111111]">Approval needed</h2>
-      <p className="mt-1 text-sm leading-6 text-[#4a4a4a]"><strong>{label}</strong> is a restricted permission on your account. The super admin gets a 6-digit code by email. The code works for 5 minutes.</p>
+      <p className="mt-1 text-sm leading-6 text-[#4a4a4a]"><strong>{label}</strong> needs a super-admin code. The code is emailed to the approval inbox and works for 5 minutes. After you enter it, you stay signed in for the time the admin set, then you are logged out.</p>
       {!sentUntil || expired ? <>
         {expired ? <p className="mt-3 rounded-lg bg-[#fff2e8] px-3 py-2 text-xs text-[#8a4b2f]">The 5 minutes are up. Request a new code to continue.</p> : null}
-        <button type="button" disabled={busy} onClick={() => void sendCode()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#111111] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"><Mail className="h-4 w-4"/>{busy ? "Sending…" : expired ? "Request a new code" : "Email code to super admin"}</button>
+        <button type="button" disabled={busy} onClick={() => void sendCode()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#111111] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"><Mail className="h-4 w-4"/>{busy ? "Sending…" : expired ? "Request a new code" : "Email code to the approval inbox"}</button>
       </> : <form onSubmit={verify} className="mt-4 space-y-3">
         {message ? <p className="rounded-lg bg-[#f5f5f5] px-3 py-2 text-xs text-[#4a4a4a]">{message}</p> : null}
         <label className="block text-xs font-semibold text-[#2d2d2d]">Code from the super admin

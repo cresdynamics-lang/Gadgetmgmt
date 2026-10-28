@@ -34,9 +34,20 @@ export async function loadPermissionGrants(userId: string) {
   const [grants, approvals] = await Promise.all([
     prisma.userPermission.findMany({ where: { userId }, select: { permission: true, mode: true } }),
     prisma.permissionApproval.findMany({
-      where: { userId, verifiedAt: { not: null }, expiresAt: { gt: new Date() } },
-      select: { permission: true },
+      where: {
+        userId,
+        verifiedAt: { not: null },
+        OR: [{ sessionEndsAt: { gt: new Date() } }, { sessionEndsAt: null, expiresAt: { gt: new Date() } }],
+      },
+      select: { permission: true, sessionEndsAt: true, expiresAt: true, createdAt: true },
     }),
   ]);
-  return { grants, unlocked: approvals.map((approval) => approval.permission) };
+  return {
+    grants,
+    unlocked: approvals.map((approval) => approval.permission),
+    accessUntil: approvals
+      .map((approval) => approval.sessionEndsAt ?? approval.expiresAt)
+      .sort((left, right) => right.getTime() - left.getTime())[0] ?? null,
+    timedApprovals: approvals,
+  };
 }

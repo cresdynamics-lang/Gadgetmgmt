@@ -3,11 +3,12 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canSeeAllBranches, canUseCapability, hasPermission } from "@/lib/access";
+import { canSeeAllBranches, canUseCapability, hasPermission, isPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { recordActivity } from "@/lib/activity";
 import { queueAndSendNotice } from "@/lib/customer-notice";
 import { prisma } from "@/lib/prisma";
+import { grantSummary, normalizeStaffGrants, replaceStaffGrants } from "@/lib/staff-grants";
 
 export async function GET() {
   const session = await auth();
@@ -25,7 +26,7 @@ export async function GET() {
       createdAt: true,
       branch: { select: { id: true, name: true, code: true } },
       _count: { select: { sales: true } },
-      permissionGrants: { select: { permission: true, mode: true } },
+      permissionGrants: { select: { permission: true, mode: true, sessionMinutes: true } },
     },
     orderBy: [{ status: "asc" }, { name: "asc" }],
   });
@@ -36,9 +37,14 @@ export async function GET() {
 const staffSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(254).transform((email) => email.toLowerCase()),
-  password: z.string().min(12).max(72),
+  password: z.string().min(8).max(72),
   role: z.enum(["OWNER", "BRANCH_MANAGER", "CASHIER", "INVENTORY_LEAD"]),
-  branchId: z.string().cuid().optional(),
+  branchId: z.string().min(1).optional(),
+  grants: z.array(z.object({
+    permission: z.string().refine(isPermission),
+    mode: z.enum(["FULL", "RESTRICTED"]),
+    sessionMinutes: z.number().int().min(5).max(480).optional(),
+  })).max(50).optional(),
 });
 
 export async function POST(request: Request) {
@@ -47,15 +53,21 @@ export async function POST(request: Request) {
   if (!hasPermission(session.user, "staff.manage")) return denied(session.user, "staff.manage", "Your permissions cannot manage staff accounts.");
 
   const parsed = staffSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400 });
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]?.message;
+    return NextResponse.json({ error: first && first !== "Required" ? first : "Enter a name, work email, role and password of at least 8 characters." }, { status: 400 });
+  }
   if (!canSeeAllBranches(session.user) && parsed.data.role !== "CASHIER" && parsed.data.role !== "INVENTORY_LEAD") {
     return NextResponse.json({ error: "Your permissions can create cashier or inventory lead accounts only." }, { status: 403 });
   }
 
-  const branchId = canSeeAllBranches(session.user) ? parsed.data.branchId ?? session.user.branchId : session.user.branchId;
-  if (!branchId) return NextResponse.json({ error: "Assign this staff member to an active branch." }, { status: 400 });
-  const branch = await prisma.branch.findFirst({ where: { id: branchId, isActive: true }, select: { id: true } });
-  if (!branch) return NextResponse.json({ error: "Selected branch is unavailable." }, { status: 400 });
+  const requestedBranch = canSeeAllBranches(session.user) ? parsed.data.branchId ?? session.user.branchId : session.user.branchId;
+  const branch = requestedBranch
+    ? await prisma.branch.findFirst({ where: { id: requestedBranch, isActive: true }, select: { id: true } })
+    : await prisma.branch.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (!branch) return NextResponse.json({ error: "Assign this staff member to an active branch." }, { status: 400 });
+  const branchId = branch.id;
+  const grants = parsed.data.role === "OWNER" ? [] : normalizeStaffGrants(parsed.data.role, parsed.data.grants ?? []);
 
   const passwordHash = await hash(parsed.data.password, 12);
   try {
@@ -63,11 +75,14 @@ export async function POST(request: Request) {
       data: { name: parsed.data.name, email: parsed.data.email, passwordHash, role: parsed.data.role, branchId },
       select: { id: true, name: true, email: true, role: true, status: true, branch: { select: { id: true, name: true, code: true } } },
     });
+    if (grants.length) {
+      await replaceStaffGrants(prisma, { userId: user.id, grantedById: session.user.id, grants });
+    }
     await recordActivity({
       userId: session.user.id,
       sessionId: session.user.sessionId,
       action: "STAFF_CREATED",
-      summary: `Created ${user.role} account for ${user.name}`,
+      summary: `Created ${user.role} account for ${user.name}${grants.length ? ` with ${grantSummary(grants)}` : ""}`,
       entityType: "User",
       entityId: user.id,
     });

@@ -69,6 +69,31 @@ export const allPermissions = Object.keys(permissionLabels) as Permission[];
 /** Permissions the super admin keeps to themselves and never delegates. */
 export const ownerOnlyPermissions: readonly Permission[] = ["permissions.manage", "scope.allBranches"];
 
+/** Inventory and finance extras can be free, or locked until a super-admin code is entered. */
+export const inventoryPermissions = ["inventory.view", "inventory.receive", "products.price"] as const satisfies readonly Permission[];
+export const financePermissions = ["finance.view", "reports.view", "goals.manage", "credit.policy", "credit.collect", "sales.adjust"] as const satisfies readonly Permission[];
+export const conditionedPermissions = [...inventoryPermissions, ...financePermissions] as const;
+
+export const MIN_APPROVAL_SESSION_MINUTES = 5;
+export const MAX_APPROVAL_SESSION_MINUTES = 480;
+export const DEFAULT_APPROVAL_SESSION_MINUTES = 15;
+
+export function canBeConditioned(permission: string) {
+  return (conditionedPermissions as readonly string[]).includes(permission);
+}
+
+export function clampSessionMinutes(value?: number | null) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return DEFAULT_APPROVAL_SESSION_MINUTES;
+  return Math.min(MAX_APPROVAL_SESSION_MINUTES, Math.max(MIN_APPROVAL_SESSION_MINUTES, Math.round(minutes)));
+}
+
+export function permissionGroupLabel(permission: Permission) {
+  if ((inventoryPermissions as readonly string[]).includes(permission)) return "Inventory";
+  if ((financePermissions as readonly string[]).includes(permission)) return "Finance";
+  return "General";
+}
+
 const rolePermissions: Record<string, readonly Permission[]> = {
   OWNER: allPermissions,
   BRANCH_MANAGER: [

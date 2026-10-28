@@ -649,31 +649,39 @@ model CollectionFollowUp {
 }
 
 model UserPermission {
-  id          String              @id @default(cuid())
-  userId      String
-  user        User                @relation("PermissionGrantee", fields: [userId], references: [id], onDelete: Cascade)
-  permission  String
-  mode        PermissionGrantMode @default(FULL)
-  grantedById String?
-  grantedBy   User?               @relation("PermissionGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id             String              @id @default(cuid())
+  userId         String
+  user           User                @relation("PermissionGrantee", fields: [userId], references: [id], onDelete: Cascade)
+  permission     String
+  mode           PermissionGrantMode @default(FULL)
+  sessionMinutes Int?
+  grantedById    String?
+  grantedBy      User?               @relation("PermissionGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@unique([userId, permission])
 }
 
 model PermissionApproval {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  permission String
-  codeHash   String
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  verifiedAt DateTime?
-  createdAt  DateTime  @default(now())
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission    String
+  codeHash      String
+  attempts      Int       @default(0)
+  expiresAt     DateTime
+  verifiedAt    DateTime?
+  sessionEndsAt DateTime?
+  createdAt     DateTime  @default(now())
 
   @@index([userId, permission, expiresAt])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model SalesTarget {

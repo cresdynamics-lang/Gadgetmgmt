@@ -17,6 +17,7 @@ declare module "next-auth" {
       sessionId: string | null;
       permissions: string[];
       restricted: string[];
+      accessUntil: string | null;
     } & DefaultSession["user"];
   }
 }
@@ -30,5 +31,6 @@ declare module "next-auth/jwt" {
     sessionId?: string | null;
     permissions?: string[];
     restricted?: string[];
+    accessUntil?: string;
   }
 }

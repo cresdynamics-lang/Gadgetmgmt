@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canAccessPage, hasPermission, needsApproval, resolvePermissions } from "../src/lib/access";
+import { canAccessPage, canBeConditioned, clampSessionMinutes, hasPermission, needsApproval, resolvePermissions } from "../src/lib/access";
+import { normalizeStaffGrants } from "../src/lib/staff-grants";
 
 test("full grants add to the role and restricted grants stay locked until unlocked", () => {
   const grants = [{ permission: "reports.view", mode: "FULL" as const }, { permission: "finance.view", mode: "RESTRICTED" as const }];
@@ -27,6 +28,26 @@ test("a locked restricted page can still be opened so the user can request a cod
   const user = { role: "CASHIER", ...resolvePermissions("CASHIER", [{ permission: "reports.view", mode: "RESTRICTED" }], []) };
   assert.equal(canAccessPage(user, "/reports"), true);
   assert.equal(hasPermission(user, "reports.view"), false);
+});
+
+test("only inventory and finance extras can require a code", () => {
+  assert.equal(canBeConditioned("inventory.receive"), true);
+  assert.equal(canBeConditioned("finance.view"), true);
+  assert.equal(canBeConditioned("customers.view"), false);
+  const grants = normalizeStaffGrants("CASHIER", [
+    { permission: "inventory.receive", mode: "RESTRICTED", sessionMinutes: 20 },
+    { permission: "website.view", mode: "RESTRICTED" },
+    { permission: "permissions.manage", mode: "FULL" },
+  ]);
+  assert.deepEqual(grants.find((grant) => grant.permission === "inventory.receive"), { permission: "inventory.receive", mode: "RESTRICTED", sessionMinutes: 20 });
+  assert.equal(grants.find((grant) => grant.permission === "website.view")?.mode, "FULL");
+  assert.equal(grants.some((grant) => grant.permission === "permissions.manage"), false);
+});
+
+test("approval sessions stay between 5 and 480 minutes", () => {
+  assert.equal(clampSessionMinutes(1), 5);
+  assert.equal(clampSessionMinutes(20), 20);
+  assert.equal(clampSessionMinutes(9999), 480);
 });
 
 test("unknown permission names are ignored", () => {

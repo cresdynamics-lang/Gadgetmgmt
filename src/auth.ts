@@ -63,6 +63,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.sessionId = await startUserSession(user.id);
         const { grants, unlocked } = await loadPermissionGrants(user.id);
         Object.assign(token, resolvePermissions(user.role, grants, unlocked));
+        delete token.accessUntil;
         return token;
       }
       if (typeof token.userId === "string" && token.userId) {
@@ -74,8 +75,16 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.role = currentUser.role;
         token.branchId = currentUser.branchId;
         token.branchName = currentUser.branch?.name ?? null;
-        const { grants, unlocked } = await loadPermissionGrants(token.userId);
-        Object.assign(token, resolvePermissions(currentUser.role, grants, unlocked));
+        const loaded = await loadPermissionGrants(token.userId);
+        Object.assign(token, resolvePermissions(currentUser.role, loaded.grants, loaded.unlocked));
+        const loginAt = typeof token.iat === "number" ? token.iat * 1000 : 0;
+        const ended = loaded.timedApprovals
+          .map((approval) => approval.sessionEndsAt ?? approval.expiresAt)
+          .filter((when) => when.getTime() > loginAt)
+          .sort((left, right) => right.getTime() - left.getTime())[0];
+        if (ended && ended.getTime() < Date.now()) return null;
+        if (ended && ended.getTime() > Date.now()) token.accessUntil = ended.toISOString();
+        else delete token.accessUntil;
       }
       return token;
     },
@@ -88,6 +97,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.sessionId = typeof token.sessionId === "string" ? token.sessionId : null;
         session.user.permissions = Array.isArray(token.permissions) ? token.permissions : [];
         session.user.restricted = Array.isArray(token.restricted) ? token.restricted : [];
+        session.user.accessUntil = typeof token.accessUntil === "string" ? token.accessUntil : null;
       }
       return session;
     },

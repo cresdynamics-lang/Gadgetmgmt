@@ -97,6 +97,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [router, session?.user.id]);
 
   useEffect(() => {
+    if (!session?.user.accessUntil) return;
+    const ends = new Date(session.user.accessUntil).getTime();
+    if (!Number.isFinite(ends)) return;
+    const leaveWhenDone = () => {
+      if (Date.now() >= ends) void leave();
+    };
+    leaveWhenDone();
+    const timer = window.setInterval(leaveWhenDone, 1000);
+    return () => window.clearInterval(timer);
+  }, [session?.user.accessUntil]);
+
+  useEffect(() => {
     if (!session?.user.sessionId) return;
     const ping = (end = false) => void fetch("/api/activity/heartbeat", {
       method: "POST",
@@ -170,6 +182,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl lg:hidden border border-[#e5e5e5] bg-white text-[#2d2d2d] shadow-sm transition hover:bg-[#f5f5f5]"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#6b6b6b] sm:flex"><BrandLogo variant="icon" on="dark" className="h-4 w-4 rounded-sm" /><span>GadgetHub</span><span className="text-[#c4c4c4]">/</span><span className="text-[#111111]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#111111] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
           <div className="flex items-center gap-2 sm:gap-3"><button type="button" onClick={() => { setActiveCommand(0); setLauncherOpen(true); setLauncherQuery(""); }} aria-label="Open quick navigation" className="flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-2.5 text-[#59616e] transition hover:border-[var(--signal)] hover:bg-[#f8f9ff] sm:px-3"><Search className="h-3.5 w-3.5"/><span className="hidden text-[11px] font-medium sm:inline">Jump to anything</span><kbd className="hidden rounded-md border border-[var(--border)] bg-[#f7f8fa] px-1.5 py-0.5 text-[9px] font-semibold text-[#737983] sm:inline">⌘ K</kbd></button><div className="hidden items-center gap-2 rounded-full border border-[var(--border)] bg-[#f8f9fb] px-3 py-2 text-[11px] font-medium text-[#59616e] md:flex"><span className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]"/>{session?.user.branchName ?? (role === "OWNER" ? "All branches" : "Branch not assigned")}</div><div className="hidden h-8 w-px bg-[var(--border)] sm:block"/><div className="flex items-center gap-2 sm:hidden"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span></div><button type="button" onClick={() => void leave()} className="hidden items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition hover:bg-[#f5f6f8] sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span><span className="hidden max-w-28 truncate text-xs font-semibold text-[#343941] xl:block">{displayName}</span><ChevronDown className="h-3.5 w-3.5 text-[#95a39a]"/></button></div>
         </header>
+        {session?.user.accessUntil ? <p className="border-b border-[#f3e2d6] bg-[#fff8f3] px-4 py-2 text-center text-xs text-[#8a4b2f]">Approved access ends at {new Date(session.user.accessUntil).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}. You will be signed out then.</p> : null}
         <div className="workspace-content flex-1 px-4 py-6 sm:px-6 sm:py-7 lg:px-9 lg:py-8">{children}</div>
         <footer className="flex items-center justify-between border-t border-[#e5e5e5] px-4 py-3.5 text-[10px] text-[#6b6b6b] sm:px-6 lg:px-9"><span className="inline-flex items-center gap-2"><BrandLogo variant="icon" on="dark" className="h-4 w-4 rounded-sm" />GadgetHub · Retail operations</span><span className="flex items-center gap-1.5">A clearer view of every day <ArrowUpRight className="h-3 w-3"/></span></footer>
       </main>

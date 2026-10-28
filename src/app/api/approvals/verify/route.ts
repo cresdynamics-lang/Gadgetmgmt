@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { isPermission, permissionLabels, type Permission } from "@/lib/access";
 import { recordActivity } from "@/lib/activity";
+import { clampSessionMinutes, DEFAULT_APPROVAL_SESSION_MINUTES } from "@/lib/access";
 import { hashApprovalCode } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
@@ -38,7 +39,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: left > 0 ? `That code is not correct. ${left} ${left === 1 ? "try" : "tries"} left.` : "Too many wrong attempts. Request a new code." }, { status: 400 });
   }
 
-  const verified = await prisma.permissionApproval.updateMany({ where: { id: approval.id, verifiedAt: null }, data: { verifiedAt: new Date() } });
+  const grant = await prisma.userPermission.findUnique({
+    where: { userId_permission: { userId: session.user.id, permission } },
+    select: { sessionMinutes: true },
+  });
+  const sessionEndsAt = new Date(Date.now() + clampSessionMinutes(grant?.sessionMinutes ?? DEFAULT_APPROVAL_SESSION_MINUTES) * 60_000);
+  const verified = await prisma.permissionApproval.updateMany({
+    where: { id: approval.id, verifiedAt: null },
+    data: { verifiedAt: new Date(), sessionEndsAt },
+  });
   if (verified.count !== 1) return NextResponse.json({ error: "This code was already used. Request a new code." }, { status: 409 });
   await recordActivity({
     userId: session.user.id,
@@ -48,5 +57,5 @@ export async function POST(request: Request) {
     entityType: "PermissionApproval",
     entityId: approval.id,
   });
-  return NextResponse.json({ unlockedUntil: approval.expiresAt });
+  return NextResponse.json({ unlockedUntil: sessionEndsAt, accessUntil: sessionEndsAt });
 }

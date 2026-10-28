@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { isPermission, permissionLabels, type Permission } from "@/lib/access";
 import { recordActivity } from "@/lib/activity";
 import { APPROVAL_WINDOW_MS, hashApprovalCode } from "@/lib/authz";
+import { approvalCodeRecipients } from "@/lib/app-settings";
 import { emailConfigured, sendEmail } from "@/lib/mail";
 import { prisma } from "@/lib/prisma";
 
@@ -19,7 +20,7 @@ export async function GET() {
     prisma.userPermission.findMany({ where: { userId: session.user.id, mode: "RESTRICTED" }, select: { permission: true } }),
     prisma.permissionApproval.findMany({
       where: { userId: session.user.id, expiresAt: { gt: new Date() } },
-      select: { permission: true, expiresAt: true, verifiedAt: true },
+      select: { permission: true, expiresAt: true, sessionEndsAt: true, verifiedAt: true },
       orderBy: { createdAt: "desc" },
     }),
   ]);
@@ -30,7 +31,7 @@ export async function GET() {
       return {
         permission: grant.permission,
         label: permissionLabels[grant.permission as Permission],
-        unlockedUntil: active?.expiresAt ?? null,
+        unlockedUntil: active?.sessionEndsAt ?? active?.expiresAt ?? null,
         codePendingUntil: pending?.expiresAt ?? null,
       };
     }),
@@ -55,11 +56,11 @@ export async function POST(request: Request) {
   });
   if (recent) return NextResponse.json({ error: "A code was just sent. Wait a minute before requesting another one." }, { status: 429 });
 
-  const admins = await prisma.user.findMany({ where: { role: "OWNER", status: "ACTIVE" }, select: { email: true } });
-  if (!admins.length) return NextResponse.json({ error: "No active super admin is available to approve this request." }, { status: 503 });
+  const recipients = await approvalCodeRecipients();
+  if (!recipients.length) return NextResponse.json({ error: "Set an approval-code email in Settings, or keep an active super admin account." }, { status: 503 });
   const mailReady = emailConfigured("accounts");
   if (!mailReady && process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Email is not configured, so an approval code cannot be sent to the super admin." }, { status: 503 });
+    return NextResponse.json({ error: "Email is not configured, so an approval code cannot be sent." }, { status: 503 });
   }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
     </div></body></html>`;
 
   if (mailReady) {
-    const results = await Promise.allSettled(admins.map((admin) => sendEmail({ to: admin.email, subject, text, html, category: "accounts" })));
+    const results = await Promise.allSettled(recipients.map((to) => sendEmail({ to, subject, text, html, category: "accounts" })));
     if (results.every((result) => result.status === "rejected")) {
       await prisma.permissionApproval.delete({ where: { id: approval.id } });
       console.error("Approval code email failed", results.map((result) => result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "unknown"));
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     expiresAt,
     message: mailReady
-      ? "A 6-digit code was emailed to the super admin. Ask them to share it with you."
+      ? "A 6-digit code was emailed to the approval inbox. Ask the super admin to share it with you."
       : "Email is not configured in this development setup. The code was written to the server log.",
   }, { status: 201 });
 }
