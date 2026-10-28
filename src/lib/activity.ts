@@ -17,6 +17,7 @@ export type ActivityAction =
   | "TRADE_IN_STOCKED"
   | "MPESA_PROMPT_SENT"
   | "PRICE_UPDATED"
+  | "WEBSITE_VISIBILITY"
   | "AI_QUESTION";
 
 export async function startUserSession(userId: string) {

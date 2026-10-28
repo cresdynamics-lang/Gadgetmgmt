@@ -4,12 +4,13 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Activity, ArrowDown, ChartNoAxesCombined, ArrowUpRight, Boxes, ChevronDown, CreditCard, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft } from "lucide-react";
+import { Activity, ArrowDown, ChartNoAxesCombined, ArrowUpRight, Boxes, ChevronDown, CreditCard, Globe, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { navItems } from "@/lib/navigation";
-import { canAccessPage, type AccessSubject } from "@/lib/access";
+import { canAccessPage, hasPermission, type AccessSubject } from "@/lib/access";
 import { ApprovalGate } from "@/components/approval-gate";
+import { AssistantDock } from "@/components/assistant-dock";
 import { BrandLogo } from "@/components/brand-logo";
 
 const iconByHref: Record<string, typeof LayoutDashboard> = {
@@ -17,6 +18,7 @@ const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/sales": ShoppingBag,
   "/reports": ChartNoAxesCombined,
   "/inventory": Boxes,
+  "/website": Globe,
   "/customers": UsersRound,
   "/credit": CreditCard,
   "/staff": UserRound,
@@ -39,6 +41,22 @@ function Navigation({ pathname, user, close }: { pathname: string; user: AccessS
       </Link>;
     })}
   </nav>;
+}
+
+function SidebarBody({ pathname, user, displayName, branchName, onLeave, close }: { pathname: string; user: AccessSubject; displayName: string; branchName: string; onLeave: () => void; close?: () => void }) {
+  return <>
+    <div className="min-h-0 flex-1">
+      <div className="mb-7 flex items-center justify-between px-2">
+        <Link href="/dashboard" onClick={close} className="flex items-center gap-3"><BrandLogo variant="icon" on="light" className="h-10 w-10 rounded-xl" /><span className="text-base font-semibold">GadgetHub</span></Link>
+        {close ? <button onClick={close} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button> : null}
+      </div>
+      <Navigation pathname={pathname} user={user} close={close}/>
+    </div>
+    <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/10 px-2 pt-4">
+      <div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{branchName}</p></div>
+      <button onClick={onLeave} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button>
+    </div>
+  </>;
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -119,6 +137,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => { if (desktop.matches) setMenuOpen(false); };
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
     if (!launcherOpen) return;
     const frame = window.requestAnimationFrame(() => launcherInput.current?.focus());
     return () => window.cancelAnimationFrame(frame);
@@ -132,12 +157,17 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return <div className="min-h-screen bg-[#f5f5f5] text-[#111111] lg:p-3">
     <ApprovalGate/>
-    <div className="mx-auto flex min-h-screen max-w-[1800px] overflow-hidden bg-white shadow-[0_12px_45px_rgba(0,0,0,.07)] lg:min-h-[calc(100vh-24px)] lg:rounded-[20px] lg:border lg:border-[#e5e5e5]">
-      {menuOpen && <div className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#111111]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full w-[290px] max-w-[85vw] flex-col justify-between bg-[#111111] p-4 text-white shadow-2xl"><div><div className="mb-8 flex items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><BrandLogo variant="icon" on="light" className="h-10 w-10 rounded-xl" /><span className="text-base font-semibold">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><Navigation pathname={pathname} user={session?.user} close={() => setMenuOpen(false)}/></div><div className="flex items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void leave()} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
+    {hasPermission(session?.user, "assistant.use") ? <AssistantDock/> : null}
+    <div className="mx-auto flex min-h-screen max-w-[1800px] overflow-clip bg-white shadow-[0_12px_45px_rgba(0,0,0,.07)] lg:min-h-[calc(100vh-24px)] lg:rounded-[20px] lg:border lg:border-[#e5e5e5]">
+      {/* Desktop: the sidebar is always visible. Phones and tablets open it from the menu button. */}
+      <aside aria-label="Sidebar" className="sticky top-0 hidden h-screen w-[244px] shrink-0 flex-col overflow-y-auto bg-[#111111] p-4 text-white lg:top-3 lg:flex lg:h-[calc(100vh-24px)] xl:w-[264px]">
+        <SidebarBody pathname={pathname} user={session?.user} displayName={displayName} branchName={session?.user.branchName ?? "No branch assigned"} onLeave={() => void leave()}/>
+      </aside>
+      {menuOpen && <div className="fixed inset-0 z-50 flex lg:hidden"><button aria-label="Close navigation" className="absolute inset-0 bg-[#111111]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full w-[290px] max-w-[85vw] flex-col overflow-y-auto bg-[#111111] p-4 text-white shadow-2xl"><SidebarBody pathname={pathname} user={session?.user} displayName={displayName} branchName={session?.user.branchName ?? "No branch assigned"} onLeave={() => void leave()} close={() => setMenuOpen(false)}/></aside></div>}
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[var(--border)] bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-9">
-          <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e5e5e5] bg-white text-[#2d2d2d] shadow-sm transition hover:bg-[#f5f5f5]"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#6b6b6b] sm:flex"><BrandLogo variant="icon" on="dark" className="h-4 w-4 rounded-sm" /><span>GadgetHub</span><span className="text-[#c4c4c4]">/</span><span className="text-[#111111]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#111111] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
+          <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl lg:hidden border border-[#e5e5e5] bg-white text-[#2d2d2d] shadow-sm transition hover:bg-[#f5f5f5]"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#6b6b6b] sm:flex"><BrandLogo variant="icon" on="dark" className="h-4 w-4 rounded-sm" /><span>GadgetHub</span><span className="text-[#c4c4c4]">/</span><span className="text-[#111111]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#111111] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
           <div className="flex items-center gap-2 sm:gap-3"><button type="button" onClick={() => { setActiveCommand(0); setLauncherOpen(true); setLauncherQuery(""); }} aria-label="Open quick navigation" className="flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-2.5 text-[#59616e] transition hover:border-[var(--signal)] hover:bg-[#f8f9ff] sm:px-3"><Search className="h-3.5 w-3.5"/><span className="hidden text-[11px] font-medium sm:inline">Jump to anything</span><kbd className="hidden rounded-md border border-[var(--border)] bg-[#f7f8fa] px-1.5 py-0.5 text-[9px] font-semibold text-[#737983] sm:inline">⌘ K</kbd></button><div className="hidden items-center gap-2 rounded-full border border-[var(--border)] bg-[#f8f9fb] px-3 py-2 text-[11px] font-medium text-[#59616e] md:flex"><span className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]"/>{session?.user.branchName ?? (role === "OWNER" ? "All branches" : "Branch not assigned")}</div><div className="hidden h-8 w-px bg-[var(--border)] sm:block"/><div className="flex items-center gap-2 sm:hidden"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span></div><button type="button" onClick={() => void leave()} className="hidden items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition hover:bg-[#f5f6f8] sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span><span className="hidden max-w-28 truncate text-xs font-semibold text-[#343941] xl:block">{displayName}</span><ChevronDown className="h-3.5 w-3.5 text-[#95a39a]"/></button></div>
         </header>
         <div className="workspace-content flex-1 px-4 py-6 sm:px-6 sm:py-7 lg:px-9 lg:py-8">{children}</div>

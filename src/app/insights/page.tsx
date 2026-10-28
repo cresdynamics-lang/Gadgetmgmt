@@ -1,11 +1,9 @@
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
 import { getBusinessInsights } from "@/lib/business-insights";
-import { canAccessPage, hasPermission } from "@/lib/access";
+import { canAccessPage } from "@/lib/access";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, CalendarRange, CircleDollarSign, CreditCard, Sparkles } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
-import { AssistantPanel } from "@/components/assistant-panel";
-import { assistantConfigured } from "@/lib/assistant/agent";
 
 export const instant = false;
 
@@ -48,7 +46,7 @@ export default async function InsightsPage() {
         <article className="rounded-[15px] border border-[#e7e5dc] bg-white p-4 shadow-[0_2px_9px_rgba(0,0,0,.025)]"><div className="flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#858b80]">Overdue Lipa balance</p><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#fbf0e8] text-[#9b6240]"><CreditCard className="h-4 w-4"/></span></div><p className="mt-3 text-[23px] font-semibold tracking-[-.045em] text-[#111111]">{shortMoney(data.credit.overdueBalance)}</p><p className="mt-2 text-[10px] text-[#858e85]">Across {data.credit.activePlans} active plans</p></article>
       </section>
 
-      {hasPermission(session.user, "assistant.use") ? <AssistantPanel configured={assistantConfigured()} /> : null}
+      
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)]">
         <section className="overflow-hidden rounded-[17px] border border-[#e6e5dc] bg-white shadow-[0_3px_14px_rgba(0,0,0,.03)]">
