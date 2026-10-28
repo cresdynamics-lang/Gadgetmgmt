@@ -12,7 +12,7 @@ test("ex-uk sku is distinct from the new sku for the same listing", () => {
 });
 
 test("every website listing has a unique sku and product/variant pair", () => {
-  const skus = websiteCatalogListings.map(websiteCatalogSku);
+  const skus = websiteCatalogListings.map((row) => websiteCatalogSku(row));
   const keys = websiteCatalogListings.map(listingKey);
   assert.equal(new Set(skus).size, skus.length);
   assert.equal(new Set(keys).size, keys.length);
