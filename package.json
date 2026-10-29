@@ -14,6 +14,8 @@
     "db:seed-prices": "node --env-file=.env --import tsx scripts/seed-price-list.ts",
     "db:sync-website-catalog": "node --env-file=.env --import tsx scripts/sync-website-catalog.ts",
     "test:website-catalog": "node --import tsx --test scripts/website-catalog.test.ts",
+    "test:inventory-scan": "node --import tsx --test scripts/inventory-scan.test.ts",
+    "test:inventory-update": "node --import tsx --test scripts/inventory-update.test.ts",
     "test:retain-customer": "node --import tsx --test scripts/retain-customer.test.ts",
     "email:test": "node --env-file=.env --import tsx scripts/test-email.ts",
     "db:import-catalog": "node --env-file=.env --import tsx scripts/import-catalog.ts",

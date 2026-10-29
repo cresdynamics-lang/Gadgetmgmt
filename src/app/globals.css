@@ -615,6 +615,8 @@ header a:focus-visible { outline-color: var(--signal); }
   transform: translateY(-2px);
   box-shadow: 0 9px 20px rgb(17 17 17 / 7%);
 }
+.workspace-content .inventory-scan-panel,
+.workspace-content .inventory-update-panel,
 .workspace-content .inventory-receive-form,
 .workspace-content .inventory-receipt-ready,
 .workspace-content .inventory-table-panel,
@@ -622,8 +624,15 @@ header a:focus-visible { outline-color: var(--signal); }
   border-radius: 16px;
   box-shadow: 0 4px 18px rgb(17 17 17 / 3%);
 }
+.workspace-content .inventory-update-panel > div:first-child,
 .workspace-content .inventory-table-panel > div:first-child,
 .workspace-content .inventory-movements-panel > div:first-child { background: #f5f5f5; }
+.inventory-scan-video {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+}
 .workspace-content .inventory-table-panel table,
 .workspace-content .inventory-movements-panel table { white-space: nowrap; }
 .workspace-content .inventory-table-panel tbody tr,

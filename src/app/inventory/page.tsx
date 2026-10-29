@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowDownToLine, Check, Download, FileText, Package, Search } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { InventoryUpdate } from "@/components/inventory-update";
+import { ScanArrivals } from "@/components/scan-arrivals";
 import { conditionLabels, productCategories } from "@/lib/catalog";
 import { downloadInventoryReceipt, type InventoryReceiptData } from "@/lib/receipt-pdf";
 import { needsReorder, reorderThreshold } from "@/lib/stock-levels";
@@ -13,7 +15,7 @@ type InventoryItem = {
   reservedStock: number;
   reorderLevel: number;
   lastUpdatedAt: string;
-  product: { id: string; sku: string; name: string; category: string; brand: string | null; condition: string; colour: string | null; imei: string | null; costPrice: number | null; sellingPrice: number; reorderLevel: number; showOnWebsite: boolean; websiteProductId: string | null };
+  product: { id: string; sku: string; name: string; category: string; brand: string | null; condition: string; colour: string | null; configuration: string | null; productGroup: string | null; imei: string | null; costPrice: number | null; sellingPrice: number; reorderLevel: number; showOnWebsite: boolean; websiteProductId: string | null; websiteVariantKey: string | null };
 };
 
 type Movement = {
@@ -46,6 +48,7 @@ export default function InventoryPage() {
   const [canSeeCost, setCanSeeCost] = useState(false);
   const [canEditPrices, setCanEditPrices] = useState(false);
   const [canToggleWebsite, setCanToggleWebsite] = useState(false);
+  const [canReceive, setCanReceive] = useState(false);
   const [togglingId, setTogglingId] = useState("");
   const [priceDraft, setPriceDraft] = useState<{ productId: string; sellingPrice: string; costPrice: string } | null>(null);
   const [savingPrice, setSavingPrice] = useState(false);
@@ -59,6 +62,7 @@ export default function InventoryPage() {
     setCanSeeCost(Boolean(data.canSeeCost));
     setCanEditPrices(Boolean(data.canEditPrices));
     setCanToggleWebsite(Boolean(data.canToggleWebsite));
+    setCanReceive(Boolean(data.canReceive));
   }
 
   useEffect(() => {
@@ -218,7 +222,7 @@ export default function InventoryPage() {
     <AppShell>
       <div className="inventory-workspace space-y-5">
         <div className="inventory-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e5e5e5] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(0,0,0,.035)] sm:px-7">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Stock control</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Inventory</h2></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Stock control</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Inventory</h2><p className="mt-1 text-sm text-[#69746c]">Scan arrivals as they come in. Update New and Ex-UK prices the same way as website admin.</p></div>
           <button type="button" onClick={() => { setReceiving((current) => !current); setError(""); }} disabled={!items.length} className="inline-flex items-center gap-2 bg-[#111111] px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-[#1a1a1a] disabled:opacity-40"><ArrowDownToLine className="h-4 w-4" /> Receive stock</button>
           <button type="button" onClick={() => { setAddingProduct((current) => !current); setError(""); }} className="border border-[#c4c4c4] px-3.5 py-2.5 text-sm font-semibold text-[#1a1a1a] hover:bg-[#e5e5e5]">Add product</button>
         </div>
@@ -226,16 +230,36 @@ export default function InventoryPage() {
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#4a4a4a] bg-[#f5f5f5] px-4 py-3 text-sm text-[#1a1a1a]">{notice}</p> : null}
 
+        <ScanArrivals
+          items={items}
+          canReceive={canReceive}
+          onReceived={async (receipt) => {
+            setLastReceipt(receipt);
+            await refreshInventory();
+          }}
+          onError={setError}
+          onNotice={setNotice}
+        />
+
+        {lastReceipt ? <section className="inventory-receipt-ready flex flex-wrap items-center justify-between gap-4 border border-[#e5e5e5] bg-white p-4 sm:px-5" role="status">
+          <div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#e5e5e5] text-[#2d2d2d]"><FileText className="h-4.5 w-4.5"/></span><div className="min-w-0"><p className="text-sm font-semibold text-[#1a1a1a]">Goods received note is ready</p><p className="mt-1 truncate text-xs text-[#77847a]">GRN-{lastReceipt.id.slice(-8).toUpperCase()} · {lastReceipt.product.name} · +{lastReceipt.quantity} units</p></div></div>
+          <button type="button" onClick={() => downloadInventoryReceipt(lastReceipt)} className="inline-flex items-center gap-2 rounded-lg bg-[#1a1a1a] px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#2d2d2d]"><Download className="h-3.5 w-3.5"/>Download receipt</button>
+        </section> : null}
+
         <div className={`inventory-stats grid gap-3 ${canSeeCost ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Units on hand</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : stockUnits.toLocaleString("en-KE")}</p></div>
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Configured reorder alerts</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : lowStockCount}</p></div>
           {canSeeCost ? <div className="px-4 py-4"><p className="text-xs text-[#69746c]">Cost value · listed stock</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : money(stockValue)}</p></div> : null}
         </div>
 
-        {lastReceipt ? <section className="inventory-receipt-ready flex flex-wrap items-center justify-between gap-4 border border-[#e5e5e5] bg-white p-4 sm:px-5" role="status">
-          <div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#e5e5e5] text-[#2d2d2d]"><FileText className="h-4.5 w-4.5"/></span><div className="min-w-0"><p className="text-sm font-semibold text-[#1a1a1a]">Goods received note is ready</p><p className="mt-1 truncate text-xs text-[#77847a]">GRN-{lastReceipt.id.slice(-8).toUpperCase()} · {lastReceipt.product.name} · +{lastReceipt.quantity} units</p></div></div>
-          <button type="button" onClick={() => downloadInventoryReceipt(lastReceipt)} className="inline-flex items-center gap-2 rounded-lg bg-[#1a1a1a] px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#2d2d2d]"><Download className="h-3.5 w-3.5"/>Download receipt</button>
-        </section> : null}
+        <InventoryUpdate
+          items={items}
+          canEditPrices={canEditPrices}
+          canToggleWebsite={canToggleWebsite}
+          onSaved={refreshInventory}
+          onError={setError}
+          onNotice={setNotice}
+        />
 
         {receiving ? <form onSubmit={receiveStock} className="inventory-receive-form border border-[#e5e5e5] bg-white p-4 sm:p-5">
           <div className="mb-4 flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f5f5f5] text-[#2d2d2d]"><Package className="h-4 w-4"/></span><div><h3 className="text-sm font-semibold text-[#1a1a1a]">Receive supplier stock</h3><p className="mt-1 text-xs text-[#7e897f]">Search the catalog, record quantities, and create a downloadable goods received note.</p></div></div>

@@ -6,6 +6,7 @@ import { canSeeAllBranches, canUseCapability, hasPermission } from "@/lib/access
 import { denied } from "@/lib/authz";
 import { recordActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
+import { receiveProductStock } from "@/lib/receive-stock";
 
 export async function GET() {
   const session = await auth();
@@ -16,7 +17,7 @@ export async function GET() {
   const [items, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { branchId: session.user.branchId },
-      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, colour: true, imei: true, costPrice: true, sellingPrice: true, reorderLevel: true, showOnWebsite: true, websiteProductId: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, colour: true, configuration: true, productGroup: true, imei: true, costPrice: true, sellingPrice: true, reorderLevel: true, showOnWebsite: true, websiteProductId: true, websiteVariantKey: true } } },
       orderBy: { product: { name: "asc" } },
     }),
     prisma.inventoryMovement.findMany({
@@ -35,6 +36,7 @@ export async function GET() {
     canSeeCost,
     canEditPrices: hasPermission(session.user, "products.price"),
     canToggleWebsite: hasPermission(session.user, "products.price") || hasPermission(session.user, "inventory.receive"),
+    canReceive: hasPermission(session.user, "inventory.receive"),
   });
 }
 
@@ -145,45 +147,15 @@ export async function POST(request: Request) {
   const parsed = receiptSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid product and quantity." }, { status: 400 });
 
-  const inventory = await prisma.$transaction(async (transaction) => {
-    const existing = await transaction.inventoryItem.findUnique({
-      where: { branchId_productId: { branchId: session.user.branchId!, productId: parsed.data.productId } },
-      select: {
-        id: true,
-        stockOnHand: true,
-        product: { select: { name: true, sku: true, category: true, brand: true, costPrice: true } },
-        branch: { select: { name: true } },
-      },
-    });
-    if (!existing) return null;
-
-    const updated = await transaction.inventoryItem.update({
-      where: { id: existing.id },
-      data: { stockOnHand: { increment: parsed.data.quantity }, ...(parsed.data.reorderLevel !== undefined ? { reorderLevel: parsed.data.reorderLevel } : {}) },
-      select: { id: true, stockOnHand: true, reservedStock: true },
-    });
-    const movement = await transaction.inventoryMovement.create({
-      data: {
-        branchId: session.user.branchId!,
-        productId: parsed.data.productId,
-        userId: session.user.id,
-        type: "RECEIPT",
-        quantity: parsed.data.quantity,
-        reference: parsed.data.reference || null,
-        note: parsed.data.note || null,
-      },
-      select: { id: true, createdAt: true },
-    });
-    return {
-      ...updated,
-      previousStock: existing.stockOnHand,
-      product: existing.product,
-      branchName: existing.branch.name,
-      receivedBy: session.user.name ?? "Staff member",
-      reference: parsed.data.reference || null,
-      note: parsed.data.note || null,
-      movement,
-    };
+  const inventory = await receiveProductStock(prisma, {
+    branchId: session.user.branchId,
+    productId: parsed.data.productId,
+    userId: session.user.id,
+    userName: session.user.name ?? "Staff member",
+    quantity: parsed.data.quantity,
+    reorderLevel: parsed.data.reorderLevel,
+    reference: parsed.data.reference,
+    note: parsed.data.note,
   });
 
   if (!inventory) return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });
