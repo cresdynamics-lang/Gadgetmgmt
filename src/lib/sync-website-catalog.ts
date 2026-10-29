@@ -26,6 +26,7 @@ function matchesListing(
     return true;
   }
   if (product.sku === websiteCatalogSku(listing)) return true;
+  if (normalize(product.name) === normalize(listing.name)) return true;
   const group = normalize(product.productGroup);
   const config = normalize(product.configuration);
   return group === normalize(listing.group) && config === normalize(listing.configuration);
@@ -33,12 +34,7 @@ function matchesListing(
 
 const managedCategories = ["iPad", "Mac", "AirPods", "Apple Watch", "Apple accessories"];
 
-export async function syncWebsiteCatalog(
-  prisma: PrismaClient,
-  branchId: string,
-  options: { updatePrices?: boolean } = {},
-) {
-  const updatePrices = options.updatePrices !== false;
+export async function syncWebsiteCatalog(prisma: PrismaClient, branchId: string) {
   const existing = await prisma.product.findMany({
     where: { branchId, condition: "NEW" },
     select: {
@@ -75,8 +71,7 @@ export async function syncWebsiteCatalog(
             brand: "Apple",
             websiteProductId: listing.websiteProductId,
             websiteVariantKey: listing.websiteVariantKey,
-            showOnWebsite: true,
-            ...(updatePrices ? { sellingPrice: listing.priceKes } : {}),
+            showOnWebsite: listing.listed !== false,
           },
           select: { id: true },
         })
@@ -90,10 +85,10 @@ export async function syncWebsiteCatalog(
             brand: "Apple",
             condition: "NEW",
             costPrice: 0,
-            sellingPrice: listing.priceKes,
+            sellingPrice: 0,
             websiteProductId: listing.websiteProductId,
             websiteVariantKey: listing.websiteVariantKey,
-            showOnWebsite: true,
+            showOnWebsite: listing.listed !== false,
             branchId,
           },
           select: { id: true },

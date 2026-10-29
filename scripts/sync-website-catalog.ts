@@ -1,5 +1,6 @@
-// Links listed website products to this branch, writes the supplied prices, and
-// hides other iPad/Mac/AirPods/Watch/accessory SKUs from the public site.
+// Links listed website products to this branch and hides other iPad/Mac/AirPods/
+// Watch/accessory SKUs from the public site. Prices stay in ops Product.sellingPrice
+// and the website overlay — this script does not write prices.
 // Does not delete products, stock, sales, or customers.
 import { PrismaClient } from "@prisma/client";
 
@@ -14,8 +15,7 @@ async function main() {
     select: { id: true, name: true },
   });
   if (!shop) throw new Error("No active branch found. Run the main seed first.");
-  const keepPrices = process.argv.includes("--keep-prices");
-  const result = await syncWebsiteCatalog(prisma, shop.id, { updatePrices: !keepPrices });
+  const result = await syncWebsiteCatalog(prisma, shop.id);
   console.log(
     `${shop.name}: website catalog synced. created ${result.created}, updated ${result.updated}, hidden ${result.hidden} of ${result.listed} listed SKUs.`,
   );
