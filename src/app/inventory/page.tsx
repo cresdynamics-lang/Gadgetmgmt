@@ -259,6 +259,7 @@ export default function InventoryPage() {
           onSaved={refreshInventory}
           onError={setError}
           onNotice={setNotice}
+          description="Same New and Ex-UK prices as website admin. The full live table is also under Website admin in the menu."
         />
 
         {receiving ? <form onSubmit={receiveStock} className="inventory-receive-form border border-[#e5e5e5] bg-white p-4 sm:p-5">

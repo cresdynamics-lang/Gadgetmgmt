@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { roleNames } from "@/lib/access";
+import { kenyaDateTime } from "@/lib/kenya-time";
 
 type ActivityUser = { name: string; email: string; role: string } | null;
 type ActivityRow = {
@@ -54,13 +55,13 @@ const presenceLabels: Record<SessionRow["presence"], string> = {
   "signed-out": "Signed out",
 };
 
-const moneyTime = (value: string) => new Date(value).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
-
 export default function ActivityPage() {
   const [events, setEvents] = useState<ActivityRow[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [updatedAt, setUpdatedAt] = useState("");
+  const [tick, setTick] = useState("");
 
   useEffect(() => {
     async function loadActivity() {
@@ -70,6 +71,8 @@ export default function ActivityPage() {
         if (!response.ok) throw new Error(data.error ?? "Activity could not be loaded.");
         setEvents(data.events);
         setSessions(data.sessions);
+        setUpdatedAt(kenyaDateTime(new Date()));
+        setError("");
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Activity could not be loaded.");
       } finally {
@@ -77,11 +80,18 @@ export default function ActivityPage() {
       }
     }
     void loadActivity();
-    const timer = window.setInterval(() => void loadActivity(), 15_000);
+    const timer = window.setInterval(() => void loadActivity(), 5_000);
+    const clock = window.setInterval(() => setTick(kenyaDateTime(new Date())), 1_000);
     const onLive = () => void loadActivity();
     window.addEventListener("gadgethub:live", onLive);
-    return () => { window.clearInterval(timer); window.removeEventListener("gadgethub:live", onLive); };
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(clock);
+      window.removeEventListener("gadgethub:live", onLive);
+    };
   }, []);
+
+  const liveCount = sessions.filter((item) => item.presence === "live").length;
 
   return (
     <AppShell>
@@ -89,7 +99,8 @@ export default function ActivityPage() {
         <div className="rounded-2xl border border-[#e5e5e5] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(0,0,0,.035)] sm:px-7">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Super admin</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Activity</h2>
-          <p className="mt-1.5 max-w-2xl text-sm text-[#77837a]">Who signed in, what they did, when they left or signed out, and how long they stayed.</p>
+          <p className="mt-1.5 max-w-2xl text-sm text-[#77837a]">Who signed in, what they did, when they left or signed out, and how long they stayed. Times are Kenya time (EAT).</p>
+          <p className="mt-2 text-xs text-[#69746c]">{tick || updatedAt ? `Now ${tick || updatedAt}` : "Watching…"} · watchers refresh every 5 seconds{updatedAt ? ` · last refresh ${updatedAt}` : ""}{loading ? "" : ` · ${liveCount} live`}</p>
         </div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         <section className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
@@ -97,7 +108,7 @@ export default function ActivityPage() {
             <LogIn className="h-4 w-4 text-[#2d2d2d]" />
             <div>
               <h3 className="text-sm font-semibold">Who logged in</h3>
-              <p className="mt-0.5 text-[11px] text-[#819087]">Sign-in, last seen, signed out, or left by closing the app</p>
+              <p className="mt-0.5 text-[11px] text-[#819087]">Sign-in, last seen, signed out, or left · updates every 5 seconds</p>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -119,8 +130,8 @@ export default function ActivityPage() {
                       <p className="font-semibold">{item.user?.name ?? "Unknown"}</p>
                       <p className="mt-0.5 text-[11px] text-[#819087]">{item.user?.email} · {roleNames[item.user?.role ?? ""] ?? item.user?.role}</p>
                     </td>
-                    <td className="px-4 py-3 text-[#526057]">{moneyTime(item.startedAt)}</td>
-                    <td className="px-4 py-3 text-[#526057]">{moneyTime(item.lastSeenAt)}</td>
+                    <td className="px-4 py-3 text-[#526057]">{kenyaDateTime(item.startedAt)}</td>
+                    <td className="px-4 py-3 text-[#526057]">{kenyaDateTime(item.lastSeenAt)}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
                         <Clock3 className="h-3.5 w-3.5" />
@@ -161,7 +172,7 @@ export default function ActivityPage() {
                     {event.sessionDuration ? ` · session ${event.sessionDuration}` : ""}
                   </p>
                 </div>
-                <p className="shrink-0 text-xs text-[#69746c]">{moneyTime(event.createdAt)}</p>
+                <p className="shrink-0 text-xs text-[#69746c]">{kenyaDateTime(event.createdAt)}</p>
               </div>
             ))}
             {loading ? <p className="px-4 py-8 text-center text-sm text-[#69746c]">Loading activity…</p> : null}

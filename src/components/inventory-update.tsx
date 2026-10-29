@@ -36,7 +36,12 @@ type Props = {
   onSaved: () => Promise<void> | void;
   onError: (message: string) => void;
   onNotice: (message: string) => void;
+  title?: string;
+  description?: string;
+  websiteOnlyLocked?: boolean;
 };
+
+export type { UpdateItem };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
@@ -47,7 +52,7 @@ function draftFrom(row: WebsiteUpdateRow): Draft {
   };
 }
 
-export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSaved, onError, onNotice }: Props) {
+export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSaved, onError, onNotice, title = "Update", description = "Same New and Ex-UK prices as website admin. Saving here is what gadgethubke.com shows.", websiteOnlyLocked = false }: Props) {
   const [query, setQuery] = useState("");
   const [websiteOnly, setWebsiteOnly] = useState(true);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -195,13 +200,15 @@ export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSave
     <section id="inventory-update" className="inventory-update-panel overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8ebe8] p-3.5">
         <div>
-          <h3 className="text-sm font-semibold">Update</h3>
-          <p className="mt-1 text-xs text-[#7e897f]">Same New and Ex-UK prices as website admin. Saving here is what gadgethubke.com shows.</p>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="mt-1 text-xs text-[#7e897f]">{description}</p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <button type="button" onClick={() => setWebsiteOnly((current) => !current)} className={`min-h-10 rounded-lg px-3 text-xs font-semibold ${websiteOnly ? "bg-[#111111] text-white" : "border border-[#c4c4c4] text-[#2d2d2d]"}`}>
-            {websiteOnly ? "Website listings" : "All New / Ex-UK"}
-          </button>
+          {websiteOnlyLocked ? null : (
+            <button type="button" onClick={() => setWebsiteOnly((current) => !current)} className={`min-h-10 rounded-lg px-3 text-xs font-semibold ${websiteOnly ? "bg-[#111111] text-white" : "border border-[#c4c4c4] text-[#2d2d2d]"}`}>
+              {websiteOnly ? "Website listings" : "All New / Ex-UK"}
+            </button>
+          )}
           <div className="relative w-full sm:max-w-xs">
             <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" />
             <input aria-label="Search website listings" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by name or id" className="w-full border border-[#c4c4c4] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#1a1a1a]" />

@@ -18,6 +18,7 @@
     "test:inventory-update": "node --import tsx --test scripts/inventory-update.test.ts",
     "test:activity-session": "node --import tsx --test scripts/activity-session.test.ts",
     "test:api-guard": "node --import tsx --test scripts/api-guard.test.ts",
+    "test:kenya-time": "node --import tsx --test scripts/kenya-time.test.ts",
     "test:retain-customer": "node --import tsx --test scripts/retain-customer.test.ts",
     "email:test": "node --env-file=.env --import tsx scripts/test-email.ts",
     "db:import-catalog": "node --env-file=.env --import tsx scripts/import-catalog.ts",

@@ -3,7 +3,7 @@ export const navItems = [
   { label: "Sales (POS)", href: "/sales" },
   { label: "Sales reports", href: "/reports" },
   { label: "Inventory", href: "/inventory" },
-  { label: "Website catalog", href: "/website" },
+  { label: "Website admin", href: "/website" },
   { label: "Customers", href: "/customers" },
   { label: "Lipa Mdogo Mdogo", href: "/credit" },
   { label: "Staff & Users", href: "/staff" },

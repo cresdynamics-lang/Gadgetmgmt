@@ -117,7 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       keepalive: true,
     });
     ping();
-    const timer = window.setInterval(() => ping(), 60_000);
+    const timer = window.setInterval(() => ping(), 5_000);
     const onLeavePage = () => ping(false);
     const onHidden = () => {
       if (document.visibilityState === "hidden") onLeavePage();
