@@ -9,11 +9,12 @@ type ReceiveInput = {
   reorderLevel?: number;
   reference?: string | null;
   note?: string | null;
+  imei?: string | null;
 };
 
 export async function receiveProductStock(prisma: PrismaClient, input: ReceiveInput) {
   return prisma.$transaction(async (transaction) => {
-    const existing = await transaction.inventoryItem.findUnique({
+    let existing = await transaction.inventoryItem.findUnique({
       where: { branchId_productId: { branchId: input.branchId, productId: input.productId } },
       select: {
         id: true,
@@ -28,12 +29,49 @@ export async function receiveProductStock(prisma: PrismaClient, input: ReceiveIn
             condition: true,
             colour: true,
             costPrice: true,
+            imei: true,
           },
         },
         branch: { select: { name: true } },
       },
     });
-    if (!existing) return null;
+
+    if (!existing) {
+      const product = await transaction.product.findFirst({
+        where: { id: input.productId, branchId: input.branchId },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          category: true,
+          brand: true,
+          condition: true,
+          colour: true,
+          costPrice: true,
+          imei: true,
+        },
+      });
+      const branch = await transaction.branch.findUnique({ where: { id: input.branchId }, select: { name: true } });
+      if (!product || !branch) return null;
+      const created = await transaction.inventoryItem.create({
+        data: {
+          branchId: input.branchId,
+          productId: product.id,
+          stockOnHand: 0,
+          reorderLevel: input.reorderLevel ?? 0,
+        },
+        select: { id: true, stockOnHand: true },
+      });
+      existing = { id: created.id, stockOnHand: created.stockOnHand, product, branch };
+    }
+
+    const imei = (input.imei || "").replace(/\D/g, "");
+    if (imei.length === 15 && !existing.product.imei) {
+      const taken = await transaction.product.findFirst({ where: { imei }, select: { id: true } });
+      if (!taken) {
+        await transaction.product.update({ where: { id: existing.product.id }, data: { imei } });
+      }
+    }
 
     const updated = await transaction.inventoryItem.update({
       where: { id: existing.id },
@@ -58,7 +96,7 @@ export async function receiveProductStock(prisma: PrismaClient, input: ReceiveIn
     return {
       ...updated,
       previousStock: existing.stockOnHand,
-      product: existing.product,
+      product: { ...existing.product, imei: existing.product.imei || imei || null },
       branchName: existing.branch.name,
       receivedBy: input.userName || "Staff member",
       reference: input.reference || null,

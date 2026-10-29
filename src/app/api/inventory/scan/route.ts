@@ -45,11 +45,8 @@ function publicMatch(
   };
 }
 
-async function lookup(branchId: string, raw: string) {
-  const { code } = parseScanPayload(raw);
-  if (!code) return { code: "", matches: [] as ReturnType<typeof publicMatch>[] };
-
-  const products = await prisma.product.findMany({
+async function productsForBranch(branchId: string) {
+  return prisma.product.findMany({
     where: { branchId },
     select: {
       ...scanSelect,
@@ -59,8 +56,14 @@ async function lookup(branchId: string, raw: string) {
       },
     },
   });
-  const hits = matchScanProducts(code, products);
-  return { code, matches: hits.map((hit) => publicMatch(hit.product, hit.reason)) };
+}
+
+async function lookup(branchId: string, raw: string) {
+  const parsed = parseScanPayload(raw);
+  if (!parsed.code) return { code: "", kind: parsed.kind, matches: [] as ReturnType<typeof publicMatch>[] };
+  const products = await productsForBranch(branchId);
+  const hits = matchScanProducts(raw, products);
+  return { code: parsed.code, kind: parsed.kind, matches: hits.map((hit) => publicMatch(hit.product, hit.reason)) };
 }
 
 export async function GET(request: Request) {
@@ -71,15 +74,15 @@ export async function GET(request: Request) {
 
   const code = new URL(request.url).searchParams.get("code") || "";
   const result = await lookup(session.user.branchId, code);
-  if (!result.code) return NextResponse.json({ error: "Scan a barcode, SKU or IMEI." }, { status: 400 });
+  if (!result.code) return NextResponse.json({ error: "Scan a barcode, SKU, IMEI or product name." }, { status: 400 });
   return NextResponse.json(result);
 }
 
 const receiveSchema = z.object({
   code: z.string().trim().min(2).max(120),
-  quantity: z.number().int().min(1).max(10000).default(1),
-  productId: z.string().cuid().optional(),
-  reorderLevel: z.number().int().nonnegative().max(100000).optional(),
+  quantity: z.coerce.number().int().min(1).max(10000).default(1),
+  productId: z.string().min(8).max(40).optional(),
+  reorderLevel: z.coerce.number().int().nonnegative().max(100000).optional(),
   reference: z.string().trim().max(100).optional(),
   note: z.string().trim().max(300).optional(),
 });
@@ -94,22 +97,42 @@ export async function POST(request: Request) {
   }
 
   const parsed = receiveSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Scan a valid barcode, SKU or IMEI and quantity." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Scan a valid barcode, SKU, IMEI or product name and quantity." }, { status: 400 });
 
+  const scan = parseScanPayload(parsed.data.code);
   const lookupResult = await lookup(session.user.branchId, parsed.data.code);
-  if (!lookupResult.matches.length) {
-    return NextResponse.json({ error: "No product matches that scan. Check the SKU or IMEI, or add the product first.", matches: [] }, { status: 404 });
-  }
 
-  const chosen = parsed.data.productId
+  let chosen = parsed.data.productId
     ? lookupResult.matches.find((match) => match.productId === parsed.data.productId)
     : lookupResult.matches.length === 1
       ? lookupResult.matches[0]
       : null;
 
+  if (parsed.data.productId && !chosen) {
+    const products = await productsForBranch(session.user.branchId);
+    const product = products.find((row) => row.id === parsed.data.productId);
+    if (product) chosen = publicMatch(product, scan.kind === "imei" ? "imei" : "sku");
+  }
+
+  if (!lookupResult.matches.length && !chosen) {
+    return NextResponse.json({
+      error: scan.kind === "imei"
+        ? `IMEI ${scan.code} is not on file. Confirm which product this unit is, then Receive again.`
+        : `No product matches “${parsed.data.code}”. Confirm the product name or SKU below.`,
+      matches: [],
+      code: scan.code,
+      kind: scan.kind,
+    }, { status: 404 });
+  }
+
   if (!chosen) {
     return NextResponse.json(
-      { error: "More than one product matches that scan. Choose New or Ex-UK.", matches: lookupResult.matches },
+      {
+        error: "More than one product matches. Confirm which one to receive.",
+        matches: lookupResult.matches,
+        code: lookupResult.code,
+        kind: lookupResult.kind,
+      },
       { status: 409 },
     );
   }
@@ -121,8 +144,9 @@ export async function POST(request: Request) {
     userName: session.user.name ?? "Staff member",
     quantity: parsed.data.quantity,
     reorderLevel: parsed.data.reorderLevel,
-    reference: parsed.data.reference || `SCAN-${lookupResult.code.slice(-16)}`,
+    reference: parsed.data.reference || `${scan.kind === "imei" ? "IMEI" : "SCAN"}-${(scan.code || lookupResult.code).slice(-16)}`,
     note: parsed.data.note || "Scanned on arrival",
+    imei: scan.kind === "imei" ? scan.code : null,
   });
 
   if (!inventory) {
@@ -133,10 +157,10 @@ export async function POST(request: Request) {
     userId: session.user.id,
     sessionId: session.user.sessionId,
     action: "STOCK_RECEIVED",
-    summary: `Scanned in ${parsed.data.quantity} of ${inventory.product.name}`,
+    summary: `Scanned in ${parsed.data.quantity} of ${inventory.product.name} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
     entityType: "InventoryItem",
     entityId: inventory.id,
   });
 
-  return NextResponse.json({ ...inventory, match: chosen, code: lookupResult.code }, { status: 201 });
+  return NextResponse.json({ ...inventory, match: chosen, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
 }

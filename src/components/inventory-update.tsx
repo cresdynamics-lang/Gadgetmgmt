@@ -54,7 +54,7 @@ function draftFrom(row: WebsiteUpdateRow): Draft {
 
 export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSaved, onError, onNotice, title = "Update", description = "Same New and Ex-UK prices as website admin. Saving here is what gadgethubke.com shows.", websiteOnlyLocked = false }: Props) {
   const [query, setQuery] = useState("");
-  const [websiteOnly, setWebsiteOnly] = useState(true);
+  const [websiteOnly, setWebsiteOnly] = useState(websiteOnlyLocked);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [savingKey, setSavingKey] = useState("");
   const [toggling, setToggling] = useState("");

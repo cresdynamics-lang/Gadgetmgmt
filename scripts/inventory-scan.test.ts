@@ -70,3 +70,20 @@ test("partial SKU still finds the product when it is unique enough", () => {
   assert.equal(hits[0]?.product.id, "new1");
   assert.equal(hits[0]?.reason, "skuContains");
 });
+
+test("a typed product name matches even with spaces and hyphens", () => {
+  const exact = matchScanProducts("iPad Pro 11\" M5 256GB 5G", products);
+  assert.equal(exact.length, 2);
+  assert.deepEqual(exact.map((hit) => hit.product.condition).sort(), ["EX_UK", "NEW"]);
+
+  const unique = matchScanProducts("iPhone 16 Pro 256GB", products);
+  assert.equal(unique.length, 1);
+  assert.equal(unique[0]?.product.id, "phone1");
+  assert.equal(unique[0]?.reason, "name");
+});
+
+test("a compact SKU typed without hyphens still matches", () => {
+  const hits = matchScanProducts("iphone16pro256new", products);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]?.product.id, "phone1");
+});

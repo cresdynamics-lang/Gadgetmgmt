@@ -235,7 +235,16 @@ export default function InventoryPage() {
           canReceive={canReceive}
           onReceived={async (receipt) => {
             setLastReceipt(receipt);
-            await refreshInventory();
+            setItems((current) => current.map((item) => (
+              item.product.sku === receipt.product.sku
+                ? { ...item, stockOnHand: receipt.newStock, lastUpdatedAt: receipt.createdAt }
+                : item
+            )));
+            try {
+              await refreshInventory();
+            } catch (loadError) {
+              setError(loadError instanceof Error ? `${loadError.message} Stock was already received — reload if the list looks stale.` : "Stock was received but the list could not refresh.");
+            }
           }}
           onError={setError}
           onNotice={setNotice}
