@@ -114,11 +114,21 @@ export function AppShell({ children }: { children: ReactNode }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ end }),
-      keepalive: end,
+      keepalive: true,
     });
     ping();
     const timer = window.setInterval(() => ping(), 60_000);
-    return () => window.clearInterval(timer);
+    const onLeavePage = () => ping(false);
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") onLeavePage();
+    };
+    window.addEventListener("pagehide", onLeavePage);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("pagehide", onLeavePage);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
   }, [session?.user.sessionId]);
 
   async function leave() {

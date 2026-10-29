@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
-import { formatDuration } from "@/lib/activity";
+import { formatDuration, sessionPresence } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -46,6 +46,7 @@ export async function GET() {
         : null,
     })),
     sessions: sessions.map((item) => {
+      const presence = sessionPresence(item.endedAt, item.lastSeenAt);
       const closedAt = item.endedAt ?? item.lastSeenAt;
       return {
         id: item.id,
@@ -53,7 +54,8 @@ export async function GET() {
         lastSeenAt: item.lastSeenAt,
         endedAt: item.endedAt,
         duration: formatDuration(closedAt.getTime() - item.startedAt.getTime()),
-        active: !item.endedAt,
+        active: presence === "live",
+        presence,
         eventCount: item._count.events,
         user: item.user,
       };

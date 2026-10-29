@@ -22,6 +22,7 @@ type SessionRow = {
   endedAt: string | null;
   duration: string;
   active: boolean;
+  presence: "live" | "left" | "signed-out";
   eventCount: number;
   user: ActivityUser;
 };
@@ -36,6 +37,21 @@ const actionLabels: Record<string, string> = {
   CREDIT_PAYMENT: "Lipa payment",
   STAFF_CREATED: "Staff created",
   POLICY_UPDATED: "Policy updated",
+  PERMISSIONS_UPDATED: "Permissions",
+  APPROVAL_REQUESTED: "Approval asked",
+  APPROVAL_GRANTED: "Approval used",
+  SALES_GOAL_UPDATED: "Sales goal",
+  TRADE_IN_STOCKED: "Trade-in stocked",
+  MPESA_PROMPT_SENT: "M-Pesa prompt",
+  PRICE_UPDATED: "Price updated",
+  WEBSITE_VISIBILITY: "Website listing",
+  AI_QUESTION: "AI assistant",
+};
+
+const presenceLabels: Record<SessionRow["presence"], string> = {
+  live: "Live",
+  left: "Left",
+  "signed-out": "Signed out",
 };
 
 const moneyTime = (value: string) => new Date(value).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
@@ -73,7 +89,7 @@ export default function ActivityPage() {
         <div className="rounded-2xl border border-[#e5e5e5] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(0,0,0,.035)] sm:px-7">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Super admin</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Activity</h2>
-          <p className="mt-1.5 max-w-2xl text-sm text-[#77837a]">Who signed in, what they did, when it happened, and how long they stayed.</p>
+          <p className="mt-1.5 max-w-2xl text-sm text-[#77837a]">Who signed in, what they did, when they left or signed out, and how long they stayed.</p>
         </div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         <section className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
@@ -81,7 +97,7 @@ export default function ActivityPage() {
             <LogIn className="h-4 w-4 text-[#2d2d2d]" />
             <div>
               <h3 className="text-sm font-semibold">Who logged in</h3>
-              <p className="mt-0.5 text-[11px] text-[#819087]">Session start, last seen, and time on the system</p>
+              <p className="mt-0.5 text-[11px] text-[#819087]">Sign-in, last seen, signed out, or left by closing the app</p>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -92,6 +108,7 @@ export default function ActivityPage() {
                   <th className="px-4 py-3 font-medium">Signed in</th>
                   <th className="px-4 py-3 font-medium">Last seen</th>
                   <th className="px-4 py-3 font-medium">How long</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
@@ -109,12 +126,16 @@ export default function ActivityPage() {
                         <Clock3 className="h-3.5 w-3.5" />
                         {item.duration}
                       </span>
-                      {item.active ? <span className="ml-2 rounded-full bg-[#e5e5e5] px-2 py-0.5 text-[10px] font-semibold">Live</span> : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.presence === "live" ? "bg-[#111111] text-white" : item.presence === "left" ? "bg-[#fff2e8] text-[#8a4b2f]" : "bg-[#e5e5e5] text-[#2d2d2d]"}`}>
+                        {presenceLabels[item.presence ?? (item.active ? "live" : "signed-out")]}
+                      </span>
                     </td>
                     <td className="px-4 py-3 tabular-nums text-[#526057]">{item.eventCount}</td>
                   </tr>
                 ))}
-                {!loading && !sessions.length ? <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-[#69746c]">No sign-ins recorded yet.</td></tr> : null}
+                {!loading && !sessions.length ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-[#69746c]">No sign-ins recorded yet.</td></tr> : null}
               </tbody>
             </table>
           </div>

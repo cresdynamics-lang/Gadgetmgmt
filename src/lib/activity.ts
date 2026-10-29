@@ -78,6 +78,18 @@ export async function recordActivity(input: {
   }
 }
 
+/** Heartbeat is every 60s. After two missed pings the person has left the app. */
+export const SESSION_STALE_MS = 2.5 * 60 * 1000;
+
+export type SessionPresence = "live" | "left" | "signed-out";
+
+export function sessionPresence(endedAt: Date | string | null | undefined, lastSeenAt: Date | string, now = Date.now()): SessionPresence {
+  if (endedAt) return "signed-out";
+  const last = new Date(lastSeenAt).getTime();
+  if (!Number.isFinite(last) || now - last > SESSION_STALE_MS) return "left";
+  return "live";
+}
+
 export function formatDuration(durationMs: number) {
   const totalMinutes = Math.max(0, Math.round(durationMs / 60000));
   if (totalMinutes < 1) return "under a minute";
