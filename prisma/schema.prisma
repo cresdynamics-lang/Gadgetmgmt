@@ -765,6 +765,23 @@ model WebsiteOrder {
   @@index([customerPhone])
 }
 
+/// Contact, newsletter and track-order messages copied from gadgethubke.com.
+model WebsiteMessage {
+  id         String   @id @default(cuid())
+  externalId String   @unique
+  kind       String
+  name       String
+  phone      String
+  topic      String?
+  body       String?
+  orderRef   String?
+  createdAt  DateTime
+  receivedAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind, createdAt])
+}
+
 /// A conversation with GadgetHub AI. Messages are [{ role, content, sources? }], newest last.
 model AssistantChat {
   id        String   @id @default(cuid())

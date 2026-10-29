@@ -7,16 +7,20 @@ import { runTool, stripSecrets, toolsFor, type AssistantUser } from "../src/lib/
 const userWith = (role: string, grants: { permission: string; mode: "FULL" | "RESTRICTED" }[] = []): AssistantUser => ({ role, id: "u1", branchId: "b1", ...resolvePermissions(role, grants, []) });
 const names = (user: AssistantUser) => toolsFor(user).map((tool) => tool.name).sort();
 
-test("the super admin gets every tool, including direct database reads", () => {
+test("the super admin gets every tool, including footprints and direct database reads", () => {
   const owner = names(userWith("OWNER"));
   assert.ok(owner.includes("query_database"));
   assert.ok(owner.includes("money_received"));
+  assert.ok(owner.includes("finance_footprint"));
+  assert.ok(owner.includes("user_footprints"));
+  assert.ok(owner.includes("customer_footprints"));
+  assert.ok(owner.includes("website_shop"));
   assert.ok(owner.includes("sales_summary"));
 });
 
 test("a cashier only gets tools for what their role can see", () => {
   const cashier = names(userWith("CASHIER"));
-  assert.deepEqual(cashier, ["customer_details", "lipa_accounts"]);
+  assert.deepEqual(cashier, ["customer_details", "customer_footprints", "lipa_accounts"]);
 });
 
 test("granting a permission unlocks the matching tool, restricted grants stay locked", () => {
