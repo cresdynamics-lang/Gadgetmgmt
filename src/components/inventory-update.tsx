@@ -52,7 +52,7 @@ function draftFrom(row: WebsiteUpdateRow): Draft {
   };
 }
 
-export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSaved, onError, onNotice, title = "Update", description = "Same New and Ex-UK prices as website admin. Saving here is what gadgethubke.com shows.", websiteOnlyLocked = false }: Props) {
+export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSaved, onError, onNotice, title = "Update", description = "New and Ex-UK prices for this operations branch. Saving here does not change gadgethubke.com.", websiteOnlyLocked = false }: Props) {
   const [query, setQuery] = useState("");
   const [websiteOnly, setWebsiteOnly] = useState(websiteOnlyLocked);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -136,7 +136,7 @@ export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSave
         return next;
       });
       await onSaved();
-      onNotice(`${result.name || row.name} saved. gadgethubke.com uses the new New / Ex-UK prices on the next catalog refresh.`);
+      onNotice(`${result.name || row.name} saved in operations. The public shop is not updated.`);
     } catch (error) {
       onError(error instanceof Error ? error.message : "The listing could not be saved.");
     } finally {
@@ -170,7 +170,7 @@ export function InventoryUpdate({ items, canEditPrices, canToggleWebsite, onSave
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Website visibility could not be saved.");
       await onSaved();
-      onNotice(`${row.name} ${condition === "EX_UK" ? "Ex-UK" : "New"} is now ${offer.showOnWebsite ? "hidden from" : "listed on"} gadgethubke.com.`);
+      onNotice(`${row.name} ${condition === "EX_UK" ? "Ex-UK" : "New"} is now ${offer.showOnWebsite ? "hidden in" : "listed in"} operations. The public shop is not updated.`);
     } catch (error) {
       onError(error instanceof Error ? error.message : "Website visibility could not be saved.");
     } finally {

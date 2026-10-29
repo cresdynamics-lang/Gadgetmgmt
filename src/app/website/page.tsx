@@ -172,9 +172,9 @@ export default function WebsiteCatalogPage() {
       <div className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e5e5e5] bg-white px-5 py-5 sm:px-7">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Public store</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Operations</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-tight">Website admin</h2>
-            <p className="mt-1 text-sm text-[#69746c]">Live visitors, WhatsApp taps, messages and orders from gadgethubke.com, plus New and Ex-UK catalog edits. Updates every 5 seconds, same as website admin.</p>
+            <p className="mt-1 text-sm text-[#69746c]">This operations app is standalone. Catalog, stock and prices here stay in ops — they do not change gadgethubke.com.</p>
             {updatedAt ? <p className="mt-2 text-xs text-[#69746c]">Last refresh {updatedAt}{liveStale ? " · waiting for a live visitor ping from the website" : ""}</p> : null}
           </div>
           <div className="flex items-center gap-2 text-sm text-[#69746c]"><Globe className="h-4 w-4" />{loading ? "—" : `${live?.now ?? 0} live · ${listedCount} listed`}</div>
@@ -261,7 +261,7 @@ export default function WebsiteCatalogPage() {
             canToggleWebsite={canToggleWebsite}
             websiteOnlyLocked
             title="Website admin"
-            description="New (KES), Ex-UK (KES), stock and On website / Hidden — the same live data gadgethubke.com uses."
+            description="New (KES), Ex-UK (KES) and stock for this operations branch only. Changes here do not update gadgethubke.com."
             onSaved={async () => { await Promise.all([loadCatalog(), loadOrders()]); }}
             onError={setError}
             onNotice={setNotice}
@@ -270,7 +270,7 @@ export default function WebsiteCatalogPage() {
 
         {tab === "orders" ? (
           <section className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
-            <div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Orders from gadgethubke.com</h3></div>
+            <div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Website orders</h3></div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b border-[#e8ebe8] bg-[#f5f5f5] text-xs text-[#66736a]">

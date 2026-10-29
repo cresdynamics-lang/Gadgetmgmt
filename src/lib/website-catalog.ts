@@ -1,5 +1,6 @@
 /**
- * Which iPad / Mac / AirPods / Watch / accessory SKUs can appear on gadgethubke.com.
+ * Which iPad / Mac / AirPods / Watch / accessory SKUs this operations branch tracks.
+ * The public shop is standalone and is not driven by these rows.
  * Prices are not stored here. Live prices come from Product.sellingPrice in ops
  * and the website catalog overlay.
  */

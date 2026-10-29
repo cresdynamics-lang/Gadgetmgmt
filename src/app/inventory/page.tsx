@@ -210,7 +210,7 @@ export default function InventoryPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Website visibility could not be saved.");
       setItems((current) => current.map((row) => row.product.id === result.id ? { ...row, product: { ...row.product, showOnWebsite: result.showOnWebsite } } : row));
-      setNotice(result.showOnWebsite ? `${item.product.name} is now listed on gadgethubke.com.` : `${item.product.name} is hidden from gadgethubke.com.`);
+      setNotice(result.showOnWebsite ? `${item.product.name} is now listed in operations.` : `${item.product.name} is hidden in operations. The public shop is not updated.`);
     } catch (toggleError) {
       setError(toggleError instanceof Error ? toggleError.message : "Website visibility could not be saved.");
     } finally {

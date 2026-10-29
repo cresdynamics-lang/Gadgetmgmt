@@ -506,7 +506,7 @@ const customerFootprints: AssistantTool = {
 const websiteShop: AssistantTool = {
   name: "website_shop",
   label: "Website shop",
-  description: "Live gadgethubke.com data the same way website admin shows it: visitors on the site now, WhatsApp taps today, cart adds, contact messages, and website orders.",
+  description: "Operations website-admin records stored in this app only. The public shop is standalone and does not feed live visitors, WhatsApp taps or orders here.",
   permissions: ["website.view"],
   parameters: { type: "object", properties: {}, additionalProperties: false },
   async run() {
