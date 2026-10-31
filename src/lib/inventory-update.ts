@@ -141,7 +141,6 @@ export function catalogSiblingSku(
         configuration: "",
         websiteProductId,
         websiteVariantKey: websiteVariantKey || "base",
-        priceKes: 1,
       },
       condition,
     );
