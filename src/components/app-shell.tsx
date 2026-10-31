@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Activity, ArrowDown, ChartNoAxesCombined, ArrowUpRight, Boxes, ChevronDown, CreditCard, Globe, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft } from "lucide-react";
+import { Activity, ArrowDown, ChartNoAxesCombined, ArrowUpRight, Boxes, ChevronDown, CreditCard, Globe, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft, ScanLine } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { navItems } from "@/lib/navigation";
@@ -18,6 +18,7 @@ const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/sales": ShoppingBag,
   "/reports": ChartNoAxesCombined,
   "/inventory": Boxes,
+  "/devices": ScanLine,
   "/website": Globe,
   "/customers": UsersRound,
   "/credit": CreditCard,

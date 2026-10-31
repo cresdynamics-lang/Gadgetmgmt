@@ -6,6 +6,7 @@ import { creditStatusForDays, daysUntilDue as calculateDaysUntilDue, flaggedCred
 import { assistantConfigured, openRouterChat } from "@/lib/assistant/agent";
 import { deliverNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { releaseSaleUnits } from "@/lib/device-units";
 
 function nairobiDate(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -313,6 +314,7 @@ async function deliverQueued() {
           if (released.count !== 1) throw new Error("RESERVATION_NOT_FOUND");
           await transaction.inventoryMovement.create({ data: { branchId: expired.sale.branchId, productId: item.productId, userId: expired.sale.cashierId, saleId: expired.sale.id, type: "RESERVATION_RELEASE", quantity: -item.quantity, reference: expired.sale.invoiceNumber, idempotencyKey: `payment-expiry-${expired.id}-${item.productId}`, note: "Stock released after third-party payment link expired" } });
         }
+        await releaseSaleUnits(transaction, expired.sale.id);
         await transaction.sale.updateMany({ where: { id: expired.sale.id, status: "PENDING" }, data: { status: "VOIDED" } });
       });
     } catch { console.error("Could not release expired payment-request stock", expired.id); }

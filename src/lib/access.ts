@@ -116,6 +116,7 @@ const pagePermission: Record<string, Permission> = {
   "/sales": "sales.view",
   "/reports": "reports.view",
   "/inventory": "inventory.view",
+  "/devices": "inventory.view",
   "/customers": "customers.view",
   "/credit": "credit.view",
   "/staff": "staff.view",

@@ -58,8 +58,12 @@ export function customerEmailHtml(input: { heading: string; intro: string; amoun
   const pay = payUrl
     ? `<p style="margin:24px 0"><a href="${payUrl}" style="display:inline-block;background:#111111;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600">Pay now</a></p><p style="font-size:12px;color:#667066">Or open this link: <a href="${payUrl}">${payUrl}</a></p>`
     : "";
+  // Email clients load images by URL, so the logo shows once the app has a public address.
+  const base = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  const logo = /^https:\/\//.test(base) ? escapeHtml(`${base}/brand/logo-on-light.png`) : "";
   return `<!doctype html><html><body style="margin:0;background:#f5f5f5;font-family:ui-sans-serif,system-ui,sans-serif;color:#111111">
     <div style="max-width:560px;margin:24px auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:16px;padding:28px">
+      ${logo ? `<img src="${logo}" alt="GadgetHub" height="36" style="display:block;height:36px;margin:0 0 14px">` : ""}
       <p style="margin:0 0 6px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#6b6b6b">Gadget Hub · Norwich Union Hse</p>
       <h1 style="margin:0 0 12px;font-size:22px">${escapeHtml(input.heading)}</h1>
       <p style="margin:0 0 16px;line-height:1.55;color:#3d3d3d">${escapeHtml(input.intro).replace(/\n/g, "<br>")}</p>
@@ -72,7 +76,9 @@ export function customerEmailHtml(input: { heading: string; intro: string; amoun
   </body></html>`;
 }
 
-export async function sendEmail(input: { to: string; subject: string; text: string; html?: string; category?: MailCategory }) {
+export type MailAttachment = { filename: string; content: Buffer };
+
+export async function sendEmail(input: { to: string; subject: string; text: string; html?: string; category?: MailCategory; attachments?: MailAttachment[] }) {
   const category = input.category ?? "notifications";
   const from = mailFrom(category);
   if (!from) throw new Error(`Email delivery needs MAIL_FROM_${categoryEnv[category]} or MAIL_FROM.`);
@@ -90,7 +96,10 @@ export async function sendEmail(input: { to: string; subject: string; text: stri
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({ from, to: [input.to], reply_to: replyTo, subject: input.subject, text: input.text, html }),
+      body: JSON.stringify({
+        from, to: [input.to], reply_to: replyTo, subject: input.subject, text: input.text, html,
+        ...(input.attachments?.length ? { attachments: input.attachments.map((file) => ({ filename: file.filename, content: file.content.toString("base64") })) } : {}),
+      }),
     });
     if (!response.ok) {
       const detail = await response.json().catch(() => null) as { message?: string } | null;
@@ -100,5 +109,5 @@ export async function sendEmail(input: { to: string; subject: string; text: stri
   }
   const smtp = smtpTransport();
   if (!smtp) throw new Error("Email delivery needs a Resend API key or SMTP settings.");
-  await smtp.sendMail({ from, to: input.to, replyTo, subject: input.subject, text: input.text, html });
+  await smtp.sendMail({ from, to: input.to, replyTo, subject: input.subject, text: input.text, html, attachments: input.attachments });
 }

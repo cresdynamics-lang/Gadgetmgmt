@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { recordCreditPayment } from "@/lib/credit-payment";
 import { getDarajaConfig, normalizeKenyanPhone } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
+import { completeSaleUnits } from "@/lib/device-units";
 import { sendSaleReceiptEmail } from "@/lib/sale-receipt-email";
 
 type StkCallback = {
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
           if (inventory.count !== 1) throw new Error("PENDING_SALE_STOCK_UNAVAILABLE");
           await transaction.inventoryMovement.create({ data: { branchId: sale.branchId, productId: item.productId, userId: sale.cashierId, saleId: sale.id, type: "SALE", quantity: -item.quantity, reference: sale.invoiceNumber, note: "Sale completed after confirmed third-party M-Pesa payment" } });
         }
+        await completeSaleUnits(transaction, sale.id);
       } else {
         throw new Error("PAYMENT_REQUEST_OWNER_MISSING");
       }

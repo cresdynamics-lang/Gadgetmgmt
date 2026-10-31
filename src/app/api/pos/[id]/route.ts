@@ -14,13 +14,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) },
     include: {
       customer: { select: { name: true, phone: true } },
-      branch: { select: { name: true, address: true, phone: true } },
+      branch: { select: { name: true, address: true, phone: true, email: true } },
       cashier: { select: { name: true } },
-      saleItems: { include: { product: { select: { name: true, sku: true, configuration: true, condition: true } } } },
+      saleItems: { include: { product: { select: { name: true, sku: true, configuration: true, condition: true } }, deviceUnits: { select: { imei: true, serial: true } } } },
       payments: true,
       paymentRequests: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
     },
   });
   if (!sale) return NextResponse.json({ error: "Sale was not found." }, { status: 404 });
-  return NextResponse.json(sale, { headers: { "Cache-Control": "no-store" } });
+  const saleItems = sale.saleItems.map(({ deviceUnits, ...item }) => ({ ...item, units: deviceUnits.map((unit) => unit.imei || unit.serial).filter(Boolean) }));
+  return NextResponse.json({ ...sale, saleItems }, { headers: { "Cache-Control": "no-store" } });
 }

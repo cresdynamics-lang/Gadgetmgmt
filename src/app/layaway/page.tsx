@@ -95,14 +95,21 @@ export default function LayawayPage() {
     }
   }
 
-  async function fulfillOrder() {
-    if (!selected || saving || !window.confirm(`Confirm that ${selected.customer.name} has collected ${selected.quantity} × ${selected.productName}?`)) return;
+  async function fulfillOrder(units: string[] = []) {
+    if (!selected || saving || (!units.length && !window.confirm(`Confirm that ${selected.customer.name} has collected ${selected.quantity} × ${selected.productName}?`))) return;
     setSaving(true);
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/layaway/${selected.id}/fulfill`, { method: "POST" });
+      const response = await fetch(`/api/layaway/${selected.id}/fulfill`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ units }) });
       const data = await response.json();
+      if (!response.ok && data.needsScan && !units.length) {
+        // Several phones of this model are on file, so the handover records which one the customer took.
+        const scanned = window.prompt(`${data.error}\nScan or type the IMEI / serial (separate several with commas):`);
+        setSaving(false);
+        if (scanned?.trim()) await fulfillOrder(scanned.split(/[\s,]+/).filter(Boolean));
+        return;
+      }
       if (!response.ok) throw new Error(data.error ?? "Order could not be fulfilled.");
       await refresh();
       setNotice(`Customer handover recorded. Receipt ${data.invoiceNumber}.`);

@@ -1,16 +1,23 @@
 import type { NotificationChannel } from "@prisma/client";
 
 import { emailConfigured, extractPayLink, mailCategoryForKind, sendEmail } from "@/lib/mail";
+import { saleDocumentAttachment } from "@/lib/sale-document";
 
 export { emailConfigured };
 
-export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string; kind?: string | null }) {
+/** Sale emails carry the receipt or invoice PDF; the sale id is the tail of their dedupe key. */
+const saleDocumentKey = /^(?:sale-receipt|sale-links):([a-z0-9]+)$/;
+
+export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string; kind?: string | null; dedupeKey?: string | null }) {
   if (input.channel === "EMAIL") {
+    const saleId = input.dedupeKey?.match(saleDocumentKey)?.[1];
+    const attachment = saleId ? await saleDocumentAttachment(saleId) : null;
     await sendEmail({
       to: input.recipient,
       subject: input.subject ?? "Gadget Hub update",
       text: input.body,
       category: mailCategoryForKind(input.kind),
+      ...(attachment ? { attachments: [attachment] } : {}),
     });
     return;
   }

@@ -87,3 +87,16 @@ test("a compact SKU typed without hyphens still matches", () => {
   assert.equal(hits.length, 1);
   assert.equal(hits[0]?.product.id, "phone1");
 });
+
+test("New vs Ex-UK is selected before a listing scan updates quantity", () => {
+  const listingHits = matchScanProducts("ipad-pro-11-m5::256gb-cell", products, { condition: "NEW" });
+  assert.equal(listingHits.length, 1);
+  assert.equal(listingHits[0]?.product.id, "new1");
+});
+
+test("an Apple model number on an iPhone 16 Pro box finds that phone", () => {
+  const hits = matchScanProducts("A3293", products, { condition: "NEW" });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]?.product.id, "phone1");
+  assert.equal(hits[0]?.reason, "catalog");
+});

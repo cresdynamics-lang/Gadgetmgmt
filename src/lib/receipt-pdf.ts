@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 
-import { brandMarkDataUrl } from "@/lib/brand";
+import { brandMarkDataUrl, brandWebsite } from "@/lib/brand";
 
 export type SaleReceiptData = {
   invoiceNumber: string;
@@ -13,10 +13,11 @@ export type SaleReceiptData = {
   tradeInModel?: string | null;
   tradeInValue?: number;
   createdAt: string;
-  branch: { name: string; address: string; phone: string };
+  branch: { name: string; address: string; phone: string; email?: string | null };
   cashier: { name: string };
   customer: { name: string; phone: string } | null;
-  saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string } }[];
+  /** `units` are the IMEIs / serials of the phones sold on that line. */
+  saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string }; units?: string[] }[];
   payments: { amount: number; method: string }[];
   paymentLinks?: { label: string; url: string }[];
 };
@@ -66,7 +67,24 @@ export type InventoryReceiptData = {
   quantity: number;
   previousStock: number;
   newStock: number;
+  vendorName?: string | null;
+  sourceName?: string | null;
   product: { name: string; sku: string; category: string; brand: string | null; costPrice: number | null };
+  phoneLabel?: {
+    imei: string;
+    serial: string;
+    mpn: string;
+    modelNumber: string;
+    storage: string;
+    colour: string;
+    batteryHealth: string;
+    fmi: string;
+    sim: string;
+    version: string;
+    name: string;
+    category: string;
+    group: string;
+  } | null;
 };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
@@ -146,7 +164,13 @@ function createDocument(title: string, branchName: string, date: string) {
   };
 }
 
+/** Anything not yet paid in full is an invoice; a fully paid sale gets a receipt. */
+export function isSaleInvoice(receipt: Pick<SaleReceiptData, "total" | "paidAmount">) {
+  return receipt.paidAmount < receipt.total;
+}
+
 export function createSaleReceiptPdf(receipt: SaleReceiptData) {
+  const documentLabel = isSaleInvoice(receipt) ? "GADGETHUB  /  INVOICE" : "GADGETHUB  /  SALES RECEIPT";
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 18;
@@ -155,13 +179,13 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   const ink: [number, number, number] = [17, 17, 17];
   const muted: [number, number, number] = [107, 107, 107];
   const gold: [number, number, number] = [17, 17, 17];
-  const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
+  const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Nairobi" });
 
   doc.addImage(brandMarkDataUrl, "PNG", margin, y - 6, 13, 13);
   doc.setTextColor(...gold);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("GADGETHUB  /  SALES RECEIPT", margin + 19, y - 1);
+  doc.text(documentLabel, margin + 19, y - 1);
   doc.setTextColor(...ink);
   doc.setFont("times", "normal");
   doc.setFontSize(19);
@@ -169,7 +193,7 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.setTextColor(...muted);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  const branchLines = doc.splitTextToSize(`${receipt.branch.address}\n${receipt.branch.phone}`, 58);
+  const branchLines = doc.splitTextToSize([receipt.branch.address, receipt.branch.phone, receipt.branch.email, brandWebsite].filter(Boolean).join("\n"), 58);
   doc.text(branchLines, right, y - 1, { align: "right" });
   y += 19;
   doc.setDrawColor(229, 229, 229);
@@ -205,24 +229,43 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.text(`Served by ${receipt.cashier.name}`, right, y, { align: "right" });
   y += 5;
   const tableWidth = pageWidth - margin * 2;
-  doc.setFillColor(245, 245, 245);
-  doc.rect(margin, y, tableWidth, 9, "F");
-  doc.setTextColor(...muted);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.text("ITEM", margin + 3, y + 5.8);
-  doc.text("QTY", right - 76, y + 5.8, { align: "right" });
-  doc.text("UNIT PRICE", right - 34, y + 5.8, { align: "right" });
-  doc.text("AMOUNT", right - 3, y + 5.8, { align: "right" });
-  y += 9;
+  const tableHeader = () => {
+    doc.setFillColor(245, 245, 245);
+    doc.rect(margin, y, tableWidth, 9, "F");
+    doc.setTextColor(...muted);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.text("ITEM", margin + 3, y + 5.8);
+    doc.text("QTY", right - 76, y + 5.8, { align: "right" });
+    doc.text("UNIT PRICE", right - 34, y + 5.8, { align: "right" });
+    doc.text("AMOUNT", right - 3, y + 5.8, { align: "right" });
+    y += 9;
+  };
+  // Later pages repeat the brand and invoice number so every sheet stands on its own.
+  const continuationPage = (withTable: boolean) => {
+    doc.addPage();
+    y = 16;
+    doc.addImage(brandMarkDataUrl, "PNG", margin, y - 5, 9, 9);
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(documentLabel, margin + 12, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...muted);
+    doc.text(`${receipt.invoiceNumber} (continued)`, right, y, { align: "right" });
+    y += 7;
+    doc.setDrawColor(229, 229, 229);
+    doc.line(margin, y, right, y);
+    y += 5;
+    if (withTable) tableHeader();
+  };
+  tableHeader();
 
   for (const item of receipt.saleItems) {
     const titleLines = doc.splitTextToSize(item.product.name, tableWidth - 93);
-    const rowHeight = Math.max(13, titleLines.length * 4 + 7);
-    if (y + rowHeight > 258) {
-      doc.addPage();
-      y = 20;
-    }
+    const unitLines = item.units?.length ? doc.splitTextToSize(item.units.map((code) => (/^\d{15}$/.test(code) ? `IMEI ${code}` : `Sr# ${code}`)).join("  ·  "), tableWidth - 93) : [];
+    const rowHeight = Math.max(11, titleLines.length * 4 + unitLines.length * 3.6 + 6);
+    if (y + rowHeight > 268) continuationPage(true);
     doc.setDrawColor(229, 229, 229);
     doc.line(margin, y + rowHeight, right, y + rowHeight);
     doc.setTextColor(...ink);
@@ -231,6 +274,11 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
     doc.text(titleLines, margin + 3, y + 5);
     doc.setTextColor(...muted);
     doc.setFontSize(7);
+    if (unitLines.length) {
+      doc.setTextColor(...ink);
+      doc.text(unitLines, margin + 3, y + titleLines.length * 4 + 4.4);
+      doc.setTextColor(...muted);
+    }
     doc.text(`SKU ${item.product.sku}`, margin + 3, y + rowHeight - 2);
     doc.setFontSize(8.5);
     doc.text(String(item.quantity), right - 76, y + 6, { align: "right" });
@@ -242,7 +290,9 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   }
 
   y += 10;
-  if (y > 239) { doc.addPage(); y = 20; }
+  // Keep the payment summary together; it moves to the next page only when it cannot fit.
+  const summaryHeight = 52 + (receipt.paymentLinks?.length ?? 0) * 12 + ((receipt.discountAmount ?? 0) > 0 ? 6 : 0) + ((receipt.tradeInValue ?? 0) > 0 ? 6 : 0) + ((receipt.taxAmount ?? 0) > 0 ? 6 : 0);
+  if (y + summaryHeight > 285) continuationPage(false);
   const totalLabelX = right - 67;
   const totalValueX = right;
   const subtotal = receipt.saleItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
@@ -308,11 +358,22 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.text("Keep this receipt for your records", pageWidth / 2, footerY + 5, { align: "center" });
+
+  const pages = doc.getNumberOfPages();
+  if (pages > 1) {
+    for (let page = 1; page <= pages; page += 1) {
+      doc.setPage(page);
+      doc.setTextColor(...muted);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.text(`Page ${page} of ${pages}`, right, 292, { align: "right" });
+    }
+  }
   return doc;
 }
 
 export function downloadSaleReceipt(receipt: SaleReceiptData) {
-  createSaleReceiptPdf(receipt).save(`${safeFilePart(receipt.invoiceNumber) || "gadgethub-receipt"}.pdf`);
+  createSaleReceiptPdf(receipt).save(`GadgetHub-${isSaleInvoice(receipt) ? "invoice" : "receipt"}-${safeFilePart(receipt.invoiceNumber) || "sale"}.pdf`);
 }
 
 export function createLayawayPaymentReceiptPdf(
@@ -320,7 +381,7 @@ export function createLayawayPaymentReceiptPdf(
   payment: LayawayPaymentReceiptData,
   balanceAfterPayment: number,
 ) {
-  const pdf = createDocument("Layaway installment receipt", order.branch.name, new Date(payment.createdAt).toLocaleString("en-KE"));
+  const pdf = createDocument("Layaway installment receipt", order.branch.name, new Date(payment.createdAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" }));
   pdf.line("Order", `LAY-${order.id.slice(-10).toUpperCase()}`);
   pdf.line("Payment receipt", payment.id);
   pdf.line("Customer", `${order.customer.name} | ${order.customer.phone}`);
@@ -384,7 +445,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   const muted: [number, number, number] = [107, 107, 107];
   const jade: [number, number, number] = [17, 17, 17];
   const brass: [number, number, number] = [17, 17, 17];
-  const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
+  const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Nairobi" });
 
   doc.setFillColor(17, 17, 17);
   doc.roundedRect(margin, 17, right - margin, 48, 4, 4, "F");
@@ -417,12 +478,12 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
     doc.text(text.toUpperCase(), x, at);
   };
   label("Received by", margin, y);
-  label("Supplier reference", margin + 86, y);
+  label("Supplier / source", margin + 86, y);
   doc.setTextColor(...ink);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.text(receipt.receivedBy, margin, y + 7);
-  doc.text(receipt.reference || "Not provided", margin + 86, y + 7);
+  doc.text(receipt.vendorName || receipt.sourceName || receipt.reference || "Not provided", margin + 86, y + 7);
 
   y += 22;
   doc.setDrawColor(229, 229, 229);

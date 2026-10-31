@@ -328,7 +328,7 @@ export default function CustomersPage() {
                 <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-semibold">Recent purchases</h4><span className="text-xs text-[#69746c]">Most recent 6</span></div>
                 {selected.sales.length ? <div className="divide-y divide-[#e8ebe8] border-y border-[#e8ebe8]">
                   {selected.sales.map((sale) => <div key={sale.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                    <div><p className="text-sm font-medium">{sale.saleItems.map((item) => `${item.product.name}${item.quantity > 1 ? ` × ${item.quantity}` : ""}`).join(", ") || "Sale"}</p><p className="mt-1 text-xs text-[#69746c]">{sale.invoiceNumber} · {new Date(sale.createdAt).toLocaleDateString("en-KE")}</p></div>
+                    <div><p className="text-sm font-medium">{sale.saleItems.map((item) => `${item.product.name}${item.quantity > 1 ? ` × ${item.quantity}` : ""}`).join(", ") || "Sale"}</p><p className="mt-1 text-xs text-[#69746c]">{sale.invoiceNumber} · {new Date(sale.createdAt).toLocaleDateString("en-KE")} · <a href={`/api/pos/${sale.id}/receipt`} className="font-semibold text-[#2d2d2d] underline-offset-2 hover:underline">Download receipt</a></p></div>
                     <div className="text-right"><p className="text-sm font-semibold">{money(sale.total)}</p><p className="mt-1 text-xs text-[#69746c]">{sale.paymentMethod}</p></div>
                   </div>)}
                 </div> : <p className="border-y border-[#e8ebe8] py-8 text-center text-sm text-[#69746c]">No completed purchases linked to this customer.</p>}

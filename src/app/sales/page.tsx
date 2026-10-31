@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
+import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Printer, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 import { downloadSaleReceipt } from "@/lib/receipt-pdf";
 import { BrandLogo } from "@/components/brand-logo";
 import { tradeInBrandLabel, tradeInDeclaration, tradeInGrades, tradeInChecks } from "@/lib/trade-in";
-import { assessTradeInForm, blankTradeInForm, TradeInPanel, tradeInPayload, tradeInValue, type TradeInForm } from "@/components/trade-in-panel";
+import { assessTradeInForm, blankTradeInForm, TradeInPanel, tradeInLabelData, tradeInPayload, tradeInValue, type TradeInForm } from "@/components/trade-in-panel";
+import { printPhoneLabel, type PhoneLabelData } from "@/lib/phone-label";
+import { scansRequired } from "@/lib/device-units";
 
-type Product = { id: string; sku: string; name: string; category: string; sellingPrice: number; available: number };
-type Customer = { id: string; name: string; phone: string };
+type Product = { id: string; sku: string; name: string; category: string; sellingPrice: number; available: number; trackedUnits: number; untrackedUnits: number };
+type Customer = { id: string; name: string; phone: string; email: string | null };
 type CreditPolicy = { minimumDepositPercent: number; defaultCreditLimit: number };
 type NewCustomer = { name: string; phone: string; email: string };
 type Receipt = {
@@ -37,6 +39,7 @@ type Receipt = {
   payerMessage?: { recipient: string; status: "SENT" | "FAILED" | "QUEUED" } | null;
   stkPrompt?: { token: string; phone: string; status: "PROCESSING" | "FAILED"; message: string } | null;
   paymentRequests?: { status: string }[];
+  emailedTo?: string | null;
 };
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 function receiptPayLinks(receipt: Receipt) {
@@ -57,6 +60,11 @@ export default function SalesPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [creditPolicy, setCreditPolicy] = useState<CreditPolicy>({ minimumDepositPercent: 40, defaultCreditLimit: 0 });
   const [cart, setCart] = useState<Record<string, number>>({});
+  // IMEIs / serials scanned for each cart line, so the sale records exactly which phones left.
+  const [cartUnits, setCartUnits] = useState<Record<string, string[]>>({});
+  const [unitDrafts, setUnitDrafts] = useState<Record<string, string>>({});
+  const [scanning, setScanning] = useState(false);
+  const [receiptEmail, setReceiptEmail] = useState("");
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All items");
   const [customerId, setCustomerId] = useState("");
@@ -70,6 +78,7 @@ export default function SalesPage() {
   const [creditTermMonths, setCreditTermMonths] = useState<3 | 6 | 12>(3);
   const [tradeIn, setTradeIn] = useState<TradeInForm>(blankTradeInForm);
   const [confirmingTradeIn, setConfirmingTradeIn] = useState(false);
+  const [tradeInLabel, setTradeInLabel] = useState<PhoneLabelData | null>(null);
   const { data: session } = useSession();
   const staffName = session?.user?.name ?? "the staff member";
   const [creditDepositAmount, setCreditDepositAmount] = useState("");
@@ -176,6 +185,8 @@ export default function SalesPage() {
   const cartItems = Object.entries(cart)
     .map(([id, quantity]) => ({ product: products.find((item) => item.id === id), quantity }))
     .filter((item): item is { product: Product; quantity: number } => Boolean(item.product));
+  const missingScans = (product: Product, quantity: number) => Math.max(0, scansRequired({ quantity, untracked: product.untrackedUnits, tracked: product.trackedUnits }) - (cartUnits[product.id]?.length ?? 0));
+  const scansOutstanding = cartItems.some(({ product, quantity }) => missingScans(product, quantity) > 0);
   const subtotal = cartItems.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0);
   const acceptedTradeIn = tradeInValue(tradeIn, subtotal);
   const total = Math.max(0, subtotal - acceptedTradeIn);
@@ -188,7 +199,7 @@ export default function SalesPage() {
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const tradeInCustomer = selectedCustomer ?? (showNewCustomer && newCustomer.name.trim() ? newCustomer : null);
   const newCustomerReady = newCustomer.name.trim().length >= 2 && newCustomer.phone.trim().length >= 7;
-  const checkoutBlocked = !cartItems.length || submitting || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100) || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "MPESA_STK" && mpesaPhone.trim().length < 9) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod));
+  const checkoutBlocked = !cartItems.length || submitting || scansOutstanding || Boolean(receiptEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmail.trim())) || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100) || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "MPESA_STK" && mpesaPhone.trim().length < 9) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod));
   const receiptSubtotal = receipt?.saleItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) ?? 0;
   const categories = ["All items", ...Array.from(new Set(products.map((product) => product.category))).sort((a, b) => a.localeCompare(b))];
   const filteredProducts = products.filter((product) => (activeCategory === "All items" || product.category === activeCategory) && `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase()));
@@ -200,7 +211,47 @@ export default function SalesPage() {
       else next[product.id] = Math.min(quantity, product.available);
       return next;
     });
+    setCartUnits((current) => {
+      const kept = (current[product.id] ?? []).slice(0, Math.max(0, quantity));
+      const next = { ...current };
+      if (kept.length) next[product.id] = kept;
+      else delete next[product.id];
+      return next;
+    });
     setReceipt(null);
+  }
+
+  /** Add a scanned phone to the sale: looks up the exact unit, then adds or tags its cart line. */
+  async function addScannedUnit(raw: string, expectedProductId?: string) {
+    const code = raw.trim();
+    if (!code || scanning) return false;
+    setScanning(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/pos/units?code=${encodeURIComponent(code)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "That phone could not be found.");
+      if (expectedProductId && data.productId !== expectedProductId) throw new Error(`That phone is a ${data.productName}, not this item.`);
+      const product = products.find((item) => item.id === data.productId);
+      if (!product) throw new Error(`${data.productName} is not available at this branch.`);
+      const scanned = cartUnits[product.id] ?? [];
+      if (scanned.includes(data.code)) throw new Error(`${data.code} is already in this sale.`);
+      const quantity = Math.max(cart[product.id] ?? 0, scanned.length + 1);
+      if (quantity > product.available) throw new Error(`No more ${product.name} available.`);
+      setCart((current) => ({ ...current, [product.id]: quantity }));
+      setCartUnits((current) => ({ ...current, [product.id]: [...scanned, data.code] }));
+      setReceipt(null);
+      return true;
+    } catch (scanError) {
+      setError(scanError instanceof Error ? scanError.message : "That phone could not be found.");
+      return false;
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function removeScannedUnit(productId: string, code: string) {
+    setCartUnits((current) => ({ ...current, [productId]: (current[productId] ?? []).filter((item) => item !== code) }));
   }
 
   function completeSale(event: FormEvent<HTMLFormElement>) {
@@ -221,10 +272,11 @@ export default function SalesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+          items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity, ...(cartUnits[product.id]?.length ? { units: cartUnits[product.id] } : {}) })),
           customerId: customerId || null,
           ...(showNewCustomer ? { newCustomer } : {}),
           paymentMethod,
+          ...(!showNewCustomer && !selectedCustomer?.email && receiptEmail.trim() ? { receiptEmail: receiptEmail.trim() } : {}),
           ...(paymentMethod === "PAY_LINK" ? { payerPhone, payerConsent } : {}),
           ...(paymentMethod === "MPESA_STK" ? { mpesaPhone } : {}),
           ...(tradeIn.active && acceptedTradeIn > 0 ? { tradeIn: tradeInPayload(tradeIn, subtotal) } : {}),
@@ -244,7 +296,19 @@ export default function SalesPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Sale could not be completed.");
       setReceipt(data);
+      if (tradeIn.active) {
+        const label = tradeInLabelData(tradeIn);
+        if (label.imei || label.serial) {
+          setTradeInLabel(label);
+          printPhoneLabel(label);
+        }
+      } else {
+        setTradeInLabel(null);
+      }
       setCart({});
+      setCartUnits({});
+      setUnitDrafts({});
+      setReceiptEmail("");
       setCustomerId("");
       setShowNewCustomer(false);
       setNewCustomer(blankCustomer);
@@ -325,7 +389,9 @@ export default function SalesPage() {
               <div className="flex flex-wrap gap-2 print:hidden">
                 {receipt.status === "PAID" || receipt.status === "PARTIAL" ? <><button type="button" onClick={() => window.print()} className="rounded-lg border border-[#d8d5c9] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f5f4ef]">Print receipt</button>
                 <button type="button" onClick={() => downloadSaleReceipt({ ...receipt, paymentLinks: receiptPayLinks(receipt) })} className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d5c9] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f5f4ef]"><Download className="h-3.5 w-3.5" />Save PDF</button></> : <span className="self-center text-[10px] font-medium text-[#876b3e]">Receipt available after payment clears</span>}
-                <button type="button" onClick={() => setReceipt(null)} className="rounded-lg bg-[#1a1a1a] px-3.5 py-2.5 text-xs font-semibold text-white hover:bg-[#1a1a1a]">New sale</button>
+                {receipt.emailedTo ? <span className="self-center text-[10px] font-medium text-[#2f6b43]">Emailed to {receipt.emailedTo}</span> : null}
+                {tradeInLabel ? <button type="button" onClick={() => printPhoneLabel(tradeInLabel)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d5c9] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f5f4ef]"><Printer className="h-3.5 w-3.5" />Print 90×50 mm label</button> : null}
+                <button type="button" onClick={() => { setReceipt(null); setTradeInLabel(null); }} className="rounded-lg bg-[#1a1a1a] px-3.5 py-2.5 text-xs font-semibold text-white hover:bg-[#1a1a1a]">New sale</button>
               </div>
             </div>
 
@@ -375,14 +441,14 @@ export default function SalesPage() {
 
         <div className="sales-layout grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
           <section className="product-catalog min-w-0 overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white shadow-[0_4px_18px_rgba(0,0,0,.03)]">
-            <div className="flex flex-col gap-3 border-b border-[#e5e5e5] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="relative w-full sm:max-w-sm"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input ref={productSearch} aria-label="Search products" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, SKU or category" className="w-full border border-[#c4c4c4] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#1a1a1a]" /></div><span className="text-xs text-[#69746c]">{loading ? "Loading catalogue…" : `${filteredProducts.length} products`}</span></div>
+            <div className="flex flex-col gap-3 border-b border-[#e5e5e5] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="relative w-full sm:max-w-sm"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input ref={productSearch} aria-label="Search products or scan a phone" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && /\d{6,}|SR#|IMEI/i.test(query)) { event.preventDefault(); void addScannedUnit(query).then((added) => { if (added) setQuery(""); }); } }} placeholder="Search, or scan a phone's IMEI / QR" className="w-full border border-[#c4c4c4] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#1a1a1a]" /></div><span className="text-xs text-[#69746c]">{loading ? "Loading catalogue…" : `${filteredProducts.length} products`}</span></div>
             {!cashierMode && !loading && categories.length > 1 ? <div className="flex gap-2 overflow-x-auto border-b border-[#e5e5e5] px-4 py-3">{categories.map((category) => <button key={category} type="button" onClick={() => setActiveCategory(category)} aria-pressed={activeCategory === category} className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${activeCategory === category ? "border-[#c4c4c4] bg-[#f5f5f5] text-[#2d2d2d]" : "border-transparent bg-[#f5f5f5] text-[#849188] hover:border-[#e5e5e5] hover:text-[#2d2d2d]"}`}>{category}</button>)}</div> : null}
             {loading ? <div className="p-8 text-sm text-[#69746c]">Connecting to branch inventory…</div> : filteredProducts.length ? <div className="sales-product-list grid gap-2.5 p-3 sm:grid-cols-2">{filteredProducts.map((product) => <div key={product.id} className="sales-product-card flex items-center justify-between gap-3 rounded-xl border border-[#e5e5e5] bg-white p-3 transition"><div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-gradient-to-br from-[#f5f5f5] to-[#e5e5e5] text-[#4a4a4a] ring-1 ring-[#e5e5e5]"><Package className="h-[17px] w-[17px]" strokeWidth={1.7}/></span><div className="min-w-0"><p className="line-clamp-2 text-[13px] font-semibold leading-snug text-[#111111]">{product.name}</p><p className="mt-1 truncate text-[10px] text-[#89958d]">{product.sku}<span className="px-1.5 text-[#c2cbc4]">·</span>{product.category}</p></div></div><div className="flex shrink-0 items-center gap-4"><div className="text-right"><p className="text-sm font-semibold tabular-nums">{money(product.sellingPrice)}</p><p className={`mt-1 text-[10px] font-medium ${product.available ? "text-[#2d2d2d]" : "text-[#9b4a3d]"}`}>{product.available} available</p></div><button type="button" disabled={product.available < 1 || (cart[product.id] ?? 0) >= product.available} onClick={() => setQuantity(product, (cart[product.id] ?? 0) + 1)} aria-label={`Add ${product.name}`} className={`grid h-9 w-9 place-items-center rounded-xl transition ${cart[product.id] ? "bg-[#e5e5e5] text-[#2d2d2d]" : "border border-[#e5e5e5] bg-white text-[#4a4a4a] shadow-sm hover:border-[#c4c4c4] hover:bg-[#f5f5f5]"} disabled:cursor-not-allowed disabled:opacity-35`}>{cart[product.id] ? <Check className="h-4 w-4"/> : <Plus className="h-4 w-4"/>}</button></div></div>)}</div> : <div className="grid min-h-56 place-items-center p-8 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[#f5f5f5] text-[#839187]"><Package className="h-5 w-5"/></span><p className="mt-3 text-sm font-semibold">{products.length ? "No matching products" : "No products stocked at this branch"}</p><p className="mt-1 max-w-xs text-xs leading-5 text-[#839087]">{products.length ? "Try another name, SKU or category." : "Add products and receive stock into this branch before making a sale."}</p></div></div>}
           </section>
 
           <form onSubmit={completeSale} className="sales-checkout h-fit overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white shadow-[0_10px_28px_rgba(0,0,0,.06)] xl:sticky xl:top-[96px]">
             <div className="flex items-center justify-between border-b border-[#e5e5e5] bg-[#f5f5f5] px-4 py-3.5"><div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e5e5e5] text-[#2d2d2d]"><ShoppingBag className="h-4 w-4"/></span><div><h3 className="text-sm font-semibold text-[#111111]">Current sale</h3><p className="mt-0.5 text-[10px] text-[#8b978f]">Review before checkout</p></div></div><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-[#6d7f73] ring-1 ring-[#e5e5e5]">{cartItems.reduce((sum, item) => sum + item.quantity, 0)} units</span></div>
-            {cartItems.length ? <div className="divide-y divide-[#f5f5f5] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#1a1a1a]">{product.name}</p><p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5e5e5] bg-[#f5f5f5]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#f5f5f5]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#1a1a1a]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#4a4a4a] transition hover:bg-[#f5f5f5] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#1a1a1a]">{money(product.sellingPrice * quantity)}</span></div></div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f5f5f5] text-[#6b6b6b]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#2d2d2d]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customer’s basket.</p></div></div>}
+            {cartItems.length ? <div className="divide-y divide-[#f5f5f5] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#1a1a1a]">{product.name}</p><p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5e5e5] bg-[#f5f5f5]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#f5f5f5]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#1a1a1a]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#4a4a4a] transition hover:bg-[#f5f5f5] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#1a1a1a]">{money(product.sellingPrice * quantity)}</span></div>{cartUnits[product.id]?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{cartUnits[product.id].map((code) => <span key={code} className="inline-flex items-center gap-1 rounded-full bg-[#f5f5f5] px-2 py-0.5 font-mono text-[10px] text-[#2d2d2d] ring-1 ring-[#e5e5e5]">{code}<button type="button" onClick={() => removeScannedUnit(product.id, code)} aria-label={`Remove ${code}`} className="text-[#aa746b] hover:text-[#a54f40]">×</button></span>)}</div> : null}{missingScans(product, quantity) > 0 ? <label className="mt-2 block text-[10px] font-semibold text-[#a15d3d]">Scan the IMEI of {missingScans(product, quantity) === 1 ? "the phone" : `${missingScans(product, quantity)} phones`} being sold<input value={unitDrafts[product.id] ?? ""} onChange={(event) => setUnitDrafts((current) => ({ ...current, [product.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addScannedUnit(unitDrafts[product.id] ?? "", product.id).then((added) => { if (added) setUnitDrafts((current) => ({ ...current, [product.id]: "" })); }); } }} placeholder="Scan IMEI, serial or QR, then Enter" className="mt-1 w-full rounded-lg border border-[#e6c9b8] bg-white px-2.5 py-2 font-mono text-xs font-normal text-[#111111] outline-none focus:border-[#a15d3d]"/></label> : null}</div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f5f5f5] text-[#6b6b6b]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#2d2d2d]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customer’s basket.</p></div></div>}
             <div className="space-y-4 border-t border-[#e5e5e5] p-4">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Customer <span className="font-normal normal-case tracking-normal">(optional for cash sales)</span></span>{customerId ? <span className="text-[10px] font-medium text-[#4a4a4a]">Existing account</span> : null}</div>
@@ -395,6 +461,7 @@ export default function SalesPage() {
                   </div>
                   <p className="mt-2.5 text-[10px] leading-relaxed text-[#879287]">The customer and their payment schedule are saved together when checkout completes.</p>
                 </div> : <div className="flex gap-2"><select value={customerId} onChange={(event) => { setCustomerId(event.target.value); setShowNewCustomer(false); setNewCustomer(blankCustomer); }} className="min-w-0 flex-1 rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#1a1a1a]"><option value="">Walk-in customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select><button type="button" onClick={() => { setCustomerId(""); setShowNewCustomer(true); }} aria-label="Add a new customer" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#e5e5e5] bg-[#f5f5f5] px-3 text-[11px] font-semibold text-[#2d2d2d] transition hover:bg-[#e5e5e5]"><Plus className="h-3.5 w-3.5"/>New</button></div>}
+                {!showNewCustomer && !selectedCustomer?.email ? <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[.1em] text-[#748176]">Email receipt to <span className="font-normal normal-case tracking-normal">(optional)</span><input type="email" maxLength={254} autoComplete="off" value={receiptEmail} onChange={(event) => setReceiptEmail(event.target.value)} placeholder="customer@example.com" className="mt-1 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#1a1a1a]"/><span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[#879287]">The receipt PDF is emailed as soon as the sale is recorded{selectedCustomer ? " and the email is saved on their account" : ""}.</span></label> : selectedCustomer?.email ? <p className="mt-1.5 text-[10px] text-[#879287]">Receipt PDF will be emailed to {selectedCustomer.email}.</p> : null}
               </div>
               <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#69746c]">How are they paying?</legend><div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#c4c4c4] sm:grid-cols-4">{paymentMethods.map((method) => <button key={method.value} type="button" aria-pressed={paymentMethod === method.value} onClick={() => { setPaymentMethod(method.value); if (method.value === "CREDIT" && !customerId) setShowNewCustomer(true); }} className={`px-1 py-2.5 text-[10px] font-semibold transition sm:text-xs ${paymentMethod === method.value ? "bg-[#111111] text-white" : "bg-white text-[#5f6e63] hover:bg-[#f5f5f5]"}`}>{method.label}</button>)}</div>{paymentMethod === "CREDIT" ? <p className="mt-1.5 text-[10px] text-[#78867b]">Start a Lipa plan and collect the customer details below. If the customer has an email address, payment reminders by email are switched on as part of the agreement.</p> : paymentMethod === "MPESA_STK" ? <div className="mt-3 space-y-2 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#68796d]">Customer’s Safaricom number<input required type="tel" autoComplete="tel" minLength={9} maxLength={20} value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} placeholder="07xx xxx xxx" className="mt-1.5 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label><p className="text-[9px] text-[#879287]">The customer gets an M-Pesa prompt for the total and enters their PIN on their phone. The sale completes when M-Pesa confirms, and the money settles to the business Stanbic account.</p></div> : paymentMethod === "PAY_LINK" ? <div className="mt-3 space-y-2.5 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#68796d]">Payer’s mobile number<input required type="tel" autoComplete="tel" minLength={7} maxLength={30} value={payerPhone} onChange={(event) => setPayerPhone(event.target.value)} placeholder="07xx xxx xxx" className="mt-1.5 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label><label className="flex items-start gap-2 text-[10px] leading-4 text-[#707c72]"><input type="checkbox" required checked={payerConsent} onChange={(event) => setPayerConsent(event.target.checked)} className="mt-0.5 accent-[#1a1a1a]"/><span>I have the payer’s permission to text them this one-time link.</span></label><p className="text-[9px] text-[#879287]">The secure link will be sent by SMS after recording the sale. The number will be prefilled for the M-Pesa prompt.</p></div> : null}</fieldset>
               <TradeInPanel form={tradeIn} onChange={setTradeIn} subtotal={subtotal} staffName={staffName} customer={tradeInCustomer}/>

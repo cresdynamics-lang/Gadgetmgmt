@@ -13,6 +13,7 @@ import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
+import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit, SaleUnitError } from "@/lib/device-units";
 import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, type TradeInCheckId } from "@/lib/trade-in";
 
 export async function GET() {
@@ -22,7 +23,7 @@ export async function GET() {
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
-  const [products, customers, creditPolicy] = await Promise.all([
+  const [products, customers, creditPolicy, units] = await Promise.all([
     prisma.product.findMany({
       where: { branchId },
       select: {
@@ -40,16 +41,23 @@ export async function GET() {
     }),
     prisma.customer.findMany({
       where: { branchId, status: "ACTIVE" },
-      select: { id: true, name: true, phone: true },
+      select: { id: true, name: true, phone: true, email: true },
       orderBy: { name: "asc" },
     }),
     prisma.creditPolicy.findUnique({ where: { branchId }, select: { minimumDepositPercent: true, defaultCreditLimit: true } }),
+    prisma.deviceUnit.groupBy({ by: ["productId", "status"], where: { branchId, status: { in: ["IN_STOCK", "RESERVED"] } }, _count: true }),
   ]);
+  const unitCount = (productId: string, status?: "IN_STOCK") => units
+    .filter((row) => row.productId === productId && (!status || row.status === status))
+    .reduce((sum, row) => sum + row._count, 0);
 
   return NextResponse.json({
     products: products.map(({ inventory, ...product }) => ({
       ...product,
       available: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - (inventory[0]?.reservedStock ?? 0)),
+      // Phones on file can be scanned at checkout; untracked ones arrived before per-phone records.
+      trackedUnits: unitCount(product.id, "IN_STOCK"),
+      untrackedUnits: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - unitCount(product.id)),
     })),
     customers,
     creditPolicy: creditPolicy ?? { minimumDepositPercent: 40, defaultCreditLimit: 0 },
@@ -57,7 +65,12 @@ export async function GET() {
 }
 
 const checkoutSchema = z.object({
-  items: z.array(z.object({ productId: z.string().cuid(), quantity: z.number().int().min(1).max(1000) })).min(1).max(100),
+  items: z.array(z.object({
+    productId: z.string().cuid(),
+    quantity: z.number().int().min(1).max(1000),
+    // IMEIs or serials scanned for this line, so the sale records exactly which phones left.
+    units: z.array(z.string().trim().toUpperCase().regex(/^[A-Z0-9]{8,20}$/)).max(1000).optional(),
+  })).min(1).max(100),
   customerId: z.string().cuid().nullable().optional(),
   payerPhone: z.string().trim().min(7).max(30).optional(),
   payerConsent: z.literal(true).optional(),
@@ -67,6 +80,8 @@ const checkoutSchema = z.object({
     email: z.union([z.string().trim().email().max(254), z.literal("")]).optional(),
   }).strict().optional(),
   paymentMethod: z.enum(["CASH", "MPESA", "MPESA_STK", "CARD", "CREDIT", "SPLIT", "PAY_LINK"]),
+  // Where to email the receipt when the customer has no email on file (walk-ins included).
+  receiptEmail: z.string().trim().toLowerCase().email().max(254).optional(),
   mpesaPhone: z.string().trim().min(9).max(20).optional(),
   creditTermMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
   creditDepositAmount: z.number().int().positive().max(2_000_000_000).optional(),
@@ -179,8 +194,10 @@ export async function POST(request: Request) {
   }
 
   const quantities = new Map<string, number>();
+  const scannedUnits = new Map<string, string[]>();
   for (const item of parsed.data.items) {
     quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+    scannedUnits.set(item.productId, [...(scannedUnits.get(item.productId) ?? []), ...(item.units ?? [])]);
   }
 
   try {
@@ -208,6 +225,17 @@ export async function POST(request: Request) {
         const lineSubtotal = product.sellingPrice * quantity;
         if (!Number.isSafeInteger(lineSubtotal) || lineSubtotal < 1 || lineSubtotal > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
         return { product, inventory, quantity, subtotal: lineSubtotal };
+      });
+
+      const saleUnits = await allocateSaleUnits(transaction, {
+        branchId,
+        lines: lineItems.map(({ product, inventory, quantity }) => ({
+          productId: product.id,
+          productName: product.name,
+          quantity,
+          stockOnHand: inventory.stockOnHand,
+          scanned: scannedUnits.get(product.id) ?? [],
+        })),
       });
 
       let customerId = parsed.data.customerId ?? null;
@@ -299,6 +327,7 @@ export async function POST(request: Request) {
         if (onLipa) throw new Error("TRADE_IN_ON_LIPA");
         const known = await transaction.product.findUnique({ where: { imei: tradeIn.imei }, select: { id: true, inventory: { select: { stockOnHand: true } } } });
         if (known && known.inventory.some((item) => item.stockOnHand > 0)) throw new Error("TRADE_IN_IMEI_IN_STOCK");
+        if (await findActiveUnit(transaction, deviceIdentifiers({ imei: tradeIn.imei }))) throw new Error("TRADE_IN_IMEI_IN_STOCK");
         // A device we sold before can come back. Free its IMEI from the old, sold-out stock item.
         if (known) await transaction.product.update({ where: { id: known.id }, data: { imei: null } });
         tradeInProduct = await transaction.product.create({
@@ -363,12 +392,22 @@ export async function POST(request: Request) {
         },
         include: {
           customer: { select: { name: true, phone: true, email: true, emailRemindersEnabled: true } },
-          branch: { select: { name: true, address: true, phone: true } },
+          branch: { select: { name: true, address: true, phone: true, email: true } },
           cashier: { select: { name: true } },
           saleItems: { include: { product: { select: { name: true, sku: true, configuration: true, condition: true } } } },
           payments: true,
         },
       });
+
+      for (const item of createdSale.saleItems) {
+        await attachUnitsToSale(transaction, {
+          unitIds: saleUnits.get(item.productId) ?? [],
+          saleId: createdSale.id,
+          saleItemId: item.id,
+          soldById: session.user.id,
+          reserved: awaitsPayment,
+        });
+      }
 
       let salePaymentLink: { token: string; amount: number } | null = null;
       let payerNotificationId: string | null = null;
@@ -439,7 +478,7 @@ export async function POST(request: Request) {
 
       if (tradeInProduct && parsed.data.tradeIn) {
         const tradeIn = parsed.data.tradeIn;
-        await transaction.tradeIn.create({
+        const tradeInRecord = await transaction.tradeIn.create({
           data: {
             saleId: createdSale.id,
             productId: tradeInProduct.id,
@@ -465,18 +504,49 @@ export async function POST(request: Request) {
             declaration: tradeInDeclaration(session.user.name ?? session.user.email ?? "staff member"),
             confirmedAt: new Date(),
           },
+          select: { id: true },
+        });
+        const tradeInCodes = deviceIdentifiers({ imei: tradeIn.imei });
+        await transaction.deviceUnit.create({
+          data: {
+            branchId,
+            productId: tradeInProduct.id,
+            ...tradeInCodes,
+            condition: "TRADE_IN",
+            colour: tradeIn.color || null,
+            storage: tradeIn.storage || null,
+            batteryHealth: tradeIn.batteryHealth ?? null,
+            costPrice: tradeIn.value,
+            sourceKind: "TRADE_IN",
+            sourceName: tradeIn.sellerName,
+            sourcePhone: tradeIn.sellerPhone,
+            reference: createdSale.invoiceNumber,
+            receivedById: session.user.id,
+            tradeInId: tradeInRecord.id,
+          },
         });
         await transaction.inventoryMovement.create({
           data: {
             branchId, productId: tradeInProduct.id, userId: session.user.id, saleId: createdSale.id,
             type: "RECEIPT", quantity: 1, reference: createdSale.invoiceNumber,
             note: `Traded in for KES ${parsed.data.tradeIn.value.toLocaleString("en-KE")} · resale price KES ${parsed.data.tradeIn.resalePrice.toLocaleString("en-KE")}`,
+            sourceKind: "TRADE_IN",
+            sourceName: tradeIn.sellerName,
+            sourcePhone: tradeIn.sellerPhone,
+            hasReceipt: tradeIn.ownershipProof === "RECEIPT" || tradeIn.ownershipProof === "BOTH",
+            hasBox: tradeIn.hasBox,
           },
         });
       }
 
       const creditPlanLinks: { token: string; planReference: string; productName: string; payerToken?: string; payerAmount?: number }[] = [];
       if (parsed.data.paymentMethod === "CREDIT") {
+        // A single phone on Lipa carries its scanned IMEI onto the plan unless one was typed in.
+        const onlyUnit = saleLines.length === 1 && saleLines[0].quantity === 1 ? saleUnits.get(saleLines[0].product.id)?.[0] : undefined;
+        if (!parsed.data.imei && onlyUnit) {
+          const unit = await transaction.deviceUnit.findUnique({ where: { id: onlyUnit }, select: { imei: true } });
+          if (unit?.imei && !await transaction.creditPlan.findUnique({ where: { imei: unit.imei }, select: { id: true } })) parsed.data.imei = unit.imei;
+        }
         if (parsed.data.imei && await transaction.creditPlan.findUnique({ where: { imei: parsed.data.imei }, select: { id: true } })) throw new Error("IMEI_ALREADY_REGISTERED");
         let depositRemaining = paidAmount;
         for (let index = 0; index < saleLines.length; index += 1) {
@@ -553,6 +623,10 @@ export async function POST(request: Request) {
           reference: createdSale.invoiceNumber,
         })),
       });
+
+      // Receipts list the IMEI / serial of each phone sold.
+      const soldUnits = await transaction.deviceUnit.findMany({ where: { saleId: createdSale.id }, select: { saleItemId: true, imei: true, serial: true } });
+      createdSale.saleItems = createdSale.saleItems.map((item) => ({ ...item, units: soldUnits.filter((unit) => unit.saleItemId === item.id).map((unit) => unit.imei || unit.serial || "").filter(Boolean) }));
 
       return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId, stkRequest, tradeInProduct };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -632,7 +706,12 @@ export async function POST(request: Request) {
         entityId: created.id,
       });
     }
-    const customerEmail = created.customer?.email;
+    const receiptEmail = parsed.data.receiptEmail;
+    if (receiptEmail && created.customerId && !created.customer?.email) {
+      await prisma.customer.update({ where: { id: created.customerId }, data: { email: receiptEmail } }).catch(() => null);
+    }
+    const customerEmail = created.customer?.email || receiptEmail;
+    let emailedTo: string | null = null;
     const paymentBase = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
     if (customerEmail && created.customer?.emailRemindersEnabled !== false && paymentBase && (sale.creditPlanLinks.length || sale.salePaymentLink)) {
       const links = [
@@ -642,21 +721,24 @@ export async function POST(request: Request) {
           ...(plan.payerToken ? [`Pay ${plan.productName}: ${paymentBase}/request/${plan.payerToken}`] : []),
         ]),
       ].join("\n");
-      await queueAndSendNotice({
+      const notice = await queueAndSendNotice({
         branchId,
         customerId: created.customerId,
         channel: "EMAIL",
         kind: "SALE_PAYMENT_LINKS",
         recipient: customerEmail,
         subject: `Your Gadget Hub invoice ${created.invoiceNumber}`,
-        body: `Hello ${created.customer?.name ?? "there"}, here is invoice ${created.invoiceNumber} for KES ${created.total.toLocaleString("en-KE")}. Paid so far: KES ${created.paidAmount.toLocaleString("en-KE")}. Open a link below to review or pay:\n${links}`,
+        body: `Hello ${created.customer?.name ?? "there"}, your invoice ${created.invoiceNumber} for KES ${created.total.toLocaleString("en-KE")} is attached. Paid so far: KES ${created.paidAmount.toLocaleString("en-KE")}. Open a link below to review or pay:\n${links}`,
         dedupeKey: `sale-links:${created.id}`,
       });
+      if (notice.sent) emailedTo = customerEmail;
     } else if (customerEmail && (created.status === "PAID" || created.status === "PARTIAL")) {
-      await sendSaleReceiptEmail(created.id);
+      if (await sendSaleReceiptEmail(created.id, customerEmail)) emailedTo = customerEmail;
     }
-    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt }, { status: 201 });
+    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo }, { status: 201 });
   } catch (error) {
+    if (error instanceof SaleUnitError) return NextResponse.json({ error: error.userMessage }, { status: 409 });
+    if (error instanceof Error && error.message === "DEVICE_UNIT_CHANGED") return NextResponse.json({ error: "One of the scanned phones was just sold or moved. Scan again." }, { status: 409 });
     if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
       return NextResponse.json({ error: `Insufficient stock for ${error.message.slice("INSUFFICIENT_STOCK:".length)}.` }, { status: 409 });
     }

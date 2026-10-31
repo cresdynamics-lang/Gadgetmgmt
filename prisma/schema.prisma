@@ -106,6 +106,17 @@ enum ProductCondition {
   TRADE_IN
 }
 
+enum DeviceUnitStatus {
+  IN_STOCK
+  RESERVED
+  SOLD
+}
+
+enum InventorySourceKind {
+  VENDOR
+  TRADE_IN
+}
+
 enum PermissionGrantMode {
   FULL
   RESTRICTED
@@ -147,6 +158,7 @@ model Branch {
   movements     InventoryMovement[]
   notifications CustomerNotification[]
   followUps     CollectionFollowUp[]
+  deviceUnits   DeviceUnit[]
 }
 
 model User {
@@ -172,6 +184,8 @@ model User {
   salesTargets              SalesTarget[]
   tradeInsAssessed          TradeIn[]
   assistantChats            AssistantChat[]
+  devicesReceived           DeviceUnit[]              @relation("DeviceUnitReceivedBy")
+  devicesSold               DeviceUnit[]              @relation("DeviceUnitSoldBy")
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
 }
@@ -206,41 +220,46 @@ model Customer {
 }
 
 model Product {
-  id              String              @id @default(cuid())
-  sku             String              @unique
-  catalogItemId   String?
-  productGroup    String?
-  configuration   String?
-  catalogNotes    String?
-  condition       ProductCondition    @default(NEW)
-  colour          String?
-  marketNewPrice  Int?
-  marketExUkPrice Int?
-  name            String
-  category        String
-  brand           String?
-  costPrice       Int
-  sellingPrice    Int
-  reorderLevel    Int                 @default(0)
-  imei            String?             @unique
-  showOnWebsite   Boolean             @default(false)
-  websiteProductId String?
+  id                String              @id @default(cuid())
+  sku               String              @unique
+  catalogItemId     String?
+  productGroup      String?
+  configuration     String?
+  catalogNotes      String?
+  condition         ProductCondition    @default(NEW)
+  colour            String?
+  marketNewPrice    Int?
+  marketExUkPrice   Int?
+  name              String
+  category          String
+  brand             String?
+  costPrice         Int
+  sellingPrice      Int
+  reorderLevel      Int                 @default(0)
+  imei              String?             @unique
+  gtin              String?
+  mpn               String?
+  showOnWebsite     Boolean             @default(false)
+  websiteProductId  String?
   websiteVariantKey String?
-  branchId        String
-  branch          Branch              @relation(fields: [branchId], references: [id])
-  tradeInSales    Sale[]              @relation("TradeInProduct")
-  tradeInRecord   TradeIn?
-  inventory       InventoryItem[]
-  saleItems       SaleItem[]
-  creditPlans     CreditPlan[]
-  layawayOrders   LayawayOrder[]
-  movements       InventoryMovement[]
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  branchId          String
+  branch            Branch              @relation(fields: [branchId], references: [id])
+  tradeInSales      Sale[]              @relation("TradeInProduct")
+  tradeInRecord     TradeIn?
+  inventory         InventoryItem[]
+  saleItems         SaleItem[]
+  creditPlans       CreditPlan[]
+  layawayOrders     LayawayOrder[]
+  movements         InventoryMovement[]
+  deviceUnits       DeviceUnit[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@index([branchId, category])
   @@index([showOnWebsite])
   @@index([websiteProductId, websiteVariantKey])
+  @@index([gtin])
+  @@index([mpn])
 }
 
 model InventoryItem {
@@ -287,6 +306,7 @@ model Sale {
   layawayOrderId   String?             @unique
   layawayOrder     LayawayOrder?       @relation(fields: [layawayOrderId], references: [id])
   movements        InventoryMovement[]
+  deviceUnits      DeviceUnit[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
@@ -312,18 +332,19 @@ model SalePayment {
 }
 
 model SaleItem {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   saleId         String
-  sale           Sale     @relation(fields: [saleId], references: [id])
+  sale           Sale         @relation(fields: [saleId], references: [id])
   productId      String
-  product        Product  @relation(fields: [productId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
   quantity       Int
   unitPrice      Int
-  unitCost       Int      @default(0)
-  discountAmount Int      @default(0)
-  taxAmount      Int      @default(0)
+  unitCost       Int          @default(0)
+  discountAmount Int          @default(0)
+  taxAmount      Int          @default(0)
   total          Int
-  createdAt      DateTime @default(now())
+  deviceUnits    DeviceUnit[]
+  createdAt      DateTime     @default(now())
 }
 
 model CreditPlan {
@@ -575,6 +596,12 @@ model InventoryMovement {
   reference      String?
   idempotencyKey String?               @unique
   note           String?
+  vendorName     String?
+  sourceKind     InventorySourceKind?
+  sourceName     String?
+  sourcePhone    String?
+  hasReceipt     Boolean?
+  hasBox         Boolean?
   createdAt      DateTime              @default(now())
 
   @@index([branchId, createdAt])
@@ -731,6 +758,7 @@ model TradeIn {
   assessedBy       User         @relation(fields: [assessedById], references: [id])
   declaration      String       @default("")
   confirmedAt      DateTime     @default(now())
+  deviceUnit       DeviceUnit?
   createdAt        DateTime     @default(now())
 
   @@index([serial])
@@ -793,4 +821,52 @@ model AssistantChat {
   updatedAt DateTime @updatedAt
 
   @@index([userId, updatedAt])
+}
+
+/// One physical phone or device, from the day it arrives until the day it is sold.
+/// A device that comes back (for example as a trade-in) starts a new record, so an IMEI can have several.
+model DeviceUnit {
+  id            String               @id @default(cuid())
+  branchId      String
+  branch        Branch               @relation(fields: [branchId], references: [id])
+  productId     String
+  product       Product              @relation(fields: [productId], references: [id])
+  imei          String?
+  serial        String?
+  condition     ProductCondition
+  colour        String?
+  storage       String?
+  mpn           String?
+  modelNumber   String?
+  batteryHealth Int?
+  fmi           String?
+  sim           String?
+  osVersion     String?
+  costPrice     Int                  @default(0)
+  status        DeviceUnitStatus     @default(IN_STOCK)
+  sourceKind    InventorySourceKind?
+  vendorName    String?
+  sourceName    String?
+  sourcePhone   String?
+  reference     String?
+  receivedAt    DateTime             @default(now())
+  receivedById  String
+  receivedBy    User                 @relation("DeviceUnitReceivedBy", fields: [receivedById], references: [id])
+  tradeInId     String?              @unique
+  tradeIn       TradeIn?             @relation(fields: [tradeInId], references: [id], onDelete: SetNull)
+  saleId        String?
+  sale          Sale?                @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  saleItemId    String?
+  saleItem      SaleItem?            @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+  soldAt        DateTime?
+  soldById      String?
+  soldBy        User?                @relation("DeviceUnitSoldBy", fields: [soldById], references: [id], onDelete: SetNull)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([imei])
+  @@index([serial])
+  @@index([productId, status])
+  @@index([saleId])
+  @@index([receivedAt])
 }

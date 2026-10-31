@@ -17,7 +17,7 @@ export async function GET() {
   const [items, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { branchId: session.user.branchId },
-      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, colour: true, configuration: true, productGroup: true, imei: true, costPrice: true, sellingPrice: true, reorderLevel: true, showOnWebsite: true, websiteProductId: true, websiteVariantKey: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, colour: true, configuration: true, catalogNotes: true, productGroup: true, imei: true, gtin: true, mpn: true, costPrice: true, sellingPrice: true, reorderLevel: true, showOnWebsite: true, websiteProductId: true, websiteVariantKey: true } } },
       orderBy: { product: { name: "asc" } },
     }),
     prisma.inventoryMovement.findMany({
@@ -46,6 +46,7 @@ const receiptSchema = z.object({
   reorderLevel: z.number().int().nonnegative().max(100000).optional(),
   reference: z.string().trim().max(100).optional(),
   note: z.string().trim().max(300).optional(),
+  vendorName: z.string().trim().min(2).max(120),
 });
 
 const productSchema = z.object({
@@ -156,9 +157,12 @@ export async function POST(request: Request) {
     reorderLevel: parsed.data.reorderLevel,
     reference: parsed.data.reference,
     note: parsed.data.note,
+    vendorName: parsed.data.vendorName,
+    sourceKind: "VENDOR",
   });
 
   if (!inventory) return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });
+  if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
   await recordActivity({
     userId: session.user.id,
     sessionId: session.user.sessionId,

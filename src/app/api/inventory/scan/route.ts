@@ -4,10 +4,12 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { canUseCapability, hasPermission } from "@/lib/access";
 import { recordActivity } from "@/lib/activity";
+import { appleCatalogHint, lookupAppleIdentity, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
 import { denied } from "@/lib/authz";
+import { deviceHasIdentity, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
 import { matchScanProducts, parseScanPayload, type ScanableProduct } from "@/lib/inventory-scan";
 import { prisma } from "@/lib/prisma";
-import { receiveProductStock } from "@/lib/receive-stock";
+import { receiveExUkStock, receiveProductStock, receiveTradeInStock } from "@/lib/receive-stock";
 
 const scanSelect = {
   id: true,
@@ -18,6 +20,9 @@ const scanSelect = {
   condition: true,
   colour: true,
   imei: true,
+  gtin: true,
+  mpn: true,
+  productGroup: true,
   websiteProductId: true,
   websiteVariantKey: true,
 } satisfies Record<keyof ScanableProduct, true>;
@@ -38,6 +43,8 @@ function publicMatch(
     condition: product.condition,
     colour: product.colour,
     imei: product.imei,
+    gtin: product.gtin,
+    mpn: product.mpn,
     reason,
     stockOnHand: inventory?.stockOnHand ?? 0,
     available: Math.max(0, (inventory?.stockOnHand ?? 0) - (inventory?.reservedStock ?? 0)),
@@ -58,12 +65,25 @@ async function productsForBranch(branchId: string) {
   });
 }
 
-async function lookup(branchId: string, raw: string) {
+async function lookup(branchId: string, raw: string, condition?: string | null) {
   const parsed = parseScanPayload(raw);
-  if (!parsed.code) return { code: "", kind: parsed.kind, matches: [] as ReturnType<typeof publicMatch>[] };
+  const device = parseDeviceScan(raw);
+  const identity = lookupAppleIdentity(raw) || (device.modelNumber ? lookupAppleIdentity(device.modelNumber) : null);
+  if (!parsed.code && !deviceHasIdentity(device)) {
+    return { code: "", kind: parsed.kind, device, catalog: appleCatalogHint(identity), suggestedCondition: null as "NEW" | "EX_UK" | null, matches: [] as ReturnType<typeof publicMatch>[] };
+  }
   const products = await productsForBranch(branchId);
-  const hits = matchScanProducts(raw, products);
-  return { code: parsed.code, kind: parsed.kind, matches: hits.map((hit) => publicMatch(hit.product, hit.reason)) };
+  const hits = parsed.code || device.modelNumber || device.name
+    ? matchScanProducts(raw, products, { condition, identity })
+    : [];
+  return {
+    code: parsed.code || device.imei || device.modelNumber || device.mpn,
+    kind: parsed.kind,
+    device,
+    catalog: appleCatalogHint(identity),
+    suggestedCondition: parsed.kind === "mpn" ? suggestedConditionFromMpn(parsed.code) : null,
+    matches: hits.map((hit) => publicMatch(hit.product, hit.reason)),
+  };
 }
 
 export async function GET(request: Request) {
@@ -72,20 +92,78 @@ export async function GET(request: Request) {
   if (!canUseCapability(session.user, "inventory")) return denied(session.user, "inventory", "Your role cannot access inventory.");
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
-  const code = new URL(request.url).searchParams.get("code") || "";
-  const result = await lookup(session.user.branchId, code);
-  if (!result.code) return NextResponse.json({ error: "Scan a barcode, SKU, IMEI or product name." }, { status: 400 });
+  const params = new URL(request.url).searchParams;
+  const code = params.get("code") || "";
+  const condition = params.get("condition") || "";
+  const result = await lookup(session.user.branchId, code, condition === "NEW" || condition === "EX_UK" || condition === "TRADE_IN" ? condition : null);
+  if (!result.code && !deviceHasIdentity(result.device)) {
+    return NextResponse.json({ error: "Scan a barcode, QR code, IMEI, Apple model number or About details." }, { status: 400 });
+  }
   return NextResponse.json(result);
 }
 
 const receiveSchema = z.object({
-  code: z.string().trim().min(2).max(120),
+  code: z.string().trim().min(2).max(800),
   quantity: z.coerce.number().int().min(1).max(10000).default(1),
   productId: z.string().min(8).max(40).optional(),
+  condition: z.enum(["NEW", "EX_UK", "TRADE_IN"]),
+  vendorName: z.string().trim().max(120).optional(),
+  sourceName: z.string().trim().max(120).optional(),
+  sourcePhone: z.string().trim().max(20).optional(),
+  hasReceipt: z.boolean().optional(),
+  hasBox: z.boolean().optional(),
+  sellingPrice: z.coerce.number().int().positive().max(2_000_000_000).optional(),
+  deviceName: z.string().trim().max(160).optional(),
+  imei: z.string().trim().max(20).optional(),
+  serial: z.string().trim().max(20).optional(),
+  mpn: z.string().trim().max(20).optional(),
+  modelNumber: z.string().trim().max(10).optional(),
+  colour: z.string().trim().max(40).optional(),
+  storage: z.string().trim().max(10).optional(),
+  batteryHealth: z.string().trim().max(4).optional(),
+  fmi: z.string().trim().max(10).optional(),
+  sim: z.string().trim().max(20).optional(),
+  version: z.string().trim().max(20).optional(),
   reorderLevel: z.coerce.number().int().nonnegative().max(100000).optional(),
   reference: z.string().trim().max(100).optional(),
   note: z.string().trim().max(300).optional(),
 });
+
+function deviceFromBody(raw: string, body: z.infer<typeof receiveSchema>): ScannedDevice {
+  return overlayDevice(parseDeviceScan(raw), {
+    imei: body.imei,
+    serial: body.serial,
+    mpn: body.mpn,
+    modelNumber: body.modelNumber,
+    colour: body.colour,
+    storage: body.storage,
+    batteryHealth: body.batteryHealth,
+    fmi: body.fmi,
+    sim: body.sim,
+    version: body.version,
+    name: body.deviceName,
+  });
+}
+
+function identifiedFields(device: ScannedDevice, identity: ReturnType<typeof lookupAppleIdentity>) {
+  const name = device.name || identity?.name || "";
+  return {
+    name,
+    category: device.category || identity?.category || "iPhone",
+    brand: "Apple",
+    imei: device.imei || device.serial,
+    mpn: device.mpn || null,
+    colour: device.colour || null,
+    storage: device.storage || null,
+    serial: device.serial || null,
+    modelNumber: device.modelNumber || null,
+    batteryHealth: device.batteryHealth || null,
+    fmi: device.fmi || null,
+    sim: device.sim || null,
+    version: device.version || null,
+    productGroup: device.group || identity?.group || null,
+  };
+}
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -97,10 +175,102 @@ export async function POST(request: Request) {
   }
 
   const parsed = receiveSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Scan a valid barcode, SKU, IMEI or product name and quantity." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Mark the stock as New, Ex-UK or trade-in, then scan a barcode, QR code, IMEI or About details." }, { status: 400 });
+
+  if (parsed.data.condition !== "TRADE_IN" && (parsed.data.vendorName || "").trim().length < 2) {
+    return NextResponse.json({ error: "Enter the vendor name before receiving New or Ex-UK stock." }, { status: 400 });
+  }
+  if (parsed.data.condition === "TRADE_IN") {
+    if ((parsed.data.sourceName || "").trim().length < 2) {
+      return NextResponse.json({ error: "Enter the name of the person who brought the trade-in." }, { status: 400 });
+    }
+    if ((parsed.data.sourcePhone || "").replace(/\D/g, "").length < 9) {
+      return NextResponse.json({ error: "Enter the phone number of the person who brought the trade-in." }, { status: 400 });
+    }
+  }
 
   const scan = parseScanPayload(parsed.data.code);
-  const lookupResult = await lookup(session.user.branchId, parsed.data.code);
+  const lookupResult = await lookup(session.user.branchId, parsed.data.code, parsed.data.condition);
+  const identity = lookupAppleIdentity(parsed.data.code);
+  const device = deviceFromBody(parsed.data.code, parsed.data);
+  const identified = identifiedFields(device, identity);
+
+  if (parsed.data.condition === "TRADE_IN" && !parsed.data.productId && lookupResult.matches.length === 0) {
+    const name = parsed.data.deviceName || identified.name;
+    if (!name || name === "Apple device") {
+      return NextResponse.json({
+        error: "Name the trade-in device, then Receive. Scan Settings → About, the IMEI barcode, or the Apple model number.",
+        matches: [],
+        catalog: lookupResult.catalog,
+        device,
+        code: scan.code || lookupResult.code,
+        kind: scan.kind,
+      }, { status: 404 });
+    }
+    const inventory = await receiveTradeInStock(prisma, {
+      branchId: session.user.branchId,
+      userId: session.user.id,
+      userName: session.user.name ?? "Staff member",
+      quantity: parsed.data.quantity,
+      ...identified,
+      name,
+      sellingPrice: parsed.data.sellingPrice,
+      scannedCode: parsed.data.code,
+      sourceName: parsed.data.sourceName!.trim(),
+      sourcePhone: parsed.data.sourcePhone!.trim(),
+      hasReceipt: parsed.data.hasReceipt === true,
+      hasBox: parsed.data.hasBox === true,
+      reference: parsed.data.reference,
+      note: parsed.data.note,
+    });
+    if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+    await recordActivity({
+      userId: session.user.id,
+      sessionId: session.user.sessionId,
+      action: "TRADE_IN_STOCKED",
+      summary: `Received trade-in ${inventory.product.name} from ${parsed.data.sourceName} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
+      entityType: "InventoryItem",
+      entityId: inventory.id,
+    });
+    return NextResponse.json({ ...inventory, catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
+  }
+
+  if (parsed.data.condition === "EX_UK" && !parsed.data.productId && lookupResult.matches.length === 0) {
+    const name = parsed.data.deviceName || identified.name;
+    if (!name || name === "Apple device") {
+      return NextResponse.json({
+        error: "This Ex-UK scan was recognised incompletely. Scan the QR / IMEI again, or type the model, then Receive.",
+        matches: [],
+        catalog: lookupResult.catalog,
+        device,
+        code: scan.code || lookupResult.code,
+        kind: scan.kind,
+      }, { status: 404 });
+    }
+    const inventory = await receiveExUkStock(prisma, {
+      branchId: session.user.branchId,
+      userId: session.user.id,
+      userName: session.user.name ?? "Staff member",
+      quantity: parsed.data.quantity,
+      ...identified,
+      name,
+      sellingPrice: parsed.data.sellingPrice,
+      scannedCode: parsed.data.code,
+      vendorName: parsed.data.vendorName?.trim(),
+      reference: parsed.data.reference,
+      note: parsed.data.note,
+    });
+    if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+    await recordActivity({
+      userId: session.user.id,
+      sessionId: session.user.sessionId,
+      action: "STOCK_RECEIVED",
+      summary: `Received Ex-UK ${inventory.product.name} from ${parsed.data.vendorName} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
+      entityType: "InventoryItem",
+      entityId: inventory.id,
+    });
+    return NextResponse.json({ ...inventory, catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
+  }
 
   let chosen = parsed.data.productId
     ? lookupResult.matches.find((match) => match.productId === parsed.data.productId)
@@ -111,15 +281,19 @@ export async function POST(request: Request) {
   if (parsed.data.productId && !chosen) {
     const products = await productsForBranch(session.user.branchId);
     const product = products.find((row) => row.id === parsed.data.productId);
-    if (product) chosen = publicMatch(product, scan.kind === "imei" ? "imei" : "sku");
+    if (product && product.condition === parsed.data.condition) chosen = publicMatch(product, scan.kind === "imei" ? "imei" : "sku");
   }
 
   if (!lookupResult.matches.length && !chosen) {
     return NextResponse.json({
       error: scan.kind === "imei"
         ? `IMEI ${scan.code} is not on file. Confirm which product this unit is, then Receive again.`
-        : `No product matches “${parsed.data.code}”. Confirm the product name or SKU below.`,
+        : identity
+          ? `${identity.name} was recognised. Set up or confirm the ${parsed.data.condition === "EX_UK" ? "Ex-UK" : "New"} SKU, then Receive to update quantity.`
+          : `No product matches “${parsed.data.code}”. Confirm the product name or SKU below.`,
       matches: [],
+      catalog: lookupResult.catalog,
+      device,
       code: scan.code,
       kind: scan.kind,
     }, { status: 404 });
@@ -130,6 +304,8 @@ export async function POST(request: Request) {
       {
         error: "More than one product matches. Confirm which one to receive.",
         matches: lookupResult.matches,
+        catalog: lookupResult.catalog,
+        device,
         code: lookupResult.code,
         kind: lookupResult.kind,
       },
@@ -145,22 +321,41 @@ export async function POST(request: Request) {
     quantity: parsed.data.quantity,
     reorderLevel: parsed.data.reorderLevel,
     reference: parsed.data.reference || `${scan.kind === "imei" ? "IMEI" : "SCAN"}-${(scan.code || lookupResult.code).slice(-16)}`,
-    note: parsed.data.note || "Scanned on arrival",
-    imei: scan.kind === "imei" ? scan.code : null,
+    note: parsed.data.note || (parsed.data.condition === "TRADE_IN" ? undefined : "Scanned on arrival"),
+    imei: device.imei || (scan.kind === "imei" ? scan.code : null),
+    device: {
+      serial: device.serial || null,
+      storage: device.storage || null,
+      modelNumber: device.modelNumber || null,
+      batteryHealth: device.batteryHealth || null,
+      fmi: device.fmi || null,
+      sim: device.sim || null,
+      version: device.version || null,
+    },
+    scannedCode: parsed.data.code,
+    mpn: device.mpn || null,
+    colour: device.colour || null,
+    vendorName: parsed.data.condition === "TRADE_IN" ? null : parsed.data.vendorName,
+    sourceKind: parsed.data.condition === "TRADE_IN" ? "TRADE_IN" : "VENDOR",
+    sourceName: parsed.data.condition === "TRADE_IN" ? parsed.data.sourceName : null,
+    sourcePhone: parsed.data.condition === "TRADE_IN" ? parsed.data.sourcePhone : null,
+    hasReceipt: parsed.data.condition === "TRADE_IN" ? parsed.data.hasReceipt === true : null,
+    hasBox: parsed.data.condition === "TRADE_IN" ? parsed.data.hasBox === true : null,
   });
 
   if (!inventory) {
     return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });
   }
+  if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
 
   await recordActivity({
     userId: session.user.id,
     sessionId: session.user.sessionId,
-    action: "STOCK_RECEIVED",
+    action: parsed.data.condition === "TRADE_IN" ? "TRADE_IN_STOCKED" : "STOCK_RECEIVED",
     summary: `Scanned in ${parsed.data.quantity} of ${inventory.product.name} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
     entityType: "InventoryItem",
     entityId: inventory.id,
   });
 
-  return NextResponse.json({ ...inventory, match: chosen, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
+  return NextResponse.json({ ...inventory, match: chosen, catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
 }

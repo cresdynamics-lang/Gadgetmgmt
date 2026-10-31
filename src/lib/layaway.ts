@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { Prisma, type TenderMethod } from "@prisma/client";
 
+import { allocateSaleUnits, attachUnitsToSale } from "@/lib/device-units";
+
 type Transaction = Prisma.TransactionClient;
 
 export type CreateLayawayInput = {
@@ -130,15 +132,20 @@ export async function recordLayawayPayment(
 
 export async function fulfillLayawayOrder(
   transaction: Transaction,
-  input: { orderId: string; branchId: string; userId: string },
+  input: { orderId: string; branchId: string; userId: string; units?: string[] },
 ) {
   const order = await transaction.layawayOrder.findFirst({
     where: { id: input.orderId, branchId: input.branchId },
-    include: { product: { select: { id: true } }, payments: { orderBy: { createdAt: "asc" } } },
+    include: { product: { select: { id: true, name: true } }, payments: { orderBy: { createdAt: "asc" } } },
   });
   if (!order || order.status !== "READY_FOR_PICKUP" || order.balance !== 0) throw new Error("ORDER_NOT_READY");
   if (order.payments.reduce((sum, payment) => sum + payment.amount, 0) !== order.totalAmount) throw new Error("PAYMENT_LEDGER_MISMATCH");
 
+  const stock = await transaction.inventoryItem.findUnique({ where: { branchId_productId: { branchId: input.branchId, productId: order.productId } }, select: { stockOnHand: true } });
+  const units = await allocateSaleUnits(transaction, {
+    branchId: input.branchId,
+    lines: [{ productId: order.productId, productName: order.product.name, quantity: order.quantity, stockOnHand: stock?.stockOnHand ?? 0, scanned: input.units ?? [] }],
+  });
   const inventory = await transaction.inventoryItem.updateMany({
     where: { branchId: input.branchId, productId: order.productId, stockOnHand: { gte: order.quantity }, reservedStock: { gte: order.quantity } },
     data: { stockOnHand: { decrement: order.quantity }, reservedStock: { decrement: order.quantity } },
@@ -175,8 +182,9 @@ export async function fulfillLayawayOrder(
         })),
       },
     },
-    include: { payments: true },
+    include: { payments: true, saleItems: { select: { id: true } } },
   });
+  await attachUnitsToSale(transaction, { unitIds: units.get(order.productId) ?? [], saleId: sale.id, saleItemId: sale.saleItems[0].id, soldById: input.userId, reserved: false });
 
   await transaction.inventoryMovement.create({
     data: {
