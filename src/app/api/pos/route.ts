@@ -222,6 +222,8 @@ export async function POST(request: Request) {
         if (!inventory || inventory.stockOnHand - inventory.reservedStock < quantity) {
           throw new Error(`INSUFFICIENT_STOCK:${product.name}`);
         }
+        // Phones received without a price are saved at KES 1 as a placeholder; they cannot be sold until priced.
+        if (product.sellingPrice <= 1) throw new Error(`PRICE_NOT_SET:${product.name}`);
         const lineSubtotal = product.sellingPrice * quantity;
         if (!Number.isSafeInteger(lineSubtotal) || lineSubtotal < 1 || lineSubtotal > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
         return { product, inventory, quantity, subtotal: lineSubtotal };
@@ -739,6 +741,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof SaleUnitError) return NextResponse.json({ error: error.userMessage }, { status: 409 });
     if (error instanceof Error && error.message === "DEVICE_UNIT_CHANGED") return NextResponse.json({ error: "One of the scanned phones was just sold or moved. Scan again." }, { status: 409 });
+    if (error instanceof Error && error.message.startsWith("PRICE_NOT_SET:")) {
+      return NextResponse.json({ error: `${error.message.slice("PRICE_NOT_SET:".length)} has no selling price yet. Set it in Inventory before selling.` }, { status: 409 });
+    }
     if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
       return NextResponse.json({ error: `Insufficient stock for ${error.message.slice("INSUFFICIENT_STOCK:".length)}.` }, { status: 409 });
     }

@@ -6,7 +6,8 @@ import { canUseCapability, hasPermission } from "@/lib/access";
 import { recordActivity } from "@/lib/activity";
 import { appleCatalogHint, lookupAppleIdentity, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
 import { denied } from "@/lib/authz";
-import { deviceHasIdentity, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
+import { deviceHasIdentity, emptyScannedDevice, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
+import { deviceIdentifiers } from "@/lib/device-units";
 import { matchScanProducts, parseScanPayload, type ScanableProduct } from "@/lib/inventory-scan";
 import { prisma } from "@/lib/prisma";
 import { receiveExUkStock, receiveProductStock, receiveTradeInStock } from "@/lib/receive-stock";
@@ -65,12 +66,51 @@ async function productsForBranch(branchId: string) {
   });
 }
 
+/** A phone this shop has handled before, found by the IMEI or serial on its barcode. */
+async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: ReturnType<typeof parseScanPayload>) {
+  const codes = deviceIdentifiers({ imei: scanned.imei || (parsed.kind === "imei" ? parsed.code : ""), serial: scanned.serial });
+  const lookups = [codes.imei, codes.serial].filter((code): code is string => Boolean(code));
+  if (!lookups.length) return null;
+  const unit = await prisma.deviceUnit.findFirst({
+    where: { branchId, OR: lookups.flatMap((code) => [{ imei: code }, { serial: code }]) },
+    orderBy: { receivedAt: "desc" },
+    select: {
+      imei: true, serial: true, status: true, colour: true, storage: true, mpn: true, modelNumber: true, batteryHealth: true, fmi: true, sim: true, osVersion: true,
+      vendorName: true, sourceName: true, receivedAt: true, soldAt: true,
+      product: { select: { id: true, name: true, category: true, condition: true, productGroup: true, sellingPrice: true } },
+      sale: { select: { invoiceNumber: true } },
+    },
+  });
+  if (!unit) return null;
+  // The saved record fills in what this scan did not carry; anything the scan did read wins.
+  const saved = overlayDevice(emptyScannedDevice(), {
+    imei: unit.imei ?? "", serial: unit.serial ?? "", colour: unit.colour ?? "", storage: unit.storage ?? "", mpn: unit.mpn ?? "", modelNumber: unit.modelNumber ?? "",
+    batteryHealth: unit.batteryHealth ? String(unit.batteryHealth) : "", fmi: unit.fmi ?? "", sim: unit.sim ?? "", version: unit.osVersion ?? "",
+    name: unit.product.name.replace(/\s*\((?:Ex-UK|trade-in)\)\s*$/i, ""), category: unit.product.category, group: unit.product.productGroup ?? "",
+  });
+  return {
+    device: overlayDevice(saved, scanned),
+    unit: {
+      status: unit.status,
+      productId: unit.product.id,
+      productName: unit.product.name,
+      condition: unit.product.condition,
+      sellingPrice: unit.product.sellingPrice,
+      receivedAt: unit.receivedAt,
+      source: unit.vendorName || unit.sourceName,
+      soldAt: unit.soldAt,
+      invoiceNumber: unit.sale?.invoiceNumber ?? null,
+    },
+  };
+}
+
 async function lookup(branchId: string, raw: string, condition?: string | null) {
   const parsed = parseScanPayload(raw);
-  const device = parseDeviceScan(raw);
+  const known = await knownDevice(branchId, parseDeviceScan(raw), parsed);
+  const device = known?.device ?? parseDeviceScan(raw);
   const identity = lookupAppleIdentity(raw) || (device.modelNumber ? lookupAppleIdentity(device.modelNumber) : null);
   if (!parsed.code && !deviceHasIdentity(device)) {
-    return { code: "", kind: parsed.kind, device, catalog: appleCatalogHint(identity), suggestedCondition: null as "NEW" | "EX_UK" | null, matches: [] as ReturnType<typeof publicMatch>[] };
+    return { code: "", kind: parsed.kind, device, known: null, catalog: appleCatalogHint(identity), suggestedCondition: null as "NEW" | "EX_UK" | null, matches: [] as ReturnType<typeof publicMatch>[] };
   }
   const products = await productsForBranch(branchId);
   const hits = parsed.code || device.modelNumber || device.name
@@ -80,6 +120,7 @@ async function lookup(branchId: string, raw: string, condition?: string | null) 
     code: parsed.code || device.imei || device.modelNumber || device.mpn,
     kind: parsed.kind,
     device,
+    known: known?.unit ?? null,
     catalog: appleCatalogHint(identity),
     suggestedCondition: parsed.kind === "mpn" ? suggestedConditionFromMpn(parsed.code) : null,
     matches: hits.map((hit) => publicMatch(hit.product, hit.reason)),

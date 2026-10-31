@@ -42,6 +42,18 @@ type CatalogHint = {
 
 type ReceiveCondition = "NEW" | "EX_UK" | "TRADE_IN";
 
+/** A phone the shop already has a record for, found by the IMEI or serial on its barcode. */
+type KnownUnit = {
+  status: "IN_STOCK" | "RESERVED" | "SOLD";
+  productId: string;
+  productName: string;
+  condition: string;
+  receivedAt: string;
+  source: string | null;
+  soldAt: string | null;
+  invoiceNumber: string | null;
+};
+
 type Props = {
   items: ScanItem[];
   canReceive: boolean;
@@ -82,6 +94,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   const [pendingCode, setPendingCode] = useState("");
   const [device, setDevice] = useState<ScannedDevice>(emptyScannedDevice);
   const [lastLabel, setLastLabel] = useState<ScannedDevice | null>(null);
+  const [known, setKnown] = useState<KnownUnit | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -164,11 +177,13 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     return vendorName.trim().length >= 2;
   }
 
-  async function resolveMatches(raw: string): Promise<{ matches: ScanMatch[]; catalog: CatalogHint | null; device: ScannedDevice }> {
+  async function resolveMatches(raw: string): Promise<{ matches: ScanMatch[]; catalog: CatalogHint | null; device: ScannedDevice; known: KnownUnit | null }> {
     const parsed = parseDeviceScan(raw);
     const identity = lookupAppleIdentity(raw);
-    const local = localMatches(raw);
-    if (local.length) return { matches: local, catalog: identity, device: parsed };
+    // A phone's own barcode (IMEI / serial) is looked up on the server, which fills in its saved details.
+    const hasDeviceCode = Boolean(parsed.imei || parsed.serial || parseScanPayload(raw).kind === "imei");
+    const local = hasDeviceCode ? [] : localMatches(raw);
+    if (local.length) return { matches: local, catalog: identity, device: parsed, known: null };
     const response = await fetch(`/api/inventory/scan?code=${encodeURIComponent(raw)}&condition=${condition}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok && response.status !== 404 && response.status !== 400) throw new Error(data.error ?? "That scan could not be looked up.");
@@ -176,6 +191,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       matches: (data.matches as ScanMatch[]) || [],
       catalog: data.catalog || identity,
       device: overlayDevice(parsed, data.device || {}),
+      known: (data.known as KnownUnit | null) ?? null,
     };
   }
 
@@ -190,7 +206,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   }
 
   function printLabel(current?: ScannedDevice) {
-    const label = labelDevice(current);
+    const label = { ...labelDevice(current), ...((known?.condition ?? condition) === "NEW" ? { workingNote: "Brand new · sealed" } : {}) };
     if (!label.imei && !label.serial) {
       onError("Scan the IMEI or serial first so the barcode on the sticker has something to encode.");
       return;
@@ -200,7 +216,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     onNotice(`GadgetHub ${PHONE_LABEL.widthMm}×${PHONE_LABEL.heightMm} mm label sent to the printer. Tape it on the back of the handset.`);
   }
 
-  async function receiveMatch(raw: string, match?: ScanMatch) {
+  async function receiveMatch(raw: string, match?: ScanMatch, scannedDevice: ScannedDevice = device) {
     if (!canReceive) {
       onError("Your permissions cannot receive stock. Ask the super admin to unlock inventory receive.");
       return;
@@ -224,17 +240,17 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           quantity,
           condition,
           ...(match ? { productId: match.productId } : {}),
-          deviceName: deviceName.trim() || catalog?.name || device.name,
-          imei: device.imei,
-          serial: device.serial,
-          mpn: device.mpn,
-          modelNumber: device.modelNumber,
-          colour: device.colour,
-          storage: device.storage,
-          batteryHealth: device.batteryHealth,
-          fmi: device.fmi,
-          sim: device.sim,
-          version: device.version,
+          deviceName: deviceName.trim() || catalog?.name || scannedDevice.name,
+          imei: scannedDevice.imei,
+          serial: scannedDevice.serial,
+          mpn: scannedDevice.mpn,
+          modelNumber: scannedDevice.modelNumber,
+          colour: scannedDevice.colour,
+          storage: scannedDevice.storage,
+          batteryHealth: scannedDevice.batteryHealth,
+          fmi: scannedDevice.fmi,
+          sim: scannedDevice.sim,
+          version: scannedDevice.version,
           ...(condition === "TRADE_IN"
             ? {
                 sourceName: sourceName.trim(),
@@ -260,7 +276,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       if (!response.ok) throw new Error(result.error ?? "Stock receipt failed.");
       const product = items.find((item) => item.product.id === (match?.productId || result.product.id))?.product;
       // Every phone with an IMEI or serial gets its sticker as soon as it is received.
-      const label = { ...overlayDevice(labelDevice(), result.device || {}), ...(condition === "NEW" ? { workingNote: "Brand new · sealed" } : {}) };
+      const label = { ...overlayDevice(labelDevice(scannedDevice), result.device || {}), ...(condition === "NEW" ? { workingNote: "Brand new · sealed" } : {}) };
       if (label.imei || label.serial) {
         printPhoneLabel(label);
         setLastLabel(label);
@@ -284,12 +300,12 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           brand: result.product.brand,
           costPrice: product?.costPrice ?? result.product.costPrice ?? null,
         },
-        phoneLabel: condition === "NEW" ? null : label,
+        phoneLabel: label.imei || label.serial ? label : null,
       });
       onNotice(
-        condition === "NEW"
-          ? `Received ${quantity} × ${result.product.name}. On hand ${result.previousStock} → ${result.stockOnHand}.`
-          : `Received ${quantity} × ${result.product.name}. Phone label is printing — tape it on the back.`,
+        label.imei || label.serial
+          ? `Received ${result.product.name}. Label is printing — stick it on the ${condition === "NEW" ? "box" : "back of the phone"}. On hand ${result.previousStock} → ${result.stockOnHand}.`
+          : `Received ${quantity} × ${result.product.name}. On hand ${result.previousStock} → ${result.stockOnHand}.`,
       );
       setCode("");
       setMatches([]);
@@ -299,6 +315,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       setDeviceName("");
       setSellingPrice("");
       setDevice(emptyScannedDevice());
+      setKnown(null);
       if (condition === "TRADE_IN") {
         setSourceName("");
         setSourcePhone("");
@@ -322,10 +339,23 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     setCode(scanned);
     try {
       const found = await resolveMatches(scanned);
+      const scannedDevice = overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "" });
       setCatalog(found.catalog);
-      setDevice(overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "" }));
+      setDevice(scannedDevice);
+      setKnown(found.known);
       if (!deviceName && (found.device.name || found.catalog?.name || found.matches[0]?.name)) {
         setDeviceName(found.device.name || found.catalog?.name || found.matches[0]?.name || "");
+      }
+      if (found.known && found.known.status !== "SOLD") {
+        // Already on the shelf: show its saved details and offer a reprint instead of receiving it twice.
+        setMatches([]);
+        setPendingCode("");
+        onError("");
+        onNotice(`${found.known.productName} is already in stock (received ${new Date(found.known.receivedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}${found.known.source ? ` from ${found.known.source}` : ""}). Details filled in from the system — reprint the label if it is missing.`);
+        return;
+      }
+      if (found.known?.status === "SOLD") {
+        onNotice(`This phone was sold before${found.known.invoiceNumber ? ` on ${found.known.invoiceNumber}` : ""}. Its saved details are filled in; receiving it starts a new record.`);
       }
       const hint = parseScanPayload(scanned);
       if (hint.kind === "mpn") {
@@ -337,6 +367,12 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       if (!found.matches.length) {
         setMatches([]);
         setPendingCode(scanned);
+        // A fully read Ex-UK sticker with the vendor filled in goes straight in, and its label prints.
+        const readable = Boolean((scannedDevice.imei || scannedDevice.serial) && (deviceName || scannedDevice.name || found.catalog?.name));
+        if (condition === "EX_UK" && readable && readyToReceive()) {
+          await receiveMatch(scanned, undefined, scannedDevice);
+          return;
+        }
         if (condition !== "NEW" && (found.catalog || deviceHasIdentity(found.device))) {
           onError("");
           onNotice(
@@ -359,7 +395,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       setMatches(found.matches);
       onError("");
       if (found.matches.length === 1 && readyToReceive()) {
-        await receiveMatch(scanned, found.matches[0]);
+        await receiveMatch(scanned, found.matches[0], scannedDevice);
         return;
       }
       onNotice(
@@ -389,7 +425,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#111111] text-white"><ScanLine className="h-4 w-4" /></span>
           <div>
             <h3 className="text-sm font-semibold text-[#1a1a1a]">Scan arrivals</h3>
-            <p className="mt-1 text-xs text-[#7e897f]">New, Ex-UK or trade-in. Plug in the scanner and the 90 × 50 mm label printer. Trade-in takes the owner’s details first. Ex-UK and trade-in print a GadgetHub note to tape on the back of the phone.</p>
+            <p className="mt-1 text-xs text-[#7e897f]">New, Ex-UK or trade-in. Plug in the scanner and the 90 × 50 mm label printer. Every phone received with an IMEI prints its GadgetHub label straight away. Scanning a label already on file fills in that phone’s details from the system.</p>
           </div>
         </div>
         <button type="button" onClick={() => { onError(""); setCameraOn((current) => !current); }} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#c4c4c4] px-3 text-xs font-semibold text-[#2d2d2d] hover:bg-white">
@@ -408,7 +444,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
             key={value}
             type="button"
             aria-pressed={condition === value}
-            onClick={() => { setCondition(value); setMatches([]); setCatalog(null); setDevice(emptyScannedDevice()); onError(""); }}
+            onClick={() => { setCondition(value); setMatches([]); setCatalog(null); setDevice(emptyScannedDevice()); setKnown(null); onError(""); }}
             className={`min-h-11 rounded-xl border px-3 text-sm font-semibold ${condition === value ? "border-[#111111] bg-[#111111] text-white" : "border-[#e5e5e5] bg-white text-[#2d2d2d] hover:border-[#c4c4c4]"}`}
           >
             {label}
@@ -445,13 +481,26 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
         </div>
       )}
 
-      {condition !== "NEW" ? (
+      {known ? (
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${known.status === "SOLD" ? "border-[#e5e5e5] bg-[#fafafa]" : "border-[#cfe3d5] bg-[#f1f8f3]"}`}>
+          <div className="min-w-0 text-xs leading-5">
+            <p className="font-semibold text-[#111111]">{known.status === "SOLD" ? "Sold before" : known.status === "RESERVED" ? "Held for a sale awaiting payment" : "Already in stock"} · {known.productName}</p>
+            <p className="text-[#526057]">Received {new Date(known.receivedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}{known.source ? ` from ${known.source}` : ""}{known.invoiceNumber ? ` · sold on ${known.invoiceNumber}` : ""}</p>
+          </div>
+          <div className="flex gap-2">
+            {known.status !== "SOLD" ? <button type="button" onClick={() => printLabel()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#111111] px-3 text-[11px] font-semibold text-white"><Printer className="h-3.5 w-3.5" />Reprint label</button> : null}
+            <a href={`/devices?q=${encodeURIComponent(device.imei || device.serial)}`} className="inline-flex min-h-9 items-center rounded-lg border border-[#c4c4c4] bg-white px-3 text-[11px] font-semibold text-[#2d2d2d]">Phone history</a>
+          </div>
+        </div>
+      ) : null}
+
+      {condition !== "NEW" || device.imei || device.serial ? (
         <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_min(100%,340px)]">
-          <BatteryHealthField
+          {condition !== "NEW" ? <BatteryHealthField
             value={device.batteryHealth}
             onChange={(batteryHealth) => setDevice((current) => ({ ...current, batteryHealth }))}
-          />
-          <PhoneLabelPreview device={labelDevice()} />
+          /> : <p className="self-center text-xs leading-5 text-[#7e897f]">{known ? "Details come from this phone’s saved record. Check the label, then reprint it if needed." : "Each New phone is saved by its IMEI, and this label prints for the box as soon as it is received."}</p>}
+          <PhoneLabelPreview device={{ ...labelDevice(), ...((known?.condition ?? condition) === "NEW" ? { workingNote: "Brand new · sealed" } : {}) }} />
         </div>
       ) : null}
 
@@ -469,16 +518,16 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
               <span className="font-semibold">{deviceName || device.name || catalog?.name || "Scanned device"}</span>
               {device.modelNumber || catalog?.modelNumber ? ` · ${device.modelNumber || catalog?.modelNumber}` : ""}
               {device.mpn ? ` · ${device.mpn}` : ""}
-              {condition === "TRADE_IN" ? " · source is the person above" : ` · receiving as ${conditionLabels[condition]}`}
+              {known && known.status !== "SOLD" ? ` · on file as ${conditionLabels[known.condition] ?? known.condition}` : condition === "TRADE_IN" ? " · source is the person above" : ` · receiving as ${conditionLabels[condition]}`}
             </p>
-            {condition !== "NEW" ? (
+            {!(known && known.status !== "SOLD") && (condition !== "NEW" || device.imei || device.serial) ? (
               <button type="button" onClick={() => printLabel()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#c4c4c4] bg-white px-3 text-[11px] font-semibold text-[#2d2d2d] hover:bg-white">
                 <Printer className="h-3.5 w-3.5" />
                 Print {PHONE_LABEL.widthMm}×{PHONE_LABEL.heightMm} mm label
               </button>
             ) : null}
           </div>
-          {condition !== "NEW" ? (
+          {condition !== "NEW" || device.imei || device.serial ? (
             <div className="grid gap-2 sm:grid-cols-3">
               {([
                 ["imei", "IMEI", "15-digit IMEI"],
