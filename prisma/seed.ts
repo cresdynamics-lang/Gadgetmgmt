@@ -40,7 +40,7 @@ async function main() {
         name: "Norwich Union Hse",
         code: "NUH",
         address: "Norwich Union Hse, Nairobi",
-        phone: "+254700100200",
+        phone: "0729 585 471",
       },
     });
   await prisma.branch.updateMany({ where: { code: "CBD" }, data: { isActive: false } });
