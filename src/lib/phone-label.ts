@@ -1,10 +1,9 @@
 import { jsPDF } from "jspdf";
 
-import { brandMarkDataUrl } from "@/lib/brand";
 import { encodeCode128 } from "@/lib/code128";
 import { phoneLabelTitle, type ScannedDevice } from "@/lib/device-scan";
 
-/** Back-of-phone note. 90 × 50 mm landscape matches a standard 3.5 × 2 in label roll. */
+/** Back-of-phone note, unbranded like a wholesale sticker. 90 × 50 mm landscape matches a standard 3.5 × 2 in label roll. */
 export const PHONE_LABEL = { widthMm: 90, heightMm: 50 } as const;
 
 export type PhoneLabelData = ScannedDevice & {
@@ -45,13 +44,11 @@ export function phoneLabelInnerHtml(device: PhoneLabelData) {
   const title = phoneLabelTitle(device) || device.name || "Apple device";
   const barcodeValue = device.imei || device.serial;
   const battery = (device.batteryHealth || "").replace(/[^\d]/g, "").slice(0, 3);
-  return `<article class="gh-phone-label" aria-label="GadgetHub phone label">
+  return `<article class="gh-phone-label" aria-label="Phone label">
     <header class="gh-phone-label__brand">
-      <img src="${brandMarkDataUrl}" alt="" width="24" height="24" />
-      <span>GadgetHub</span>
+      <h1>${escapeHtml(title)}</h1>
       <strong>${escapeHtml(device.modelNumber || "")}</strong>
     </header>
-    <h1>${escapeHtml(title)}</h1>
     <div class="gh-phone-label__body">
       <dl>
         <div><dt>Sr#</dt><dd>${escapeHtml(device.serial || "—")}</dd></div>
@@ -88,22 +85,15 @@ export const phoneLabelCss = `
   .gh-phone-label * { box-sizing: border-box; margin: 0; padding: 0; }
   .gh-phone-label__brand {
     display: flex;
-    align-items: center;
-    gap: 1.6mm;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2mm;
+    margin-top: 0.6mm;
   }
-  .gh-phone-label__brand img { width: 6.2mm; height: 6.2mm; object-fit: contain; }
-  .gh-phone-label__brand span {
-    font-size: 7.2pt;
-    font-weight: 800;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-  }
-  .gh-phone-label__brand strong { margin-left: auto; font-size: 8pt; }
+  .gh-phone-label__brand strong { flex-shrink: 0; font-size: 8.4pt; }
   .gh-phone-label h1 {
-    margin-top: 1.1mm;
-    font-size: 7.8pt;
+    font-size: 8.6pt;
     font-weight: 700;
-    text-align: center;
     line-height: 1.15;
   }
   .gh-phone-label__body {
@@ -160,7 +150,7 @@ export function phoneLabelPrintDocument(device: PhoneLabelData) {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GadgetHub phone label</title>
+  <title>Phone label</title>
   <style>
     @page { size: ${PHONE_LABEL.widthMm}mm ${PHONE_LABEL.heightMm}mm; margin: 0; }
     html, body { width: ${PHONE_LABEL.widthMm}mm; height: ${PHONE_LABEL.heightMm}mm; margin: 0; padding: 0; background: #fff; }
@@ -196,12 +186,9 @@ export function createPhoneLabelPdf(device: PhoneLabelData) {
   doc.setLineWidth(0.2);
   doc.rect(1.4, 1.4, width - 2.8, height - 2.8);
 
-  doc.addImage(brandMarkDataUrl, "PNG", 3.2, 2.4, 6.2, 6.2);
   doc.setTextColor(17, 17, 17);
-  line(doc, "GADGETHUB", 11, 6.4, { bold: true, size: 8 });
-  if (device.modelNumber) line(doc, device.modelNumber, width - 3.4, 6.5, { bold: true, size: 9, align: "right" });
-
-  line(doc, title, width / 2, 12.2, { bold: true, size: 8, align: "center", max: width - 8 });
+  line(doc, title, 4, 8.4, { bold: true, size: 9, max: width - 24 });
+  if (device.modelNumber) line(doc, device.modelNumber, width - 3.4, 8.4, { bold: true, size: 9, align: "right" });
 
   const left = 4;
   line(doc, `Sr# ${device.serial || "—"}`, left, 17.2, { size: 7 });

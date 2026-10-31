@@ -47,6 +47,7 @@ const actionLabels: Record<string, string> = {
   PRICE_UPDATED: "Price updated",
   WEBSITE_VISIBILITY: "Website listing",
   AI_QUESTION: "AI assistant",
+  RECEIPT_EMAILED: "Receipt emailed",
 };
 
 const presenceLabels: Record<SessionRow["presence"], string> = {

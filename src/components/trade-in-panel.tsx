@@ -268,7 +268,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
   if (!form.active) {
     return <button type="button" disabled={subtotal < 1} onClick={() => { setStep(0); onChange({ ...blankTradeInForm, active: true }); }} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-dashed border-[#c4c4c4] bg-[#fafafa] px-3.5 py-3 text-left transition hover:border-[#111111] disabled:opacity-50">
       <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-[#2d2d2d] ring-1 ring-[#e5e5e5]"><Repeat2 className="h-4 w-4"/></span>
-      <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#1a1a1a]">Add a trade-in</span><span className="block text-[11px] text-[#6b6b6b]">{subtotal < 1 ? "Add an item to the sale first" : "Owner details first, then scan and print the GadgetHub note"}</span></span>
+      <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#1a1a1a]">Add a trade-in</span><span className="block text-[11px] text-[#6b6b6b]">{subtotal < 1 ? "Add an item to the sale first" : "Owner details first, then scan and print the phone label"}</span></span>
       <ChevronRight className="h-4 w-4 text-[#9a9a9a]"/>
     </button>;
   }
@@ -292,7 +292,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
     <div className="space-y-4 p-3.5">
       {step === 0 ? <>
         {customer && customer.name ? <button type="button" onClick={() => update({ sellerName: customer.name, sellerPhone: customer.phone })} className="min-h-11 w-full rounded-xl border border-[#d4d4d4] bg-white px-3 text-[13px] font-semibold text-[#2d2d2d] hover:border-[#111111]">Owner is the customer · {customer.name}</button> : null}
-        <p className="text-[11px] text-[#6b6b6b]">Take the owner’s name and phone before you scan the device. The 90 × 50 mm GadgetHub label prints after the IMEI is in.</p>
+        <p className="text-[11px] text-[#6b6b6b]">Take the owner’s name and phone before you scan the device. The 90 × 50 mm phone label prints after the IMEI is in.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={labelClass}>Owner’s name (as on ID)<input value={form.sellerName} maxLength={120} autoComplete="off" onChange={(event) => update({ sellerName: event.target.value })} className={fieldClass}/></label>
           <label className={labelClass}>Owner’s phone<input type="tel" inputMode="tel" value={form.sellerPhone} maxLength={20} onChange={(event) => update({ sellerPhone: event.target.value })} placeholder="07xx xxx xxx" className={fieldClass}/></label>
@@ -325,7 +325,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
             placeholder="Click, then scan or paste About / IMEI / QR"
             className={`${fieldClass} h-auto min-h-12 py-2 font-mono tracking-wide`}
           />
-          <p className="mt-1 text-[11px] text-[#6b6b6b]">USB scanner or camera fills the model, IMEI, serial, storage and battery. Print sends a 90 × 50 mm GadgetHub note to the label printer.</p>
+          <p className="mt-1 text-[11px] text-[#6b6b6b]">USB scanner or camera fills the model, IMEI, serial, storage and battery. Print sends a 90 × 50 mm phone label to the label printer.</p>
         </div>
         <div><p className={labelClass}>Brand</p><div className="mt-1.5 grid grid-cols-2 gap-2">{tradeInBrands.map((brand) => <Choice key={brand} selected={form.brand === brand} onClick={() => { setOtherModel(false); update({ brand, deviceType: "", model: "", storage: "" }); }}>{tradeInBrandLabel(brand)}</Choice>)}</div></div>
         {form.brand ? <div><p className={labelClass}>Device</p><div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.keys(tradeInDevices[form.brand]).map((device) => <Choice key={device} selected={form.deviceType === device} onClick={() => { setOtherModel(false); update({ deviceType: device, model: "", storage: "" }); }}>{device}</Choice>)}</div></div> : null}
@@ -345,7 +345,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
         {tradeInBatteryDevices.includes(form.deviceType) ? <BatteryHealthField value={form.batteryHealth} onChange={(batteryHealth) => update({ batteryHealth })} /> : null}
         {form.serial ? <>
           <PhoneLabelPreview device={tradeInLabelData(form)} />
-          <button type="button" onClick={() => printPhoneLabel(tradeInLabelData(form))} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#111111] bg-white px-3 text-sm font-semibold text-[#111111] hover:bg-[#f5f5f5]"><Printer className="h-4 w-4"/>Print {PHONE_LABEL.widthMm}×{PHONE_LABEL.heightMm} mm GadgetHub label</button>
+          <button type="button" onClick={() => printPhoneLabel(tradeInLabelData(form))} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#111111] bg-white px-3 text-sm font-semibold text-[#111111] hover:bg-[#f5f5f5]"><Printer className="h-4 w-4"/>Print {PHONE_LABEL.widthMm}×{PHONE_LABEL.heightMm} mm label</button>
         </> : null}
       </> : null}
 

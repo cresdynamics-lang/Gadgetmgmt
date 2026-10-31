@@ -2,6 +2,7 @@ export const navItems = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Sales (POS)", href: "/sales" },
   { label: "Sales reports", href: "/reports" },
+  { label: "Invoices & receipts", href: "/invoices" },
   { label: "Inventory", href: "/inventory" },
   { label: "Phone history", href: "/devices" },
   { label: "Website admin", href: "/website" },

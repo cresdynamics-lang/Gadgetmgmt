@@ -18,7 +18,8 @@ export type ActivityAction =
   | "MPESA_PROMPT_SENT"
   | "PRICE_UPDATED"
   | "WEBSITE_VISIBILITY"
-  | "AI_QUESTION";
+  | "AI_QUESTION"
+  | "RECEIPT_EMAILED";
 
 export async function startUserSession(userId: string) {
   const session = await prisma.userSession.create({ data: { userId }, select: { id: true } });

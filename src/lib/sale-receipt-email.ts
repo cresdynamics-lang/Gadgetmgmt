@@ -5,10 +5,11 @@ const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
 /**
  * Email the customer a receipt (or invoice, if part-paid) for a sale, with the PDF attached.
- * `recipient` covers walk-ins with no customer email. Safe to call twice: it is deduplicated per sale.
+ * `recipient` covers walk-ins with no customer email. Safe to call twice: it is deduplicated per sale,
+ * unless `resend` is set, which sends a fresh copy (to `recipient` first, if given).
  * Returns whether the email went out.
  */
-export async function sendSaleReceiptEmail(saleId: string, recipient?: string | null): Promise<boolean> {
+export async function sendSaleReceiptEmail(saleId: string, recipient?: string | null, resend = false): Promise<boolean> {
   try {
     const sale = await prisma.sale.findUnique({
       where: { id: saleId },
@@ -20,7 +21,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
         payments: { select: { method: true, amount: true, reference: true } },
       },
     });
-    const to = sale?.customer?.email || recipient;
+    const to = resend ? recipient || sale?.customer?.email : sale?.customer?.email || recipient;
     if (!sale || !to || (sale.status !== "PAID" && sale.status !== "PARTIAL")) return false;
     const lines = sale.saleItems.map((item) => {
       const codes = item.deviceUnits.map((unit) => unit.imei ? `IMEI ${unit.imei}` : `Serial ${unit.serial}`);
@@ -48,7 +49,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
         "",
         `Questions? Call us on ${sale.branch.phone} or reply to this email.`,
       ].join("\n"),
-      dedupeKey: `sale-receipt:${sale.id}`,
+      dedupeKey: resend ? `sale-receipt:${sale.id}:${Date.now().toString(36)}` : `sale-receipt:${sale.id}`,
     });
     return notice.sent;
   } catch (error) {

@@ -213,7 +213,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     }
     printPhoneLabel(label);
     setLastLabel(label);
-    onNotice(`GadgetHub ${PHONE_LABEL.widthMm}×${PHONE_LABEL.heightMm} mm label sent to the printer. Tape it on the back of the handset.`);
+    onNotice(`${PHONE_LABEL.widthMm}×${PHONE_LABEL.heightMm} mm label sent to the printer. Tape it on the back of the handset.`);
   }
 
   async function receiveMatch(raw: string, match?: ScanMatch, scannedDevice: ScannedDevice = device) {
@@ -425,7 +425,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#111111] text-white"><ScanLine className="h-4 w-4" /></span>
           <div>
             <h3 className="text-sm font-semibold text-[#1a1a1a]">Scan arrivals</h3>
-            <p className="mt-1 text-xs text-[#7e897f]">New, Ex-UK or trade-in. Plug in the scanner and the 90 × 50 mm label printer. Every phone received with an IMEI prints its GadgetHub label straight away. Scanning a label already on file fills in that phone’s details from the system.</p>
+            <p className="mt-1 text-xs text-[#7e897f]">New, Ex-UK or trade-in. Plug in the scanner and the 90 × 50 mm label printer. Every phone received with an IMEI prints its label straight away. Scanning a label already on file fills in that phone’s details from the system.</p>
           </div>
         </div>
         <button type="button" onClick={() => { onError(""); setCameraOn((current) => !current); }} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#c4c4c4] px-3 text-xs font-semibold text-[#2d2d2d] hover:bg-white">
