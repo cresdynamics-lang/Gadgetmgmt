@@ -14,7 +14,6 @@ const products = [
     configuration: "256GB · 5G",
     productGroup: "iPad Pro 11\" M5",
     sellingPrice: 188000,
-    showOnWebsite: true,
     websiteProductId: "ipad-pro-11-m5",
     websiteVariantKey: "256gb-cell",
     stockOnHand: 4,
@@ -30,7 +29,6 @@ const products = [
     configuration: "256GB · 5G",
     productGroup: "iPad Pro 11\" M5",
     sellingPrice: 188000,
-    showOnWebsite: false,
     websiteProductId: "ipad-pro-11-m5",
     websiteVariantKey: "256gb-cell",
     stockOnHand: 2,
@@ -46,7 +44,6 @@ const products = [
     configuration: "256GB · 5G",
     productGroup: "iPad Pro 11\" M5",
     sellingPrice: 165000,
-    showOnWebsite: true,
     websiteProductId: "ipad-pro-11-m5",
     websiteVariantKey: "256gb-cell",
     stockOnHand: 1,
@@ -62,7 +59,6 @@ const products = [
     configuration: null,
     productGroup: null,
     sellingPrice: 40000,
-    showOnWebsite: false,
     websiteProductId: null,
     websiteVariantKey: null,
     stockOnHand: 1,
@@ -78,7 +74,6 @@ test("groups New and Ex-UK of the same website listing onto one update row", () 
   assert.equal(rows[0]?.new?.sellingPrice, 188000);
   assert.equal(rows[0]?.exUk?.sellingPrice, 165000);
   assert.equal(rows[0]?.new?.available, 5);
-  assert.equal(rows[0]?.new?.showOnWebsite, true);
   assert.deepEqual(rows[0]?.new?.productIds, ["n1", "n1b"]);
 });
 

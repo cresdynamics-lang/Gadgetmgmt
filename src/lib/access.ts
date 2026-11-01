@@ -24,7 +24,6 @@ export type Permission =
   | "settings.view"
   | "notifications.view"
   | "activity.view"
-  | "website.view"
   | "scope.allBranches";
 
 export type PermissionGrantMode = "FULL" | "RESTRICTED";
@@ -60,7 +59,6 @@ export const permissionLabels: Record<Permission, string> = {
   "settings.view": "View settings",
   "notifications.view": "View messages",
   "activity.view": "View activity log",
-  "website.view": "View website catalog and orders",
   "scope.allBranches": "See every branch",
 };
 
@@ -100,7 +98,7 @@ const rolePermissions: Record<string, readonly Permission[]> = {
     "dashboard.view", "sales.view", "sales.create",
     "inventory.view", "inventory.receive", "products.price", "customers.view", "customers.manage",
     "credit.view", "credit.collect", "credit.policy", "staff.view", "staff.manage",
-    "settings.view", "notifications.view", "website.view",
+    "settings.view", "notifications.view",
   ],
   CASHIER: [
     "dashboard.view", "sales.view", "sales.create",
@@ -125,7 +123,6 @@ const pagePermission: Record<string, Permission> = {
   "/notifications": "notifications.view",
   "/settings": "settings.view",
   "/activity": "activity.view",
-  "/website": "website.view",
 };
 
 export const capabilityPermission: Record<AccessCapability, Permission> = {

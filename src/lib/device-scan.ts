@@ -53,6 +53,8 @@ export function parseDeviceScan(raw: string): ScannedDevice {
   ).replace(/^S(?=[A-Z0-9]{8,12}$)/, "");
   const storage = (compact.match(/\b((?:64|128|256|512)\s*GB|(?:1|2)\s*TB)\b/)?.[1] || "").replace(/\s+/g, "");
   const colour = field(text, /\b(?:COLOR|COLOUR)[:\s]+([A-Za-z][A-Za-z /-]+)/i)
+    // Stop at the next field name, e.g. "Color GRAPHITE Version 17.4" is just GRAPHITE.
+    .split(/\s+(?:VERSION|SIM|FMI|FIND|BATTERY|HEALTH|IMEI|SR#|SERIAL|S\/N|MODEL|CAPACITY|STORAGE|IOS)\b/i)[0]
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();

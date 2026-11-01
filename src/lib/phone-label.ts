@@ -3,8 +3,35 @@ import { jsPDF } from "jspdf";
 import { encodeCode128 } from "@/lib/code128";
 import { phoneLabelTitle, type ScannedDevice } from "@/lib/device-scan";
 
-/** Back-of-phone note, unbranded like a wholesale sticker. 90 × 50 mm landscape matches a standard 3.5 × 2 in label roll. */
+/** Back-of-phone label with the Gadget Hub logo. 90 × 50 mm landscape matches a standard 3.5 × 2 in label roll. */
 export const PHONE_LABEL = { widthMm: 90, heightMm: 50 } as const;
+
+/**
+ * The black GH mark (transparent background) prints cleanly on a monochrome thermal printer;
+ * the name is set as text beside it so it stays sharp at label size.
+ */
+const LOGO_PATH = "/brand/mark-on-light.png";
+const LOGO_ASPECT = 512 / 775;
+const LOGO_HEIGHT_MM = 8.6;
+const BRAND_NAME = "GADGET HUB";
+
+// Absolute, because the print window is a blank page with no address of its own.
+const logoSrc = () => typeof window === "undefined" ? LOGO_PATH : `${window.location.origin}${LOGO_PATH}`;
+
+let logoDataUrl: Promise<string | null> | null = null;
+/** The logo as a data URL for the PDF version; loaded once. */
+function loadLogoDataUrl() {
+  logoDataUrl ??= fetch(LOGO_PATH)
+    .then((response) => response.ok ? response.blob() : null)
+    .then((blob) => blob ? new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    }) : null)
+    .catch(() => null);
+  return logoDataUrl;
+}
 
 export type PhoneLabelData = ScannedDevice & {
   receivedAt?: string;
@@ -46,7 +73,8 @@ export function phoneLabelInnerHtml(device: PhoneLabelData) {
   const battery = (device.batteryHealth || "").replace(/[^\d]/g, "").slice(0, 3);
   return `<article class="gh-phone-label" aria-label="Phone label">
     <header class="gh-phone-label__brand">
-      <h1>${escapeHtml(title)}</h1>
+      <img class="gh-phone-label__logo" src="${logoSrc()}" alt="" />
+      <div><p class="gh-phone-label__shop">${BRAND_NAME}</p><h1>${escapeHtml(title)}</h1></div>
       <strong>${escapeHtml(device.modelNumber || "")}</strong>
     </header>
     <div class="gh-phone-label__body">
@@ -84,11 +112,17 @@ export const phoneLabelCss = `
   }
   .gh-phone-label * { box-sizing: border-box; margin: 0; padding: 0; }
   .gh-phone-label__brand {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
     gap: 2mm;
-    margin-top: 0.6mm;
+  }
+  .gh-phone-label__shop { font-size: 5.6pt; font-weight: 800; letter-spacing: 0.22em; line-height: 1; margin-bottom: 0.6mm; }
+  .gh-phone-label__logo {
+    display: block;
+    height: ${LOGO_HEIGHT_MM}mm;
+    width: ${(LOGO_HEIGHT_MM * LOGO_ASPECT).toFixed(2)}mm;
+    object-fit: contain;
   }
   .gh-phone-label__brand strong { flex-shrink: 0; font-size: 8.4pt; }
   .gh-phone-label h1 {
@@ -172,7 +206,7 @@ function line(doc: jsPDF, text: string, x: number, y: number, opts: { bold?: boo
   doc.text(value, x, y, { align: opts.align });
 }
 
-export function createPhoneLabelPdf(device: PhoneLabelData) {
+export function createPhoneLabelPdf(device: PhoneLabelData, logo?: string | null) {
   const width = PHONE_LABEL.widthMm;
   const height = PHONE_LABEL.heightMm;
   const doc = new jsPDF({ unit: "mm", format: [width, height], orientation: "landscape" });
@@ -187,7 +221,13 @@ export function createPhoneLabelPdf(device: PhoneLabelData) {
   doc.rect(1.4, 1.4, width - 2.8, height - 2.8);
 
   doc.setTextColor(17, 17, 17);
-  line(doc, title, 4, 8.4, { bold: true, size: 9, max: width - 24 });
+  const logoWidth = logo ? LOGO_HEIGHT_MM * LOGO_ASPECT : 0;
+  if (logo) doc.addImage(logo, "PNG", 3.4, 2.4, logoWidth, LOGO_HEIGHT_MM);
+  const textX = logo ? 3.4 + logoWidth + 2 : 4;
+  doc.setCharSpace(0.5);
+  line(doc, BRAND_NAME, textX, 4.9, { bold: true, size: 5.6 });
+  doc.setCharSpace(0);
+  line(doc, title, textX, 8.9, { bold: true, size: 9, max: width - 18 - textX });
   if (device.modelNumber) line(doc, device.modelNumber, width - 3.4, 8.4, { bold: true, size: 9, align: "right" });
 
   const left = 4;
@@ -223,16 +263,16 @@ export function createPhoneLabelPdf(device: PhoneLabelData) {
   return doc;
 }
 
-export function downloadPhoneLabel(device: PhoneLabelData) {
+export async function downloadPhoneLabel(device: PhoneLabelData) {
   const name = (device.imei || device.serial || device.modelNumber || "phone").slice(-12);
-  createPhoneLabelPdf(device).save(`gadgethub-phone-label-${name}.pdf`);
+  createPhoneLabelPdf(device, await loadLogoDataUrl()).save(`gadgethub-phone-label-${name}.pdf`);
 }
 
 export function printPhoneLabel(device: PhoneLabelData) {
   const html = phoneLabelPrintDocument(device);
   const popup = window.open("", "gadgethub-phone-label", "width=480,height=320");
   if (!popup) {
-    downloadPhoneLabel(device);
+    void downloadPhoneLabel(device);
     return;
   }
   popup.document.open();

@@ -239,7 +239,6 @@ model Product {
   imei              String?             @unique
   gtin              String?
   mpn               String?
-  showOnWebsite     Boolean             @default(false)
   websiteProductId  String?
   websiteVariantKey String?
   branchId          String
@@ -256,7 +255,6 @@ model Product {
   updatedAt         DateTime            @updatedAt
 
   @@index([branchId, category])
-  @@index([showOnWebsite])
   @@index([websiteProductId, websiteVariantKey])
   @@index([gtin])
   @@index([mpn])
@@ -763,51 +761,6 @@ model TradeIn {
 
   @@index([serial])
   @@index([createdAt])
-}
-
-/// Orders placed on gadgethubke.com. The storefront remains the checkout system;
-/// this table is a live copy so staff can see website payments without sharing Postgres.
-model WebsiteOrder {
-  id              String    @id @default(cuid())
-  externalId      String    @unique
-  status          String
-  intent          String    @default("purchase")
-  customerName    String
-  customerPhone   String
-  customerEmail   String    @default("")
-  fulfillment     String    @default("pickup")
-  deliveryAddress String?
-  notes           String?
-  subtotalKes     Int
-  catalogKes      Int
-  paidAmount      Int       @default(0)
-  paymentMethod   String?
-  paymentRef      String?
-  paidAt          DateTime?
-  items           Json
-  rawPayload      Json?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  @@index([status, createdAt])
-  @@index([customerPhone])
-}
-
-/// Contact, newsletter and track-order messages copied from gadgethubke.com.
-model WebsiteMessage {
-  id         String   @id @default(cuid())
-  externalId String   @unique
-  kind       String
-  name       String
-  phone      String
-  topic      String?
-  body       String?
-  orderRef   String?
-  createdAt  DateTime
-  receivedAt DateTime @default(now())
-
-  @@index([createdAt])
-  @@index([kind, createdAt])
 }
 
 /// A conversation with GadgetHub AI. Messages are [{ role, content, sources? }], newest last.

@@ -17,7 +17,7 @@ export async function GET() {
   const [items, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { branchId: session.user.branchId },
-      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, colour: true, configuration: true, catalogNotes: true, productGroup: true, imei: true, gtin: true, mpn: true, costPrice: true, sellingPrice: true, reorderLevel: true, showOnWebsite: true, websiteProductId: true, websiteVariantKey: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, category: true, brand: true, condition: true, colour: true, configuration: true, catalogNotes: true, productGroup: true, imei: true, gtin: true, mpn: true, costPrice: true, sellingPrice: true, reorderLevel: true, websiteProductId: true, websiteVariantKey: true } } },
       orderBy: { product: { name: "asc" } },
     }),
     prisma.inventoryMovement.findMany({
@@ -35,7 +35,6 @@ export async function GET() {
     movements,
     canSeeCost,
     canEditPrices: hasPermission(session.user, "products.price"),
-    canToggleWebsite: hasPermission(session.user, "products.price") || hasPermission(session.user, "inventory.receive"),
     canReceive: hasPermission(session.user, "inventory.receive"),
   });
 }
@@ -178,8 +177,7 @@ const priceSchema = z.object({
   productId: z.string().cuid(),
   sellingPrice: z.number().int().positive().max(2_000_000_000).optional(),
   costPrice: z.number().int().nonnegative().max(2_000_000_000).optional(),
-  showOnWebsite: z.boolean().optional(),
-}).strict().refine((data) => data.sellingPrice !== undefined || data.costPrice !== undefined || data.showOnWebsite !== undefined);
+}).strict().refine((data) => data.sellingPrice !== undefined || data.costPrice !== undefined);
 
 /** Change a product's selling price, and its buying price for people who can see finances. */
 export async function PATCH(request: Request) {
@@ -187,11 +185,8 @@ export async function PATCH(request: Request) {
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   const parsed = priceSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid price." }, { status: 400 });
-  if ((parsed.data.sellingPrice !== undefined || parsed.data.costPrice !== undefined) && !hasPermission(session.user, "products.price")) {
+  if (!hasPermission(session.user, "products.price")) {
     return denied(session.user, "products.price", "Your permissions cannot change product prices.");
-  }
-  if (parsed.data.showOnWebsite !== undefined && !hasPermission(session.user, "products.price") && !hasPermission(session.user, "inventory.receive")) {
-    return denied(session.user, "inventory.receive", "Your permissions cannot change website visibility.");
   }
   if (parsed.data.costPrice !== undefined && !hasPermission(session.user, "finance.view")) {
     return denied(session.user, "finance.view", "Buying prices need the financial permission.");
@@ -199,7 +194,7 @@ export async function PATCH(request: Request) {
 
   const product = await prisma.product.findFirst({
     where: { id: parsed.data.productId, ...(canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" }) },
-    select: { id: true, name: true, sellingPrice: true, costPrice: true, showOnWebsite: true },
+    select: { id: true, name: true, sellingPrice: true, costPrice: true },
   });
   if (!product) return NextResponse.json({ error: "That product was not found." }, { status: 404 });
 
@@ -208,20 +203,18 @@ export async function PATCH(request: Request) {
     data: {
       ...(parsed.data.sellingPrice !== undefined ? { sellingPrice: parsed.data.sellingPrice } : {}),
       ...(parsed.data.costPrice !== undefined ? { costPrice: parsed.data.costPrice } : {}),
-      ...(parsed.data.showOnWebsite !== undefined ? { showOnWebsite: parsed.data.showOnWebsite } : {}),
     },
-    select: { id: true, sellingPrice: true, costPrice: true, showOnWebsite: true },
+    select: { id: true, sellingPrice: true, costPrice: true },
   });
   const changes = [
     parsed.data.sellingPrice !== undefined && parsed.data.sellingPrice !== product.sellingPrice ? `selling price KES ${product.sellingPrice.toLocaleString("en-KE")} → ${parsed.data.sellingPrice.toLocaleString("en-KE")}` : null,
     parsed.data.costPrice !== undefined && parsed.data.costPrice !== product.costPrice ? "buying price updated" : null,
-    parsed.data.showOnWebsite !== undefined && parsed.data.showOnWebsite !== product.showOnWebsite ? (parsed.data.showOnWebsite ? "shown on website" : "hidden from website") : null,
   ].filter(Boolean);
   if (changes.length) {
     await recordActivity({
       userId: session.user.id,
       sessionId: session.user.sessionId,
-      action: parsed.data.showOnWebsite !== undefined && parsed.data.sellingPrice === undefined ? "WEBSITE_VISIBILITY" : "PRICE_UPDATED",
+      action: "PRICE_UPDATED",
       summary: `Changed ${product.name}: ${changes.join(", ")}`,
       entityType: "Product",
       entityId: product.id,

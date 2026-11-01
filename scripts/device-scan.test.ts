@@ -116,11 +116,12 @@ test("the phone label encodes the IMEI as Code 128 and names the device like the
   assert.equal(Math.round(doc.internal.pageSize.getWidth()), 90);
   assert.equal(Math.round(doc.internal.pageSize.getHeight()), 50);
   const html = phoneLabelInnerHtml(device);
-  assert.match(html, /GadgetHub/);
+  assert.match(html, /GADGET HUB/);
+  assert.match(html, /mark-on-light\.png/);
   assert.match(html, /Battery health/);
   assert.match(html, /100%/);
   assert.match(html, /358250492399182/);
   const printHtml = phoneLabelPrintDocument(device);
   assert.match(printHtml, /@page \{ size: 90mm 50mm; margin: 0; \}/);
-  assert.match(printHtml, /data:image\/png;base64,/);
+  assert.match(printHtml, /gh-phone-label__logo/);
 });

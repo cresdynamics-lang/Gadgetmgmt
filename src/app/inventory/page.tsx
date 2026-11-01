@@ -16,7 +16,7 @@ type InventoryItem = {
   reservedStock: number;
   reorderLevel: number;
   lastUpdatedAt: string;
-  product: { id: string; sku: string; name: string; category: string; brand: string | null; condition: string; colour: string | null; configuration: string | null; catalogNotes: string | null; productGroup: string | null; imei: string | null; gtin: string | null; mpn: string | null; costPrice: number | null; sellingPrice: number; reorderLevel: number; showOnWebsite: boolean; websiteProductId: string | null; websiteVariantKey: string | null };
+  product: { id: string; sku: string; name: string; category: string; brand: string | null; condition: string; colour: string | null; configuration: string | null; catalogNotes: string | null; productGroup: string | null; imei: string | null; gtin: string | null; mpn: string | null; costPrice: number | null; sellingPrice: number; reorderLevel: number; websiteProductId: string | null; websiteVariantKey: string | null };
 };
 
 type Movement = {
@@ -52,9 +52,7 @@ export default function InventoryPage() {
   const [addingProduct, setAddingProduct] = useState(false);
   const [canSeeCost, setCanSeeCost] = useState(false);
   const [canEditPrices, setCanEditPrices] = useState(false);
-  const [canToggleWebsite, setCanToggleWebsite] = useState(false);
   const [canReceive, setCanReceive] = useState(false);
-  const [togglingId, setTogglingId] = useState("");
   const [priceDraft, setPriceDraft] = useState<{ productId: string; sellingPrice: string; costPrice: string } | null>(null);
   const [savingPrice, setSavingPrice] = useState(false);
 
@@ -66,7 +64,6 @@ export default function InventoryPage() {
     setMovements(data.movements);
     setCanSeeCost(Boolean(data.canSeeCost));
     setCanEditPrices(Boolean(data.canEditPrices));
-    setCanToggleWebsite(Boolean(data.canToggleWebsite));
     setCanReceive(Boolean(data.canReceive));
   }
 
@@ -196,7 +193,7 @@ export default function InventoryPage() {
       if (!response.ok) throw new Error(result.error ?? "The price could not be saved.");
       setItems((current) => current.map((item) => item.product.id === result.id ? { ...item, product: { ...item.product, sellingPrice: result.sellingPrice, costPrice: result.costPrice } } : item));
       setPriceDraft(null);
-      setNotice("Price saved. The POS and website use the new price straight away.");
+      setNotice("Price saved. The POS uses the new price straight away.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "The price could not be saved.");
     } finally {
@@ -204,32 +201,11 @@ export default function InventoryPage() {
     }
   }
 
-  async function toggleWebsite(item: InventoryItem) {
-    setTogglingId(item.product.id);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch("/api/inventory", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: item.product.id, showOnWebsite: !item.product.showOnWebsite }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Website visibility could not be saved.");
-      setItems((current) => current.map((row) => row.product.id === result.id ? { ...row, product: { ...row.product, showOnWebsite: result.showOnWebsite } } : row));
-      setNotice(result.showOnWebsite ? `${item.product.name} is now listed in operations.` : `${item.product.name} is hidden in operations. The public shop is not updated.`);
-    } catch (toggleError) {
-      setError(toggleError instanceof Error ? toggleError.message : "Website visibility could not be saved.");
-    } finally {
-      setTogglingId("");
-    }
-  }
-
   return (
     <AppShell>
       <div className="inventory-workspace space-y-5">
         <div className="inventory-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e5e5e5] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(0,0,0,.035)] sm:px-7">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Stock control</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Inventory</h2><p className="mt-1 text-sm text-[#69746c]">Scan arrivals as they come in. Update New and Ex-UK prices the same way as website admin.</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Stock control</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Inventory</h2><p className="mt-1 text-sm text-[#69746c]">Scan arrivals as they come in. Update New and Ex-UK prices below.</p></div>
           <button type="button" onClick={() => { setReceiving((current) => !current); setError(""); }} disabled={!items.length} className="inline-flex items-center gap-2 bg-[#111111] px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-[#1a1a1a] disabled:opacity-40"><ArrowDownToLine className="h-4 w-4" /> Receive stock</button>
           <button type="button" onClick={() => { setAddingProduct((current) => !current); setError(""); }} className="border border-[#c4c4c4] px-3.5 py-2.5 text-sm font-semibold text-[#1a1a1a] hover:bg-[#e5e5e5]">Add product</button>
         </div>
@@ -274,11 +250,10 @@ export default function InventoryPage() {
         <InventoryUpdate
           items={items}
           canEditPrices={canEditPrices}
-          canToggleWebsite={canToggleWebsite}
           onSaved={refreshInventory}
           onError={setError}
           onNotice={setNotice}
-          description="Same New and Ex-UK prices as website admin. The full live table is also under Website admin in the menu."
+          description="New and Ex-UK selling prices. Changes apply at the POS straight away."
         />
 
         {receiving ? <form onSubmit={receiveStock} className="inventory-receive-form border border-[#e5e5e5] bg-white p-4 sm:p-5">
@@ -310,7 +285,7 @@ export default function InventoryPage() {
             <label className="text-xs font-medium text-[#526057]">Product name<input name="name" required minLength={2} maxLength={160} className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" /></label>
             <label className="text-xs font-medium text-[#526057]">SKU<input name="sku" required minLength={2} maxLength={64} className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm uppercase" /></label>
             <label className="text-xs font-medium text-[#526057]">Product type<select name="category" required defaultValue="iPhone" className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm">{productCategories.filter((category) => category !== "Other brands").map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
-            <label className="text-xs font-medium text-[#526057]">Condition<select name="condition" required defaultValue="NEW" className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm"><option value="NEW">New</option><option value="EX_UK">Ex-UK</option></select><span className="mt-1 block text-[10px] font-normal text-[#7e897f]">Trade-ins are added automatically at checkout. New and Ex-UK of the same model are listed as two website cards.</span></label>
+            <label className="text-xs font-medium text-[#526057]">Condition<select name="condition" required defaultValue="NEW" className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm"><option value="NEW">New</option><option value="EX_UK">Ex-UK</option></select><span className="mt-1 block text-[10px] font-normal text-[#7e897f]">Trade-ins are added automatically at checkout. New and Ex-UK of the same model are kept as two products.</span></label>
             <label className="text-xs font-medium text-[#526057]">Colour<input name="colour" maxLength={40} placeholder="Desert Titanium" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" /><span className="mt-1 block text-[10px] font-normal text-[#7e897f]">Only colours with stock show as swatches and as the card photo.</span></label>
             <label className="text-xs font-medium text-[#526057]">Brand <span className="font-normal">(optional)</span><input name="brand" maxLength={80} className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" /></label>
             <label className="text-xs font-medium text-[#526057]">Cost price (KES)<input name="costPrice" type="number" min="0" max="2000000000" step="1" required className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" /></label>
@@ -328,17 +303,17 @@ export default function InventoryPage() {
             <div className="relative w-full sm:max-w-xs"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input aria-label="Search inventory" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, SKU or category" className="w-full border border-[#c4c4c4] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#1a1a1a]" /></div>
           </div>
           <div className="overflow-x-auto"><table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[#e8ebe8] bg-[#f5f5f5] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Product</th><th className="px-4 py-3 font-medium">SKU</th><th className="px-4 py-3 font-medium">Type</th><th className="px-4 py-3 font-medium">Condition</th><th className="px-4 py-3 text-right font-medium">On hand</th><th className="px-4 py-3 text-right font-medium">Reserved</th><th className="px-4 py-3 text-right font-medium">Available</th>{canSeeCost ? <th className="px-4 py-3 text-right font-medium">Cost</th> : null}<th className="px-4 py-3 text-right font-medium">Selling price</th><th className="px-4 py-3 font-medium">Stock status</th><th className="px-4 py-3 font-medium">Website</th>{canEditPrices ? <th className="px-4 py-3"><span className="sr-only">Price</span></th> : null}</tr></thead>
+            <thead className="border-b border-[#e8ebe8] bg-[#f5f5f5] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Product</th><th className="px-4 py-3 font-medium">SKU</th><th className="px-4 py-3 font-medium">Type</th><th className="px-4 py-3 font-medium">Condition</th><th className="px-4 py-3 text-right font-medium">On hand</th><th className="px-4 py-3 text-right font-medium">Reserved</th><th className="px-4 py-3 text-right font-medium">Available</th>{canSeeCost ? <th className="px-4 py-3 text-right font-medium">Cost</th> : null}<th className="px-4 py-3 text-right font-medium">Selling price</th><th className="px-4 py-3 font-medium">Stock status</th>{canEditPrices ? <th className="px-4 py-3"><span className="sr-only">Price</span></th> : null}</tr></thead>
             <tbody className="divide-y divide-[#e5e5e5]">
-              {loading ? <tr><td colSpan={(canSeeCost ? 11 : 10) + (canEditPrices ? 1 : 0)} className="px-4 py-8 text-center text-sm text-[#69746c]">Loading live branch stock…</td></tr> : filteredItems.map((item) => {
+              {loading ? <tr><td colSpan={(canSeeCost ? 10 : 9) + (canEditPrices ? 1 : 0)} className="px-4 py-8 text-center text-sm text-[#69746c]">Loading live branch stock…</td></tr> : filteredItems.map((item) => {
                 const available = item.stockOnHand - item.reservedStock;
                 const threshold = reorderThreshold(item.reorderLevel, item.product.reorderLevel);
                 const low = needsReorder(available, item.reorderLevel, item.product.reorderLevel);
                 const stockLabel = low ? "Reorder" : threshold === 0 ? "No alert set" : available <= 0 ? "Out of stock" : "In stock";
                 const editing = priceDraft?.productId === item.product.id;
-                return <tr key={item.id} className="hover:bg-[#f5f5f5]"><td className="px-4 py-3 font-medium">{item.product.name}{item.product.imei && (item.product.condition === "EX_UK" || item.product.condition === "TRADE_IN") ? <button type="button" onClick={() => printPhoneLabel(labelFromInventoryItem(item.product))} className="mt-1 block text-[10px] font-semibold text-[#526057] hover:text-[#111111]">Print 90×50 mm label</button> : null}</td><td className="px-4 py-3 font-mono text-xs text-[#69746c]">{item.product.sku}</td><td className="px-4 py-3 text-[#69746c]">{item.product.category}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.product.condition === "TRADE_IN" ? "bg-[#fff2e8] text-[#8a4b2f]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}>{conditionLabels[item.product.condition] ?? item.product.condition}</span></td><td className="px-4 py-3 text-right tabular-nums">{item.stockOnHand}</td><td className="px-4 py-3 text-right tabular-nums">{item.reservedStock}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{available}</td>{canSeeCost ? <td className="px-4 py-3 text-right tabular-nums">{editing ? <input aria-label={`Buying price for ${item.product.name}`} type="number" inputMode="numeric" min={0} value={priceDraft.costPrice} onChange={(event) => setPriceDraft({ ...priceDraft, costPrice: event.target.value })} className="h-10 w-28 rounded-lg border border-[#c4c4c4] px-2 text-right text-sm"/> : item.product.costPrice ? money(item.product.costPrice) : <span className="text-xs text-[#a15d3d]">Not set</span>}</td> : null}<td className="px-4 py-3 text-right tabular-nums">{editing ? <input autoFocus aria-label={`Selling price for ${item.product.name}`} type="number" inputMode="numeric" min={1} value={priceDraft.sellingPrice} onChange={(event) => setPriceDraft({ ...priceDraft, sellingPrice: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") void savePrice(); if (event.key === "Escape") setPriceDraft(null); }} className="h-10 w-28 rounded-lg border border-[#111111] px-2 text-right text-sm font-semibold"/> : money(item.product.sellingPrice)}</td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${low ? "bg-[#fff1ed] text-[#a85644]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}><span className={`h-1.5 w-1.5 rounded-full ${low ? "bg-[#bd724e]" : "bg-[#4a4a4a]"}`} />{stockLabel}</span></td><td className="whitespace-nowrap px-4 py-2">{canToggleWebsite ? <button type="button" disabled={togglingId === item.product.id} onClick={() => void toggleWebsite(item)} className={`min-h-10 rounded-lg px-3 text-xs font-semibold ${item.product.showOnWebsite ? "bg-[#111111] text-white" : "border border-[#c4c4c4] text-[#2d2d2d] hover:bg-white"}`}>{togglingId === item.product.id ? "Saving…" : item.product.showOnWebsite ? "On website" : "Hidden"}</button> : <span className="text-xs text-[#69746c]">{item.product.showOnWebsite ? "On website" : "Hidden"}</span>}</td>{canEditPrices ? <td className="whitespace-nowrap px-4 py-2 text-right">{editing ? <span className="inline-flex gap-1.5"><button type="button" disabled={savingPrice || !(Number(priceDraft.sellingPrice) > 0)} onClick={() => void savePrice()} className="min-h-10 rounded-lg bg-[#111111] px-3 text-xs font-semibold text-white disabled:opacity-50">{savingPrice ? "Saving…" : "Save"}</button><button type="button" onClick={() => setPriceDraft(null)} className="min-h-10 rounded-lg border border-[#c4c4c4] px-3 text-xs font-semibold">Cancel</button></span> : <button type="button" onClick={() => setPriceDraft({ productId: item.product.id, sellingPrice: String(item.product.sellingPrice), costPrice: item.product.costPrice ? String(item.product.costPrice) : "" })} className="min-h-10 rounded-lg border border-[#c4c4c4] px-3 text-xs font-semibold text-[#2d2d2d] hover:bg-white">Edit price</button>}</td> : null}</tr>;
+                return <tr key={item.id} className="hover:bg-[#f5f5f5]"><td className="px-4 py-3 font-medium">{item.product.name}{item.product.imei && (item.product.condition === "EX_UK" || item.product.condition === "TRADE_IN") ? <button type="button" onClick={() => printPhoneLabel(labelFromInventoryItem(item.product))} className="mt-1 block text-[10px] font-semibold text-[#526057] hover:text-[#111111]">Print 90×50 mm label</button> : null}</td><td className="px-4 py-3 font-mono text-xs text-[#69746c]">{item.product.sku}</td><td className="px-4 py-3 text-[#69746c]">{item.product.category}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.product.condition === "TRADE_IN" ? "bg-[#fff2e8] text-[#8a4b2f]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}>{conditionLabels[item.product.condition] ?? item.product.condition}</span></td><td className="px-4 py-3 text-right tabular-nums">{item.stockOnHand}</td><td className="px-4 py-3 text-right tabular-nums">{item.reservedStock}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{available}</td>{canSeeCost ? <td className="px-4 py-3 text-right tabular-nums">{editing ? <input aria-label={`Buying price for ${item.product.name}`} type="number" inputMode="numeric" min={0} value={priceDraft.costPrice} onChange={(event) => setPriceDraft({ ...priceDraft, costPrice: event.target.value })} className="h-10 w-28 rounded-lg border border-[#c4c4c4] px-2 text-right text-sm"/> : item.product.costPrice ? money(item.product.costPrice) : <span className="text-xs text-[#a15d3d]">Not set</span>}</td> : null}<td className="px-4 py-3 text-right tabular-nums">{editing ? <input autoFocus aria-label={`Selling price for ${item.product.name}`} type="number" inputMode="numeric" min={1} value={priceDraft.sellingPrice} onChange={(event) => setPriceDraft({ ...priceDraft, sellingPrice: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") void savePrice(); if (event.key === "Escape") setPriceDraft(null); }} className="h-10 w-28 rounded-lg border border-[#111111] px-2 text-right text-sm font-semibold"/> : money(item.product.sellingPrice)}</td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${low ? "bg-[#fff1ed] text-[#a85644]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}><span className={`h-1.5 w-1.5 rounded-full ${low ? "bg-[#bd724e]" : "bg-[#4a4a4a]"}`} />{stockLabel}</span></td>{canEditPrices ? <td className="whitespace-nowrap px-4 py-2 text-right">{editing ? <span className="inline-flex gap-1.5"><button type="button" disabled={savingPrice || !(Number(priceDraft.sellingPrice) > 0)} onClick={() => void savePrice()} className="min-h-10 rounded-lg bg-[#111111] px-3 text-xs font-semibold text-white disabled:opacity-50">{savingPrice ? "Saving…" : "Save"}</button><button type="button" onClick={() => setPriceDraft(null)} className="min-h-10 rounded-lg border border-[#c4c4c4] px-3 text-xs font-semibold">Cancel</button></span> : <button type="button" onClick={() => setPriceDraft({ productId: item.product.id, sellingPrice: String(item.product.sellingPrice), costPrice: item.product.costPrice ? String(item.product.costPrice) : "" })} className="min-h-10 rounded-lg border border-[#c4c4c4] px-3 text-xs font-semibold text-[#2d2d2d] hover:bg-white">Edit price</button>}</td> : null}</tr>;
               })}
-              {!loading && !filteredItems.length ? <tr><td colSpan={(canSeeCost ? 11 : 10) + (canEditPrices ? 1 : 0)} className="px-4 py-9 text-center"><p className="text-sm font-semibold">{items.length ? "No matching stock records" : "No stock records for this branch"}</p><p className="mt-1 text-sm text-[#69746c]">{items.length ? "Try another search." : "Products must be configured for this branch before stock can be received."}</p></td></tr> : null}
+              {!loading && !filteredItems.length ? <tr><td colSpan={(canSeeCost ? 10 : 9) + (canEditPrices ? 1 : 0)} className="px-4 py-9 text-center"><p className="text-sm font-semibold">{items.length ? "No matching stock records" : "No stock records for this branch"}</p><p className="mt-1 text-sm text-[#69746c]">{items.length ? "Try another search." : "Products must be configured for this branch before stock can be received."}</p></td></tr> : null}
             </tbody>
           </table></div>
         </section>

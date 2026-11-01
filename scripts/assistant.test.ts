@@ -14,7 +14,7 @@ test("the super admin gets every tool, including footprints and direct database 
   assert.ok(owner.includes("finance_footprint"));
   assert.ok(owner.includes("user_footprints"));
   assert.ok(owner.includes("customer_footprints"));
-  assert.ok(owner.includes("website_shop"));
+  assert.ok(!owner.includes("website_shop"));
   assert.ok(owner.includes("sales_summary"));
 });
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { listingKey, websiteCatalogListings, websiteCatalogSku } from "../src/lib/website-catalog";
-import { canAccessPage, hasPermission, resolvePermissions } from "../src/lib/access";
+import { canAccessPage, resolvePermissions } from "../src/lib/access";
 
 test("ex-uk sku is distinct from the new sku for the same listing", () => {
   const listing = websiteCatalogListings[0];
@@ -36,11 +36,10 @@ test("older iPads that were not on the new price list are not auto-listed", () =
   );
 });
 
-test("owners and managers can open the website catalog; cashiers cannot", () => {
-  const owner = { role: "OWNER", ...resolvePermissions("OWNER", [], []) };
-  const manager = { role: "BRANCH_MANAGER", ...resolvePermissions("BRANCH_MANAGER", [], []) };
-  const cashier = { role: "CASHIER", ...resolvePermissions("CASHIER", [], []) };
-  assert.equal(hasPermission(owner, "website.view"), true);
-  assert.equal(canAccessPage(manager, "/website"), true);
-  assert.equal(canAccessPage(cashier, "/website"), false);
+test("the website section is gone from operations for every role", () => {
+  for (const role of ["OWNER", "BRANCH_MANAGER", "CASHIER"]) {
+    const user = { role, ...resolvePermissions(role, [{ permission: "website.view", mode: "FULL" }], []) };
+    assert.equal(canAccessPage(user, "/website"), false);
+    assert.equal(user.permissions.includes("website.view"), false);
+  }
 });

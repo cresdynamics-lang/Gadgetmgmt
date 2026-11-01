@@ -18,7 +18,6 @@ const productSelect = {
   configuration: true,
   productGroup: true,
   sellingPrice: true,
-  showOnWebsite: true,
   websiteProductId: true,
   websiteVariantKey: true,
   branchId: true,
@@ -57,7 +56,6 @@ export async function GET() {
       configuration: product.configuration,
       productGroup: product.productGroup,
       sellingPrice: product.sellingPrice,
-      showOnWebsite: product.showOnWebsite,
       websiteProductId: product.websiteProductId,
       websiteVariantKey: product.websiteVariantKey,
       stockOnHand: product.inventory.reduce((sum, row) => sum + row.stockOnHand, 0),
@@ -68,7 +66,6 @@ export async function GET() {
   return NextResponse.json({
     rows,
     canEditPrices: hasPermission(session.user, "products.price"),
-    canToggleWebsite: hasPermission(session.user, "products.price") || hasPermission(session.user, "inventory.receive"),
   });
 }
 
@@ -81,17 +78,9 @@ const patchSchema = z
     exUkProductId: z.string().cuid().optional(),
     newPrice: z.number().int().positive().max(2_000_000_000).nullable().optional(),
     exUkPrice: z.number().int().positive().max(2_000_000_000).nullable().optional(),
-    newShowOnWebsite: z.boolean().optional(),
-    exUkShowOnWebsite: z.boolean().optional(),
   })
   .strict()
-  .refine(
-    (data) =>
-      data.newPrice !== undefined ||
-      data.exUkPrice !== undefined ||
-      data.newShowOnWebsite !== undefined ||
-      data.exUkShowOnWebsite !== undefined,
-  );
+  .refine((data) => data.newPrice !== undefined || data.exUkPrice !== undefined);
 
 async function uniqueSku(sku: string) {
   const taken = await prisma.product.findUnique({ where: { sku }, select: { id: true } });
@@ -107,13 +96,8 @@ export async function PATCH(request: Request) {
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid New or Ex-UK catalog change." }, { status: 400 });
 
-  const changingPrice = parsed.data.newPrice != null || parsed.data.exUkPrice != null;
-  const changingVisibility = parsed.data.newShowOnWebsite !== undefined || parsed.data.exUkShowOnWebsite !== undefined;
-  if (changingPrice && !hasPermission(session.user, "products.price")) {
+  if (!hasPermission(session.user, "products.price")) {
     return denied(session.user, "products.price", "Your permissions cannot change product prices.");
-  }
-  if (changingVisibility && !hasPermission(session.user, "products.price") && !hasPermission(session.user, "inventory.receive")) {
-    return denied(session.user, "inventory.receive", "Your permissions cannot change website visibility.");
   }
 
   const branchFilter = canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" };
@@ -150,7 +134,7 @@ export async function PATCH(request: Request) {
   const source = newProducts[0] ?? exUkProducts[0];
   if (!source) return NextResponse.json({ error: "That listing was not found." }, { status: 404 });
 
-  const updates: { id: string; sellingPrice: number; showOnWebsite: boolean }[] = [];
+  const updates: { id: string; sellingPrice: number }[] = [];
   const created: { id: string; sku: string; condition: "NEW" | "EX_UK" }[] = [];
   const summaries: string[] = [];
 
@@ -158,35 +142,23 @@ export async function PATCH(request: Request) {
     condition: "NEW" | "EX_UK",
     rows: typeof products,
     price: number | null | undefined,
-    showOnWebsite: boolean | undefined,
   ) {
-    if (price === undefined && showOnWebsite === undefined) return;
+    if (price == null) return;
 
     if (rows.length) {
       for (const product of rows) {
-        const nextPrice = price ?? product.sellingPrice;
-        const nextShow = showOnWebsite ?? product.showOnWebsite;
-        if (nextPrice === product.sellingPrice && nextShow === product.showOnWebsite) continue;
+        if (price === product.sellingPrice) continue;
         const updated = await prisma.product.update({
           where: { id: product.id },
-          data: {
-            ...(price != null ? { sellingPrice: price } : {}),
-            ...(showOnWebsite !== undefined ? { showOnWebsite } : {}),
-          },
-          select: { id: true, sellingPrice: true, showOnWebsite: true },
+          data: { sellingPrice: price },
+          select: { id: true, sellingPrice: true },
         });
         updates.push(updated);
-        if (price != null && price !== product.sellingPrice) {
-          summaries.push(`${condition === "EX_UK" ? "Ex-UK" : "New"} price KES ${product.sellingPrice.toLocaleString("en-KE")} → ${price.toLocaleString("en-KE")}`);
-        }
-        if (showOnWebsite !== undefined && showOnWebsite !== product.showOnWebsite) {
-          summaries.push(`${condition === "EX_UK" ? "Ex-UK" : "New"} ${showOnWebsite ? "shown on website" : "hidden from website"}`);
-        }
+        summaries.push(`${condition === "EX_UK" ? "Ex-UK" : "New"} price KES ${product.sellingPrice.toLocaleString("en-KE")} → ${price.toLocaleString("en-KE")}`);
       }
       return;
     }
 
-    if (price == null) return;
     const sku = await uniqueSku(
       catalogSiblingSku(source.websiteProductId, source.websiteVariantKey, source.sku, condition),
     );
@@ -204,28 +176,27 @@ export async function PATCH(request: Request) {
         condition,
         costPrice: source.costPrice,
         sellingPrice: price,
-        showOnWebsite: showOnWebsite ?? true,
         branchId: source.branchId,
         inventory: {
           create: { branchId: source.branchId, stockOnHand: 0 },
         },
       },
-      select: { id: true, sku: true, sellingPrice: true, showOnWebsite: true },
+      select: { id: true, sku: true, sellingPrice: true },
     });
     created.push({ id: createdProduct.id, sku: createdProduct.sku, condition });
-    updates.push({ id: createdProduct.id, sellingPrice: createdProduct.sellingPrice, showOnWebsite: createdProduct.showOnWebsite });
+    updates.push({ id: createdProduct.id, sellingPrice: createdProduct.sellingPrice });
     summaries.push(`added ${condition === "EX_UK" ? "Ex-UK" : "New"} at KES ${price.toLocaleString("en-KE")}`);
   }
 
-  await applyCondition("NEW", newProducts, parsed.data.newPrice, parsed.data.newShowOnWebsite);
-  await applyCondition("EX_UK", exUkProducts, parsed.data.exUkPrice, parsed.data.exUkShowOnWebsite);
+  await applyCondition("NEW", newProducts, parsed.data.newPrice);
+  await applyCondition("EX_UK", exUkProducts, parsed.data.exUkPrice);
 
   if (summaries.length) {
     await recordActivity({
       userId: session.user.id,
       sessionId: session.user.sessionId,
-      action: changingPrice ? "PRICE_UPDATED" : "WEBSITE_VISIBILITY",
-      summary: `Updated website listing ${source.name}: ${summaries.join(", ")}`,
+      action: "PRICE_UPDATED",
+      summary: `Updated prices for ${source.name}: ${summaries.join(", ")}`,
       entityType: "Product",
       entityId: source.id,
     });

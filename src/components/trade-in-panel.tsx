@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
-import { Camera, CameraOff, Check, ChevronLeft, ChevronRight, Printer, Repeat2, X } from "lucide-react";
+import { useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
+import { Check, ChevronLeft, ChevronRight, Printer, Repeat2, X } from "lucide-react";
 
 import { parseDeviceScan } from "@/lib/device-scan";
 import { BatteryHealthField, PhoneLabelPreview } from "@/components/phone-label-preview";
 import { PHONE_LABEL, printPhoneLabel, type PhoneLabelData } from "@/lib/phone-label";
+import { DeviceCamera } from "@/components/device-camera";
+import { useScanHandler } from "@/lib/scanner";
 
 import {
   assessTradeIn,
@@ -187,9 +189,6 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
   const [step, setStep] = useState(0);
   const [otherModel, setOtherModel] = useState(false);
   const [scanCode, setScanCode] = useState("");
-  const [cameraOn, setCameraOn] = useState(false);
-  const [cameraReady, setCameraReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const lastScanRef = useRef({ code: "", at: 0 });
   // Build on the latest form so quick taps never overwrite each other.
   const update = (changes: Partial<TradeInForm>) => onChange((current) => ({ ...current, ...changes }));
@@ -209,51 +208,8 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
     });
   }
 
-  useEffect(() => {
-    if (!cameraOn) return;
-    const video = videoRef.current;
-    const Detector = (window as unknown as { BarcodeDetector?: new (options?: { formats?: string[] }) => { detect: (source: ImageBitmapSource) => Promise<{ rawValue: string }[]> } }).BarcodeDetector;
-    if (!video || !Detector || !navigator.mediaDevices?.getUserMedia) {
-      setCameraOn(false);
-      return;
-    }
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-    let timer: number | null = null;
-    void (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        video.srcObject = stream;
-        await video.play();
-        let detector: { detect: (source: ImageBitmapSource) => Promise<{ rawValue: string }[]> };
-        try {
-          detector = new Detector({ formats: ["code_128", "code_39", "ean_13", "qr_code", "data_matrix"] });
-        } catch {
-          detector = new Detector();
-        }
-        setCameraReady(true);
-        timer = window.setInterval(() => {
-          void detector.detect(video).then((found) => {
-            const value = found[0]?.rawValue?.trim();
-            if (value) applyScan(value);
-          }).catch(() => undefined);
-        }, 280);
-      } catch {
-        if (!cancelled) setCameraOn(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (timer) window.clearInterval(timer);
-      stream?.getTracks().forEach((track) => track.stop());
-      video.srcObject = null;
-      setCameraReady(false);
-    };
-  }, [cameraOn]);
+  // The USB scanner fills the device step while it is open.
+  useScanHandler((code) => applyScan(code), form.active && step === 1);
 
   function onScanKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" && event.key !== "Tab") return;
@@ -301,19 +257,8 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
 
       {step === 1 ? <>
         <div>
-          <div className="flex items-center justify-between gap-2">
-            <p className={labelClass}>Scan Settings → About, IMEI or QR</p>
-            <button type="button" onClick={() => setCameraOn((current) => !current)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#d4d4d4] bg-white px-2.5 text-[11px] font-semibold text-[#2d2d2d]">
-              {cameraOn ? <CameraOff className="h-3.5 w-3.5" /> : <Camera className="h-3.5 w-3.5" />}
-              {cameraOn ? "Stop camera" : "Use camera"}
-            </button>
-          </div>
-          {cameraOn ? (
-            <div className="mt-1.5 overflow-hidden rounded-xl bg-[#111111]">
-              <video ref={videoRef} className="inventory-scan-video" muted playsInline autoPlay />
-              {!cameraReady ? <p className="px-3 py-2 text-xs text-white/80">Opening camera…</p> : null}
-            </div>
-          ) : null}
+          <p className={labelClass}>Scan the phone, or use the camera</p>
+          <div className="mt-1.5"><DeviceCamera onCode={applyScan}/></div>
           <textarea
             value={scanCode}
             onChange={(event) => setScanCode(event.target.value)}
@@ -322,10 +267,10 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            placeholder="Click, then scan or paste About / IMEI / QR"
+            placeholder="Scanned or pasted About / IMEI / QR shows here"
             className={`${fieldClass} h-auto min-h-12 py-2 font-mono tracking-wide`}
           />
-          <p className="mt-1 text-[11px] text-[#6b6b6b]">USB scanner or camera fills the model, IMEI, serial, storage and battery. Print sends a 90 × 50 mm phone label to the label printer.</p>
+          <p className="mt-1 text-[11px] text-[#6b6b6b]">The USB scanner works without clicking here. The camera reads codes by itself, and Read screen fills the details from Settings → General → About. Enter anything it could not show below. Print sends a 90 × 50 mm phone label to the label printer.</p>
         </div>
         <div><p className={labelClass}>Brand</p><div className="mt-1.5 grid grid-cols-2 gap-2">{tradeInBrands.map((brand) => <Choice key={brand} selected={form.brand === brand} onClick={() => { setOtherModel(false); update({ brand, deviceType: "", model: "", storage: "" }); }}>{tradeInBrandLabel(brand)}</Choice>)}</div></div>
         {form.brand ? <div><p className={labelClass}>Device</p><div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.keys(tradeInDevices[form.brand]).map((device) => <Choice key={device} selected={form.deviceType === device} onClick={() => { setOtherModel(false); update({ deviceType: device, model: "", storage: "" }); }}>{device}</Choice>)}</div></div> : null}

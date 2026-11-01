@@ -36,11 +36,11 @@ test("only inventory and finance extras can require a code", () => {
   assert.equal(canBeConditioned("customers.view"), false);
   const grants = normalizeStaffGrants("CASHIER", [
     { permission: "inventory.receive", mode: "RESTRICTED", sessionMinutes: 20 },
-    { permission: "website.view", mode: "RESTRICTED" },
+    { permission: "staff.view", mode: "RESTRICTED" },
     { permission: "permissions.manage", mode: "FULL" },
   ]);
   assert.deepEqual(grants.find((grant) => grant.permission === "inventory.receive"), { permission: "inventory.receive", mode: "RESTRICTED", sessionMinutes: 20 });
-  assert.equal(grants.find((grant) => grant.permission === "website.view")?.mode, "FULL");
+  assert.equal(grants.find((grant) => grant.permission === "staff.view")?.mode, "FULL");
   assert.equal(grants.some((grant) => grant.permission === "permissions.manage"), false);
 });
 

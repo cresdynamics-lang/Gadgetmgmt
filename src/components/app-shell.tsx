@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Activity, ArrowDown, ChartNoAxesCombined, ArrowUpRight, Boxes, ChevronDown, CreditCard, Globe, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft, ScanLine, FileText } from "lucide-react";
+import { Activity, ArrowDown, ChartNoAxesCombined, ArrowUpRight, Boxes, ChevronDown, CreditCard, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft, ScanLine, FileText } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { navItems } from "@/lib/navigation";
@@ -12,6 +12,7 @@ import { canAccessPage, hasPermission, type AccessSubject } from "@/lib/access";
 import { ApprovalGate } from "@/components/approval-gate";
 import { AssistantDock } from "@/components/assistant-dock";
 import { BrandLogo } from "@/components/brand-logo";
+import { dispatchScan, hasScanHandler, useKeyboardScanner } from "@/lib/scanner";
 
 const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/dashboard": LayoutDashboard,
@@ -20,7 +21,6 @@ const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/invoices": FileText,
   "/inventory": Boxes,
   "/devices": ScanLine,
-  "/website": Globe,
   "/customers": UsersRound,
   "/credit": CreditCard,
   "/staff": UserRound,
@@ -74,6 +74,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const displayName = session?.user?.name ?? "Team member";
   const initials = displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   const role = session?.user.role ?? "";
+
+  // A scan from the USB scanner goes to whatever screen takes scans. Anywhere else (except the POS,
+  // which reads scans in its own fields) it opens Scan arrivals with that phone's details.
+  const scansOpenInventory = !pathname.startsWith("/sales") && hasPermission(session?.user, "inventory.view");
+  useKeyboardScanner((code) => {
+    if (dispatchScan(code) || !scansOpenInventory) return;
+    router.push(`/inventory?scan=${encodeURIComponent(code)}`);
+  }, () => hasScanHandler() || scansOpenInventory);
   const commands = useMemo(() => navItems
     .filter(({ href }) => canAccessPage(session?.user, href))
     .map((item) => ({ ...item, keywords: `${item.label} ${item.href}`.toLowerCase() }))
@@ -82,20 +90,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session?.user.id) return;
     const source = new EventSource("/api/realtime");
-    const refresh = () => {
+    // The first version (and the first after a reconnect) is the baseline; only a different one refreshes.
+    let seen = "";
+    source.onmessage = (event) => {
+      let version = "";
+      try { version = (JSON.parse(event.data) as { version?: string }).version ?? ""; } catch { return; }
+      if (!version || version === seen) return;
+      const changed = seen !== "";
+      seen = version;
+      if (!changed) return;
       router.refresh();
       window.dispatchEvent(new Event("gadgethub:live"));
     };
-    source.onmessage = refresh;
-    const onOnline = () => { if (navigator.onLine) refresh(); };
-    window.addEventListener("online", onOnline);
-    const visibility = () => { if (document.visibilityState === "visible" && navigator.onLine) refresh(); };
-    document.addEventListener("visibilitychange", visibility);
-    return () => {
-      source.close();
-      window.removeEventListener("online", onOnline);
-      document.removeEventListener("visibilitychange", visibility);
-    };
+    return () => source.close();
   }, [router, session?.user.id]);
 
   useEffect(() => {
@@ -161,7 +168,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const desktop = window.matchMedia("(min-width: 1024px)");
+    const desktop = window.matchMedia("(min-width: 768px)");
     const onChange = () => { if (desktop.matches) setMenuOpen(false); };
     desktop.addEventListener("change", onChange);
     return () => desktop.removeEventListener("change", onChange);

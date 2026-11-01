@@ -4,7 +4,6 @@ export type WebsiteUpdateOffer = {
   productIds: string[];
   sku: string;
   sellingPrice: number;
-  showOnWebsite: boolean;
   available: number;
   stockOnHand: number;
   colour: string | null;
@@ -32,7 +31,6 @@ export type GroupableProduct = {
   configuration: string | null;
   productGroup: string | null;
   sellingPrice: number;
-  showOnWebsite: boolean;
   websiteProductId: string | null;
   websiteVariantKey: string | null;
   stockOnHand: number;
@@ -57,7 +55,6 @@ function mergeOffer(current: WebsiteUpdateOffer | null, product: GroupableProduc
       productIds: [product.id],
       sku: product.sku,
       sellingPrice: product.sellingPrice,
-      showOnWebsite: product.showOnWebsite,
       available,
       stockOnHand: product.stockOnHand,
       colour: product.colour,
@@ -67,7 +64,6 @@ function mergeOffer(current: WebsiteUpdateOffer | null, product: GroupableProduc
     productIds: current.productIds.includes(product.id) ? current.productIds : [...current.productIds, product.id],
     sku: current.sku,
     sellingPrice: current.sellingPrice,
-    showOnWebsite: current.showOnWebsite || product.showOnWebsite,
     available: current.available + available,
     stockOnHand: current.stockOnHand + product.stockOnHand,
     colour: current.colour || product.colour,

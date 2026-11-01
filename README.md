@@ -30,7 +30,7 @@ Multi-branch retail operations app built with Next.js, Auth.js, Prisma, and Post
    ```bash
    npm run dev
    ```
-7. Open http://localhost:3000 and sign in using `INITIAL_OWNER_EMAIL` and `INITIAL_OWNER_PASSWORD`.
+7. Open http://localhost:3001 and sign in using `INITIAL_OWNER_EMAIL` and `INITIAL_OWNER_PASSWORD`.
 
 For production, generate `NEXTAUTH_SECRET` with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Use the database provider's pooled connection URL for application traffic, enable TLS with `sslmode=require`, and retain a separate direct URL for schema deployment if the provider requires one.
 

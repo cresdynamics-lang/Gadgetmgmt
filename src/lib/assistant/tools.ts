@@ -1,10 +1,8 @@
 import { canSeeAllBranches, hasPermission, type AccessSubject, type Permission } from "@/lib/access";
 import { sessionPresence } from "@/lib/activity";
-import { getSetting } from "@/lib/app-settings";
 import { daysUntilDue, flaggedCreditStatuses } from "@/lib/credit-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { addDays, nairobiDateKey, nairobiMidnight, startOfNairobiDay, startOfNairobiMonth, startOfNairobiWeek, startOfNextNairobiMonth } from "@/lib/sales-periods";
-import { parseWebsiteLiveSnapshot, WEBSITE_LIVE_KEY, websiteLiveStale } from "@/lib/website-live";
 
 /**
  * Read-only tools the AI assistant can call. Each tool needs a permission: the assistant is only
@@ -353,7 +351,7 @@ const staffList: AssistantTool = {
 const financeFootprint: AssistantTool = {
   name: "finance_footprint",
   label: "Finance footprint",
-  description: "Full money trail: cash/M-Pesa/card received today and this month, Lipa collections and outstanding balances, website paid orders, and stock value at cost.",
+  description: "Full money trail: cash/M-Pesa/card received today and this month, Lipa collections and outstanding balances, and stock value at cost.",
   permissions: ["finance.view"],
   parameters: { type: "object", properties: {}, additionalProperties: false },
   async run(_args, user, now) {
@@ -371,11 +369,10 @@ const financeFootprint: AssistantTool = {
       const lipaTotal = lipa._sum.amount ?? 0;
       return { salePayments, lipaInstallments: { amount: lipaTotal, count: lipa._count }, totalReceived: salePayments.reduce((sum, row) => sum + row.amount, 0) + lipaTotal };
     };
-    const [today, thisMonth, outstanding, websitePaid, stock] = await Promise.all([
+    const [today, thisMonth, outstanding, stock] = await Promise.all([
       received(todayStart, todayEnd),
       received(monthStart, monthEnd),
       prisma.creditPlan.aggregate({ where: { ...scope, balance: { gt: 0 }, NOT: { status: "PAID_OFF" as const } }, _sum: { balance: true }, _count: true }),
-      prisma.websiteOrder.aggregate({ where: { paidAt: { gte: monthStart, lt: monthEnd } }, _sum: { paidAmount: true, subtotalKes: true }, _count: true }),
       prisma.inventoryItem.findMany({ where: scope, select: { stockOnHand: true, product: { select: { costPrice: true } } } }),
     ]);
     return {
@@ -383,7 +380,6 @@ const financeFootprint: AssistantTool = {
       today: { date: day(todayStart), ...today },
       thisMonth: { from: day(monthStart), to: day(addDays(monthEnd, -1)), ...thisMonth },
       lipaOutstanding: { accounts: outstanding._count, owed: outstanding._sum.balance ?? 0 },
-      websitePaidThisMonth: { orders: websitePaid._count, paid: websitePaid._sum.paidAmount ?? 0, catalog: websitePaid._sum.subtotalKes ?? 0 },
       stockValueAtCost: stock.reduce((sum, item) => sum + item.stockOnHand * item.product.costPrice, 0),
       mpesaSettlesTo: process.env.MPESA_SETTLEMENT_BANK || "Stanbic Bank",
     };
@@ -447,7 +443,7 @@ const userFootprints: AssistantTool = {
 const customerFootprints: AssistantTool = {
   name: "customer_footprints",
   label: "Customer footprints",
-  description: "All customer trails: recent customers, flagged accounts, Lipa balances, shop purchases, website orders and contact messages matching their phone.",
+  description: "All customer trails: recent customers, flagged accounts, Lipa balances and shop purchases.",
   permissions: ["customers.view"],
   parameters: {
     type: "object",
@@ -462,7 +458,6 @@ const customerFootprints: AssistantTool = {
     const only = args.only === "flagged" ? "flagged" : args.only === "all" ? "all" : "recent";
     const canSeeCredit = hasPermission(user, "credit.view");
     const canSeeSales = hasPermission(user, "reports.view");
-    const canSeeWebsite = hasPermission(user, "website.view");
     const customers = await prisma.customer.findMany({
       where: {
         ...branchScope(user),
@@ -479,13 +474,6 @@ const customerFootprints: AssistantTool = {
         sales: { where: { status: completed }, orderBy: { createdAt: "desc" }, take: 3, select: { invoiceNumber: true, total: true, createdAt: true, paymentMethod: true } },
       },
     });
-    const phones = [...new Set(customers.map((customer) => customer.phone).filter(Boolean))];
-    const [websiteOrders, websiteMessages] = canSeeWebsite
-      ? await Promise.all([
-          prisma.websiteOrder.findMany({ where: phones.length ? { customerPhone: { in: phones } } : { id: "" }, orderBy: { createdAt: "desc" }, take: 40, select: { externalId: true, status: true, customerName: true, customerPhone: true, subtotalKes: true, paidAmount: true, createdAt: true } }),
-          prisma.websiteMessage.findMany({ where: phones.length ? { phone: { in: phones } } : { id: "" }, orderBy: { createdAt: "desc" }, take: 40, select: { externalId: true, kind: true, name: true, phone: true, topic: true, body: true, createdAt: true } }),
-        ])
-      : [[], []];
     return {
       count: customers.length,
       customers: customers.map((customer) => ({
@@ -495,56 +483,12 @@ const customerFootprints: AssistantTool = {
         ...(canSeeCredit ? { lipaOwed: customer.creditPlans.reduce((sum, plan) => sum + plan.balance, 0), lipaAccounts: customer.creditPlans.map((plan) => ({ plan: plan.planReference, product: plan.product.name, owed: plan.balance, nextDue: day(plan.nextDueDate), status: plan.status })) } : {}),
         ...(canSeeSales ? { recentPurchases: customer.sales.map((sale) => ({ invoice: sale.invoiceNumber, total: sale.total, date: day(sale.createdAt), paidBy: sale.paymentMethod })) } : {}),
       })),
-      ...(canSeeWebsite ? {
-        websiteOrders: websiteOrders.map((order) => ({ id: order.externalId, customer: order.customerName, phone: order.customerPhone, status: order.status, amount: order.subtotalKes, paid: order.paidAmount, date: day(order.createdAt) })),
-        websiteMessages: websiteMessages.map((message) => ({ id: message.externalId, kind: message.kind, name: message.name, phone: message.phone, topic: message.topic, body: message.body, date: day(message.createdAt) })),
-      } : {}),
-    };
-  },
-};
-
-const websiteShop: AssistantTool = {
-  name: "website_shop",
-  label: "Website shop",
-  description: "Operations website-admin records stored in this app only. The public shop is standalone and does not feed live visitors, WhatsApp taps or orders here.",
-  permissions: ["website.view"],
-  parameters: { type: "object", properties: {}, additionalProperties: false },
-  async run() {
-    const snapshot = parseWebsiteLiveSnapshot(await getSetting(WEBSITE_LIVE_KEY));
-    const [orders, messages, orderCount, messageCount] = await Promise.all([
-      prisma.websiteOrder.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        select: { externalId: true, status: true, customerName: true, customerPhone: true, subtotalKes: true, paidAmount: true, paymentMethod: true, createdAt: true, items: true },
-      }),
-      prisma.websiteMessage.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        select: { externalId: true, kind: true, name: true, phone: true, topic: true, body: true, orderRef: true, createdAt: true },
-      }),
-      prisma.websiteOrder.count(),
-      prisma.websiteMessage.count(),
-    ]);
-    return {
-      stale: websiteLiveStale(snapshot),
-      live: snapshot,
-      orderCount,
-      messageCount,
-      recentOrders: orders.map((order) => ({
-        id: order.externalId, status: order.status, customer: order.customerName, phone: order.customerPhone,
-        amount: order.subtotalKes, paid: order.paidAmount, paidBy: order.paymentMethod, date: day(order.createdAt),
-        items: Array.isArray(order.items) ? (order.items as { qty?: number; name?: string }[]).map((item) => `${item.qty ?? 1} × ${item.name ?? "item"}`) : [],
-      })),
-      recentMessages: messages.map((message) => ({
-        id: message.externalId, kind: message.kind, name: message.name, phone: message.phone,
-        topic: message.topic, body: message.body, orderRef: message.orderRef, date: day(message.createdAt),
-      })),
     };
   },
 };
 
 // Owner-only free-form reads. Secrets (password and token hashes, approval codes) are never returned.
-const queryableModels = ["branch", "user", "userSession", "customer", "product", "inventoryItem", "sale", "salePayment", "saleItem", "creditPlan", "creditPolicy", "creditInstallment", "creditRescheduleRequest", "creditPaymentSubmission", "payment", "paymentRequest", "mpesaC2BTransaction", "layawayOrder", "layawayPayment", "inventoryMovement", "customerNotification", "collectionFollowUp", "activityEvent", "salesTarget", "tradeIn", "userPermission", "scheduledJobRun", "customerReliabilityEvent", "websiteOrder", "websiteMessage"] as const;
+const queryableModels = ["branch", "user", "userSession", "customer", "product", "inventoryItem", "sale", "salePayment", "saleItem", "creditPlan", "creditPolicy", "creditInstallment", "creditRescheduleRequest", "creditPaymentSubmission", "payment", "paymentRequest", "mpesaC2BTransaction", "layawayOrder", "layawayPayment", "inventoryMovement", "customerNotification", "collectionFollowUp", "activityEvent", "salesTarget", "tradeIn", "userPermission", "scheduledJobRun", "customerReliabilityEvent"] as const;
 const SECRET_KEY = /hash$|secret|password|^token/i;
 
 export function stripSecrets(value: unknown): unknown {
@@ -588,7 +532,7 @@ const queryDatabase: AssistantTool = {
   },
 };
 
-export const assistantTools: AssistantTool[] = [salesSummary, moneyIn, financeFootprint, lipaAccounts, customerDetails, customerFootprints, stockLevels, recentSales, goals, activityLog, staffList, userFootprints, websiteShop, queryDatabase];
+export const assistantTools: AssistantTool[] = [salesSummary, moneyIn, financeFootprint, lipaAccounts, customerDetails, customerFootprints, stockLevels, recentSales, goals, activityLog, staffList, userFootprints, queryDatabase];
 
 /** The tools this person may use. Tools outside their permissions are never offered to the model. */
 export function toolsFor(user: AssistantUser) {
