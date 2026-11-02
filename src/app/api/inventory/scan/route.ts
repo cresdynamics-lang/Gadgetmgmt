@@ -6,11 +6,12 @@ import { canUseCapability, hasPermission } from "@/lib/access";
 import { recordActivity } from "@/lib/activity";
 import { appleCatalogHint, lookupAppleIdentity, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
 import { denied } from "@/lib/authz";
+import { productCategories } from "@/lib/catalog";
 import { deviceHasIdentity, emptyScannedDevice, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
 import { deviceIdentifiers } from "@/lib/device-units";
 import { matchScanProducts, parseScanPayload, type ScanableProduct } from "@/lib/inventory-scan";
 import { prisma } from "@/lib/prisma";
-import { receiveExUkStock, receiveProductStock, receiveTradeInStock } from "@/lib/receive-stock";
+import { receiveExUkStock, receiveNewStock, receiveProductStock, receiveTradeInStock } from "@/lib/receive-stock";
 
 const scanSelect = {
   id: true,
@@ -107,10 +108,15 @@ async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: Ret
 async function lookup(branchId: string, raw: string, condition?: string | null) {
   const parsed = parseScanPayload(raw);
   const known = await knownDevice(branchId, parseDeviceScan(raw), parsed);
-  const device = known?.device ?? parseDeviceScan(raw);
+  let device = known?.device ?? parseDeviceScan(raw);
   const identity = lookupAppleIdentity(raw) || (device.modelNumber ? lookupAppleIdentity(device.modelNumber) : null);
   if (!parsed.code && !deviceHasIdentity(device)) {
     return { code: "", kind: parsed.kind, device, known: null, catalog: appleCatalogHint(identity), suggestedCondition: null as "NEW" | "EX_UK" | null, matches: [] as ReturnType<typeof publicMatch>[] };
+  }
+  // A part number staff have already named stays known, so the next scan fills in by itself.
+  if (!identity && !device.name && device.mpn) {
+    const learned = await prisma.product.findFirst({ where: { branchId, mpn: device.mpn }, select: { name: true, category: true, productGroup: true } });
+    if (learned) device = overlayDevice(device, { name: learned.name.replace(/\s*\((?:Ex-UK|trade-in)\)\s*$/i, ""), category: learned.category, group: learned.productGroup ?? "" });
   }
   const products = await productsForBranch(branchId);
   const hits = parsed.code || device.modelNumber || device.name
@@ -155,6 +161,7 @@ const receiveSchema = z.object({
   hasBox: z.boolean().optional(),
   sellingPrice: z.coerce.number().int().positive().max(2_000_000_000).optional(),
   deviceName: z.string().trim().max(160).optional(),
+  category: z.enum(productCategories).optional(),
   imei: z.string().trim().max(20).optional(),
   serial: z.string().trim().max(20).optional(),
   mpn: z.string().trim().max(20).optional(),
@@ -186,11 +193,13 @@ function deviceFromBody(raw: string, body: z.infer<typeof receiveSchema>): Scann
   });
 }
 
-function identifiedFields(device: ScannedDevice, identity: ReturnType<typeof lookupAppleIdentity>) {
+function identifiedFields(device: ScannedDevice, identity: ReturnType<typeof lookupAppleIdentity>, chosenCategory?: string) {
   const name = device.name || identity?.name || "";
+  // What staff chose wins, then the scan, then whatever the typed name makes clear.
+  const named = lookupAppleIdentity(name);
   return {
-    name,
-    category: device.category || identity?.category || "iPhone",
+    name: device.storage && !name.toUpperCase().includes(device.storage.toUpperCase()) ? `${name} ${device.storage}`.trim() : name,
+    category: chosenCategory || device.category || identity?.category || named?.category || "",
     brand: "Apple",
     imei: device.imei || device.serial,
     mpn: device.mpn || null,
@@ -202,7 +211,7 @@ function identifiedFields(device: ScannedDevice, identity: ReturnType<typeof loo
     fmi: device.fmi || null,
     sim: device.sim || null,
     version: device.version || null,
-    productGroup: device.group || identity?.group || null,
+    productGroup: device.group || identity?.group || named?.group || name.replace(/\s+\d+\s*(GB|TB).*/i, "").trim() || null,
   };
 }
 
@@ -234,10 +243,13 @@ export async function POST(request: Request) {
   const lookupResult = await lookup(session.user.branchId, parsed.data.code, parsed.data.condition);
   const identity = lookupAppleIdentity(parsed.data.code);
   const device = deviceFromBody(parsed.data.code, parsed.data);
-  const identified = identifiedFields(device, identity);
+  const identified = identifiedFields(device, identity, parsed.data.category);
+  if (!parsed.data.productId && lookupResult.matches.length === 0 && identified.name && !identified.category) {
+    return NextResponse.json({ error: "Choose what this device is: iPhone, iPad, MacBook, Watch, AirPods or accessory.", matches: [], catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 400 });
+  }
 
   if (parsed.data.condition === "TRADE_IN" && !parsed.data.productId && lookupResult.matches.length === 0) {
-    const name = parsed.data.deviceName || identified.name;
+    const name = identified.name;
     if (!name || name === "Apple device") {
       return NextResponse.json({
         error: "Name the trade-in device, then Receive. Scan Settings → About, the IMEI barcode, or the Apple model number.",
@@ -277,7 +289,7 @@ export async function POST(request: Request) {
   }
 
   if (parsed.data.condition === "EX_UK" && !parsed.data.productId && lookupResult.matches.length === 0) {
-    const name = parsed.data.deviceName || identified.name;
+    const name = identified.name;
     if (!name || name === "Apple device") {
       return NextResponse.json({
         error: "This Ex-UK scan was recognised incompletely. Scan the QR / IMEI again, or type the model, then Receive.",
@@ -311,6 +323,42 @@ export async function POST(request: Request) {
       entityId: inventory.id,
     });
     return NextResponse.json({ ...inventory, catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
+  }
+
+  if (parsed.data.condition === "NEW" && !parsed.data.productId && lookupResult.matches.length === 0) {
+    const name = identified.name;
+    if (!name) {
+      return NextResponse.json({ error: "Name the device, then Submit.", matches: [], catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 404 });
+    }
+    // A typed model may already be stocked under the shop's own name.
+    const stocked = matchScanProducts(name, await productsForBranch(session.user.branchId), { condition: "NEW", identity: lookupAppleIdentity(name) });
+    if (stocked.length > 1) {
+      return NextResponse.json({ error: "More than one product matches. Confirm which one to receive.", matches: stocked.map((hit) => publicMatch(hit.product, hit.reason)), catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 409 });
+    }
+    if (!stocked.length) {
+      const inventory = await receiveNewStock(prisma, {
+        branchId: session.user.branchId,
+        userId: session.user.id,
+        userName: session.user.name ?? "Staff member",
+        quantity: parsed.data.quantity,
+        ...identified,
+        scannedCode: parsed.data.code,
+        vendorName: parsed.data.vendorName?.trim(),
+        reference: parsed.data.reference,
+        note: parsed.data.note,
+      });
+      if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+      await recordActivity({
+        userId: session.user.id,
+        sessionId: session.user.sessionId,
+        action: "STOCK_RECEIVED",
+        summary: `Received New ${inventory.product.name} from ${parsed.data.vendorName} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
+        entityType: "InventoryItem",
+        entityId: inventory.id,
+      });
+      return NextResponse.json({ ...inventory, catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
+    }
+    lookupResult.matches.push(publicMatch(stocked[0].product, stocked[0].reason));
   }
 
   let chosen = parsed.data.productId

@@ -1,3 +1,5 @@
+import { appleModelsFor } from "@/lib/apple-barcodes";
+
 export const tradeInBrands = ["APPLE", "SAMSUNG"] as const;
 export type TradeInBrand = (typeof tradeInBrands)[number];
 
@@ -7,6 +9,7 @@ export const tradeInDevices: Record<TradeInBrand, Record<string, { category: str
     iPhone: {
       category: "iPhone",
       models: [
+        "iPhone 18 Pro Max", "iPhone 18 Pro", "iPhone 17 Pro Max", "iPhone 17 Pro", "iPhone 17", "iPhone Air", "iPhone 17e", "iPhone 16e",
         "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
         "iPhone 12", "iPhone 12 mini", "iPhone 12 Pro", "iPhone 12 Pro Max",
         "iPhone 13", "iPhone 13 mini", "iPhone 13 Pro", "iPhone 13 Pro Max",
@@ -16,14 +19,8 @@ export const tradeInDevices: Record<TradeInBrand, Record<string, { category: str
         "iPhone SE (3rd gen)",
       ],
     },
-    iPad: {
-      category: "iPad",
-      models: ["iPad (9th gen)", "iPad (10th gen)", "iPad mini (6th gen)", "iPad Air (M1)", "iPad Air (M2)", "iPad Pro 11-inch", "iPad Pro 12.9-inch", "iPad Pro (M4)"],
-    },
-    MacBook: {
-      category: "Mac",
-      models: ["MacBook Air M1", "MacBook Air M2", "MacBook Air M3", "MacBook Pro 13-inch M1", "MacBook Pro 13-inch M2", "MacBook Pro 14-inch", "MacBook Pro 16-inch", "iMac", "Mac mini"],
-    },
+    iPad: { category: "iPad", models: appleModelsFor("iPad") },
+    MacBook: { category: "Mac", models: appleModelsFor("Mac") },
     "Apple Watch": {
       category: "Apple Watch",
       models: ["Apple Watch SE", "Apple Watch Series 7", "Apple Watch Series 8", "Apple Watch Series 9", "Apple Watch Series 10", "Apple Watch Ultra", "Apple Watch Ultra 2"],

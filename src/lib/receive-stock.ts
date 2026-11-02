@@ -358,6 +358,50 @@ export async function receiveTradeInStock(prisma: PrismaClient, input: TradeInRe
   }));
 }
 
+/** New stock of a model the shop has not stocked before: one product for the model, one record per device. */
+export async function receiveNewStock(prisma: PrismaClient, input: IdentifiedReceiveInput) {
+  const sku = `NEW-${input.name}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
+  return catchReceiveError(() => prisma.$transaction(async (transaction) => {
+    const existing = await transaction.product.findUnique({ where: { sku }, select: { id: true } });
+    const product = existing ?? await transaction.product.create({
+      data: {
+        sku,
+        mpn: input.mpn || null,
+        name: input.name,
+        category: input.category,
+        brand: input.brand || "Apple",
+        colour: null,
+        configuration: input.storage || null,
+        productGroup: input.productGroup || null,
+        condition: "NEW",
+        costPrice: input.costPrice ?? 0,
+        sellingPrice: input.sellingPrice && input.sellingPrice > 0 ? input.sellingPrice : 1,
+        branchId: input.branchId,
+        inventory: { create: { branchId: input.branchId, stockOnHand: 0 } },
+      },
+      select: { id: true },
+    });
+    const received = await receiveInTx(transaction, {
+      branchId: input.branchId,
+      productId: product.id,
+      userId: input.userId,
+      userName: input.userName,
+      quantity: input.quantity ?? 1,
+      reference: input.reference || "NEW",
+      note: input.note,
+      imei: input.imei,
+      device: deviceDetails(input),
+      scannedCode: input.scannedCode,
+      mpn: input.mpn,
+      colour: input.colour,
+      vendorName: input.vendorName,
+      sourceKind: "VENDOR",
+    });
+    if (!received) throw new ReceiveError("New stock could not be added to this branch.");
+    return received;
+  }));
+}
+
 export async function receiveExUkStock(prisma: PrismaClient, input: IdentifiedReceiveInput) {
   const imei = (input.imei || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
   const skuBase = `EXUK-${input.name}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);

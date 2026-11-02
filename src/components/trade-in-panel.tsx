@@ -127,14 +127,16 @@ export function tradeInLabelData(form: TradeInForm): PhoneLabelData {
 export function applyDeviceScanToTradeIn(raw: string, current: TradeInForm): Partial<TradeInForm> {
   const device = parseDeviceScan(raw);
   const group = (device.group || device.name).replace(/\s+\d+\s*(GB|TB).*/i, "").trim();
-  const appleModels = current.brand === "SAMSUNG"
+  // The scan decides what the device is; a bare serial leaves the choice with staff.
+  const scannedType = ({ iPhone: "iPhone", iPad: "iPad", Mac: "MacBook", "Apple Watch": "Apple Watch", AirPods: "AirPods" } as Record<string, string>)[device.category] ?? "";
+  const appleModels = current.brand === "SAMSUNG" && !scannedType
     ? tradeInDevices.SAMSUNG[current.deviceType || "Phone"]?.models ?? []
-    : tradeInDevices.APPLE.iPhone.models;
+    : tradeInDevices.APPLE[scannedType || current.deviceType || "iPhone"]?.models ?? [];
   const listed = appleModels.find((model) => model.toLowerCase() === group.toLowerCase());
   const storage = tradeInStorageSizes.find((size) => size === device.storage) || current.storage;
   return {
-    brand: current.brand || (device.category && device.category !== "iPhone" ? current.brand : "APPLE"),
-    deviceType: current.deviceType || (device.category === "iPhone" ? "iPhone" : current.deviceType),
+    brand: scannedType ? "APPLE" : current.brand || "APPLE",
+    deviceType: scannedType || current.deviceType,
     model: listed || group || current.model,
     serial: device.imei || device.serial || current.serial,
     storage,
@@ -257,7 +259,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
 
       {step === 1 ? <>
         <div>
-          <p className={labelClass}>Scan the phone, or use the camera</p>
+          <p className={labelClass}>Scan the device, or use the camera</p>
           <div className="mt-1.5"><DeviceCamera onCode={applyScan}/></div>
           <textarea
             value={scanCode}
@@ -306,7 +308,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
         <div><p className={labelClass}>Proof of ownership · tap at least one</p><div className="mt-1.5 space-y-2">
           <TickRow checked={form.receiptSeen} onToggle={() => update({ receiptSeen: !form.receiptSeen })} title="Original receipt seen" detail="Name and IMEI / serial on it match"/>
           {form.receiptSeen ? <input value={form.receiptReference} maxLength={80} onChange={(event) => update({ receiptReference: event.target.value })} placeholder="Receipt number and shop (optional)" className={fieldClass}/> : null}
-          <TickRow checked={form.boxSeen} onToggle={() => update({ boxSeen: !form.boxSeen })} title="Phone box" detail="Tick if the owner has the original phone box. IMEI / serial on it must match."/>
+          <TickRow checked={form.boxSeen} onToggle={() => update({ boxSeen: !form.boxSeen })} title="Original box" detail="Tick if the owner has the original box. IMEI / serial on it must match."/>
         </div></div>
         <div><div className="flex items-center justify-between"><p className={labelClass}>Check with the seller</p><span className="text-[11px] font-semibold tabular-nums text-[#6b6b6b]">{doneCount} of {tradeInChecks.length}</span></div><div className="mt-1.5 space-y-2">
           {tradeInChecks.map((check) => <TickRow key={check.id} checked={form.checks[check.id] === true} onToggle={() => onChange((current) => ({ ...current, checks: { ...current.checks, [check.id]: !current.checks[check.id] } }))} title={check.label} detail={check.detail}/>)}

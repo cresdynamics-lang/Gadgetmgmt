@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
 const MAX_GAP_MS = 35;
 const MIN_FAST_KEYS = 4;
 const IDLE_MS = 90;
-const MIN_LENGTH = 6;
+const MIN_LENGTH = 5;
 
 type ScanHandler = (code: string) => void;
 

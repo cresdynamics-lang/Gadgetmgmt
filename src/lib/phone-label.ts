@@ -50,7 +50,8 @@ function labelDate(device: PhoneLabelData) {
 function workingNote(device: PhoneLabelData) {
   if (device.workingNote) return device.workingNote;
   const battery = Number(device.batteryHealth);
-  if (device.batteryHealth && battery >= 95) return "100% Working Phone";
+  const kind = /iphone/i.test(device.category) ? "Phone" : /ipad/i.test(device.category) ? "iPad" : /mac/i.test(device.category) ? "Mac" : device.category === "Apple Watch" ? "Watch" : "Device";
+  if (device.batteryHealth && battery >= 95) return `100% Working ${kind}`;
   if (device.batteryHealth) return `Battery ${device.batteryHealth}% · checked`;
   return "Checked and in stock";
 }
@@ -81,7 +82,7 @@ export function phoneLabelInnerHtml(device: PhoneLabelData) {
       <dl>
         <div><dt>Sr#</dt><dd>${escapeHtml(device.serial || "—")}</dd></div>
         <div><dt>FMI</dt><dd>${escapeHtml(device.fmi || "—")}</dd></div>
-        <div><dt>SIM</dt><dd>${escapeHtml(device.sim || "—")}</dd></div>
+        ${device.sim || /iphone/i.test(device.category) ? `<div><dt>SIM</dt><dd>${escapeHtml(device.sim || "—")}</dd></div>` : ""}
         <div><dt>Color</dt><dd>${escapeHtml(device.colour || "—")}</dd></div>
         <div><dt>Version</dt><dd>${escapeHtml(device.version || "—")}</dd></div>
         <div><dt>${escapeHtml(labelDate(device))}</dt><dd>1 PC</dd></div>
@@ -233,7 +234,7 @@ export function createPhoneLabelPdf(device: PhoneLabelData, logo?: string | null
   const left = 4;
   line(doc, `Sr# ${device.serial || "—"}`, left, 17.2, { size: 7 });
   line(doc, `FMI ${device.fmi || "—"}`, left, 21.2, { size: 7 });
-  line(doc, `SIM ${device.sim || "—"}`, 32, 17.2, { size: 7 });
+  if (device.sim || /iphone/i.test(device.category)) line(doc, `SIM ${device.sim || "—"}`, 32, 17.2, { size: 7 });
   line(doc, `Color ${device.colour || "—"}`, 32, 21.2, { size: 7 });
   line(doc, `Version ${device.version || "—"}`, left, 25.2, { size: 7 });
   line(doc, `${labelDate(device)}   1 PC`, 32, 25.2, { size: 7 });

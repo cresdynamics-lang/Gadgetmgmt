@@ -125,3 +125,48 @@ test("the phone label encodes the IMEI as Code 128 and names the device like the
   assert.match(printHtml, /@page \{ size: 90mm 50mm; margin: 0; \}/);
   assert.match(printHtml, /gh-phone-label__logo/);
 });
+
+test("a bare MacBook serial is read as a serial, with no model guessed", () => {
+  for (const code of ["C02XK1ABJG5H", "SC02XK1ABJG5H", "V2WT7T6GVM"]) {
+    const device = parseDeviceScan(code);
+    assert.equal(device.serial, code.replace(/^S(?=.{12}$)/, ""));
+    assert.equal(device.name, "");
+    assert.equal(device.category, "");
+    assert.equal(device.modelNumber, "");
+  }
+  assert.equal(scanLookupCode("C02XK1ABJG5H").kind, "serial");
+  assert.equal(parseDeviceScan("A2337").serial, "");
+  assert.equal(parseDeviceScan("IPHONE17PRO").serial, "");
+  assert.equal(parseDeviceScan("358250492399182").serial, "");
+});
+
+test("a MacBook sticker fills model, chip, storage, colour and serial", () => {
+  const device = parseDeviceScan("Apple MacBook Air M1 MGN63LL/A 256GB A2337 Sr# C02XK1ABJG5H Battery 91% Version 15.1 Space Gray");
+  assert.equal(device.category, "Mac");
+  assert.equal(device.group, 'MacBook Air 13" M1');
+  assert.equal(device.name, 'MacBook Air 13" M1 256GB');
+  assert.equal(device.storage, "256GB");
+  assert.equal(device.serial, "C02XK1ABJG5H");
+  assert.equal(device.imei, "");
+  assert.equal(device.colour, "SPACE GRAY");
+  assert.equal(device.batteryHealth, "91");
+});
+
+test("an iPad About screen is told apart from an iPhone", () => {
+  const device = parseDeviceScan("iPad Air 11-inch (M2)\nModel Number A2902\nSerial Number HXY12ABC34\nCapacity 256 GB");
+  assert.equal(device.category, "iPad");
+  assert.equal(device.group, 'iPad Air 11" M2');
+  assert.equal(device.serial, "HXY12ABC34");
+});
+
+test("a MacBook scanned at checkout is taken in as a MacBook, not an iPhone", () => {
+  const form = applyDeviceScanToTradeIn("Apple MacBook Air M1 MGN63LL/A 256GB A2337 Sr# C02XK1ABJG5H Battery 91%", { ...blankTradeInForm, active: true });
+  assert.equal(form.brand, "APPLE");
+  assert.equal(form.deviceType, "MacBook");
+  assert.equal(form.model, 'MacBook Air 13" M1');
+  assert.equal(form.serial, "C02XK1ABJG5H");
+  assert.equal(form.storage, "256GB");
+  const bare = applyDeviceScanToTradeIn("C02XK1ABJG5H", { ...blankTradeInForm, active: true });
+  assert.equal(bare.deviceType, "");
+  assert.equal(bare.serial, "C02XK1ABJG5H");
+});

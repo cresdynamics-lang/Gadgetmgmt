@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 
-import { brandMarkDataUrl, brandWebsite } from "@/lib/brand";
+import { brandInstagram, brandInstagramUrl, brandMarkDataUrl, brandWebsite, brandWebsiteUrl } from "@/lib/brand";
 
 export type SaleReceiptData = {
   invoiceNumber: string;
@@ -88,6 +88,18 @@ export type InventoryReceiptData = {
 };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
+const instagramLine = `Instagram: @${brandInstagram}`;
+
+/** The shop's website and Instagram, right-aligned and clickable, one line each from `y`. */
+function drawShopLinks(doc: jsPDF, right: number, y: number) {
+  for (const [index, [text, url]] of [[brandWebsite, brandWebsiteUrl], [instagramLine, brandInstagramUrl]].entries()) {
+    const lineY = y + index * 3.6;
+    doc.text(text, right, lineY, { align: "right" });
+    const width = doc.getTextWidth(text);
+    doc.link(right - width, lineY - 3, width, 3.6, { url });
+  }
+}
+
 const safeFilePart = (value: string) => value.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "").slice(0, 80);
 
 function createDocument(title: string, branchName: string, date: string) {
@@ -158,7 +170,7 @@ function createDocument(title: string, branchName: string, date: string) {
     finish() {
       doc.setFontSize(8);
       doc.setTextColor(107, 107, 107);
-      doc.text("Thank you for choosing GadgetHub.", margin, Math.min(y + 8, 285));
+      doc.text(`Thank you for choosing GadgetHub. ${brandWebsite} · ${instagramLine}`, margin, Math.min(y + 8, 285));
       return doc;
     },
   };
@@ -193,9 +205,10 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.setTextColor(...muted);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  const branchLines = doc.splitTextToSize([receipt.branch.address, receipt.branch.phone, receipt.branch.email, brandWebsite].filter(Boolean).join("\n"), 58);
+  const branchLines = doc.splitTextToSize([receipt.branch.address, receipt.branch.phone, receipt.branch.email].filter(Boolean).join("\n"), 58);
   doc.text(branchLines, right, y - 1, { align: "right" });
-  y += 19;
+  drawShopLinks(doc, right, y - 1 + branchLines.length * 3.6);
+  y += 22;
   doc.setDrawColor(229, 229, 229);
   doc.line(margin, y, right, y);
   y += 10;

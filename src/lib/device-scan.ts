@@ -1,4 +1,4 @@
-import { appleModelKey, isAppleModelNumber, isAppleMpn, lookupAppleIdentity } from "@/lib/apple-barcodes";
+import { appleModelKey, appleSerialFromScan, isAppleModelNumber, isAppleMpn, lookupAppleIdentity } from "@/lib/apple-barcodes";
 
 export type ScannedDevice = {
   imei: string;
@@ -42,17 +42,21 @@ export function parseDeviceScan(raw: string): ScannedDevice {
   const text = normalizeScanText(raw);
   if (!text) return { ...emptyDevice };
 
+  // A MacBook or iPad barcode is often the serial and nothing else. It says nothing about the model.
+  const bareSerial = appleSerialFromScan(text);
+  if (bareSerial) return { ...emptyDevice, serial: bareSerial };
+
   const compact = text.toUpperCase();
   const imei = text.match(/\b(\d{15})\b/)?.[1] || (compact.match(/IMEI[:\s-]*(\d{15})/)?.[1] ?? "");
   const mpn = compact.match(/\b([A-Z]{1,2}[A-Z0-9]{3,6}(?:[A-Z]{1,2})?\/A)\b/)?.[1] || "";
   const modelNumber = compact.match(/\b(A\d{4})\b/)?.[1] || compact.match(/(A\d{4})/)?.[1] || "";
   const serial = (
     field(compact, /(?:SR#|S\/N|SN[:\s]|SERIAL(?:\s*NUMBER)?)[:\s#]*([A-Z0-9]{8,12})\b/)
-    || (compact.match(/\bS([A-Z0-9]{8,12})\b/)?.[1] && !imei ? compact.match(/\bS([A-Z0-9]{8,12})\b/)?.[1] : "")
+    || (!imei ? compact.match(/\bS((?=[A-Z0-9]*\d)[A-Z0-9]{8,12})\b/)?.[1] : "")
     || ""
   ).replace(/^S(?=[A-Z0-9]{8,12}$)/, "");
   const storage = (compact.match(/\b((?:64|128|256|512)\s*GB|(?:1|2)\s*TB)\b/)?.[1] || "").replace(/\s+/g, "");
-  const colour = field(text, /\b(?:COLOR|COLOUR)[:\s]+([A-Za-z][A-Za-z /-]+)/i)
+  const colour = (field(text, /\b(?:COLOR|COLOUR)[:\s]+([A-Za-z][A-Za-z /-]+)/i) || text.match(/\b(SPACE\s+(?:GRAY|GREY|BLACK)|SILVER|MIDNIGHT|STARLIGHT|SKY\s+BLUE)\b/i)?.[1] || "")
     // Stop at the next field name, e.g. "Color GRAPHITE Version 17.4" is just GRAPHITE.
     .split(/\s+(?:VERSION|SIM|FMI|FIND|BATTERY|HEALTH|IMEI|SR#|SERIAL|S\/N|MODEL|CAPACITY|STORAGE|IOS)\b/i)[0]
     .replace(/\s+/g, " ")

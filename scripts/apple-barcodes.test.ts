@@ -110,3 +110,39 @@ test("an iPhone 11 model scan does not receive iPhone 17 Pro stock", () => {
   assert.equal(hits.length, 1);
   assert.equal(hits[0]?.product.id, "n11");
 });
+
+test("Macs and iPads are recognised by model number, part number and name", () => {
+  assert.equal(lookupAppleIdentity("A2337")?.group, 'MacBook Air 13" M1');
+  assert.equal(lookupAppleIdentity("A2337")?.category, "Mac");
+  assert.equal(lookupAppleIdentity("MGN63LL/A")?.group, 'MacBook Air 13" M1');
+  assert.equal(lookupAppleIdentity("FGN63LL/A")?.group, 'MacBook Air 13" M1');
+  assert.equal(lookupAppleIdentity("A2681")?.group, 'MacBook Air 13" M2');
+  assert.equal(lookupAppleIdentity("A2338")?.group, 'MacBook Pro 13" M1/M2');
+  assert.equal(lookupAppleIdentity("Apple MacBook Pro A2338 M2 512GB")?.group, 'MacBook Pro 13" M2');
+  assert.equal(lookupAppleIdentity("A2442 M1 Max")?.group, 'MacBook Pro 14" M1 Max');
+  assert.equal(lookupAppleIdentity("A2902")?.group, 'iPad Air 11" M2');
+  assert.equal(lookupAppleIdentity("A3354")?.group, "iPad (A16)");
+  assert.equal(lookupAppleIdentity("A3354")?.category, "iPad");
+  assert.equal(lookupAppleIdentity("MacBook Air 15-inch M3 Starlight")?.group, 'MacBook Air 15" M3');
+  assert.equal(lookupAppleIdentity("iPad Pro 11 inch M4")?.group, 'iPad Pro 11" M4');
+  assert.equal(lookupAppleIdentity("Mac mini M2")?.category, "Mac");
+  assert.equal(lookupAppleIdentity("A3472")?.group, "iPhone 18 Pro");
+});
+
+test("a part number or serial not on the list is not guessed to be an iPhone", () => {
+  assert.equal(lookupAppleIdentity("ZZZZ1LL/A"), null);
+  assert.equal(lookupAppleIdentity("C02XK1ABJG5H"), null);
+  assert.equal(lookupAppleIdentity("HA1234XYZ9"), null);
+});
+
+test("shop names match scans whatever way the size is written", () => {
+  assert.equal(nameMatchesAppleGroup("MacBook Air 13 M3", 'MacBook Air 13" M3'), true);
+  assert.equal(nameMatchesAppleGroup("MacBook Air 13 M3", 'MacBook Air 15" M3'), false);
+  assert.equal(nameMatchesAppleGroup("MacBook Air 13 M3", 'MacBook Air 13" M2'), false);
+  assert.equal(nameMatchesAppleGroup("MacBook Pro 13 M2", 'MacBook Pro 13" M1/M2'), true);
+  assert.equal(nameMatchesAppleGroup("MacBook Pro 14 M3 Max 1TB", 'MacBook Pro 14" M3 Pro/Max'), true);
+  assert.equal(nameMatchesAppleGroup("MacBook Pro 14 M3", 'MacBook Pro 14" M3 Pro/Max'), false);
+  assert.equal(nameMatchesAppleGroup('iPad Pro 11" M5 256GB 5G', 'iPad Pro 11" M5'), true);
+  assert.equal(nameMatchesAppleGroup("iPad Air M2", 'iPad Air 11" M2'), true);
+  assert.equal(nameMatchesAppleGroup("iPad mini (6th gen)", "iPad mini (A17 Pro)"), true);
+});

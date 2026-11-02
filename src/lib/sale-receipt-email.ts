@@ -1,3 +1,4 @@
+import { brandInstagram, brandWebsite } from "@/lib/brand";
 import { queueAndSendNotice } from "@/lib/customer-notice";
 import { prisma } from "@/lib/prisma";
 
@@ -48,6 +49,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
         ...(balance > 0 ? [`Balance on your Lipa Mdogo Mdogo plan: ${money(balance)}`] : []),
         "",
         `Questions? Call us on ${sale.branch.phone} or reply to this email.`,
+        `${brandWebsite} · Instagram: @${brandInstagram}`,
       ].join("\n"),
       dedupeKey: resend ? `sale-receipt:${sale.id}:${Date.now().toString(36)}` : `sale-receipt:${sale.id}`,
     });

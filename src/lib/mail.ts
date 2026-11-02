@@ -1,5 +1,7 @@
 import nodemailer from "nodemailer";
 
+import { brandInstagram, brandInstagramUrl, brandWebsite, brandWebsiteUrl } from "@/lib/brand";
+
 /**
  * Each kind of email goes out through its own Resend key and sender address, so delivery
  * and reputation for receipts, account mail and reminders stay separate.
@@ -72,6 +74,7 @@ export function customerEmailHtml(input: { heading: string; intro: string; amoun
       ${pay}
       ${input.extra ? `<p style="margin:16px 0 0;font-size:13px;color:#667066">${escapeHtml(input.extra)}</p>` : ""}
       <p style="margin:24px 0 0;font-size:12px;color:#8a8a8a">Reply to this email or visit the shop if you need help.</p>
+      <p style="margin:6px 0 0;font-size:12px;color:#8a8a8a"><a href="${brandWebsiteUrl}" style="color:#3d3d3d">${brandWebsite}</a> · Instagram: <a href="${brandInstagramUrl}" style="color:#3d3d3d">@${brandInstagram}</a></p>
     </div>
   </body></html>`;
 }
