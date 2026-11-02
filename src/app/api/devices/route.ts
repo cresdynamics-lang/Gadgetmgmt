@@ -6,6 +6,7 @@ import { canSeeAllBranches, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { parseDeviceScan } from "@/lib/device-scan";
 import { prisma } from "@/lib/prisma";
+import { saleLineValue } from "@/lib/sale-value";
 
 const unitInclude = {
   product: { select: { name: true, sku: true, condition: true, configuration: true, productGroup: true } },
@@ -13,7 +14,7 @@ const unitInclude = {
   soldBy: { select: { name: true } },
   tradeIn: { select: { grade: true, ownershipProof: true, receiptReference: true, hasBox: true, hasCharger: true, value: true, sellerName: true, sellerPhone: true, assessedBy: { select: { name: true } } } },
   sale: { select: { id: true, invoiceNumber: true, createdAt: true, status: true, paymentMethod: true, customer: { select: { name: true, phone: true } } } },
-  saleItem: { select: { quantity: true, total: true } },
+  saleItem: { select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true } },
 } satisfies Prisma.DeviceUnitInclude;
 
 type UnitRow = Prisma.DeviceUnitGetPayload<{ include: typeof unitInclude }>;
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       id: true, imei: true, name: true, sku: true, condition: true, configuration: true, productGroup: true, colour: true, costPrice: true, createdAt: true,
       inventory: { select: { stockOnHand: true, reservedStock: true } },
       movements: { where: { type: "RECEIPT" }, orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true, vendorName: true, sourceKind: true, sourceName: true, sourcePhone: true, reference: true, user: { select: { name: true } } } },
-      saleItems: { orderBy: { createdAt: "desc" }, take: 1, select: { quantity: true, total: true, sale: { select: { id: true, invoiceNumber: true, createdAt: true, status: true, paymentMethod: true, cashier: { select: { name: true } }, customer: { select: { name: true, phone: true } } } } } },
+      saleItems: { orderBy: { createdAt: "desc" }, take: 1, select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, sale: { select: { id: true, invoiceNumber: true, createdAt: true, status: true, paymentMethod: true, cashier: { select: { name: true } }, customer: { select: { name: true, phone: true } } } } } },
       tradeInRecord: { select: { grade: true, ownershipProof: true, receiptReference: true, hasBox: true, hasCharger: true, value: true, sellerName: true, sellerPhone: true, assessedBy: { select: { name: true } } } },
     },
     take: 20,
@@ -101,7 +102,7 @@ export async function GET(request: Request) {
         status: unit.sale.status,
         paymentMethod: unit.sale.paymentMethod,
         customer: unit.sale.customer ? person(unit.sale.customer.name, unit.sale.customer.phone) : null,
-        price: show.price && unit.saleItem ? Math.round(unit.saleItem.total / Math.max(1, unit.saleItem.quantity)) : null,
+        price: show.price && unit.saleItem ? Math.round(saleLineValue(unit.saleItem) / Math.max(1, unit.saleItem.quantity)) : null,
       } : null,
     })),
     ...legacyProducts.map((product) => {
@@ -134,7 +135,7 @@ export async function GET(request: Request) {
           status: sold.sale.status,
           paymentMethod: sold.sale.paymentMethod,
           customer: sold.sale.customer ? person(sold.sale.customer.name, sold.sale.customer.phone) : null,
-          price: show.price ? Math.round(sold.total / Math.max(1, sold.quantity)) : null,
+          price: show.price ? Math.round(saleLineValue(sold) / Math.max(1, sold.quantity)) : null,
         } : null,
       };
     }),

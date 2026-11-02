@@ -43,7 +43,7 @@ type CatalogHint = {
   matchedBy?: string;
 };
 
-type ReceiveCondition = "NEW" | "EX_UK" | "TRADE_IN";
+type ReceiveCondition = "NEW" | "EX_UK";
 
 /** A phone the shop already has a record for, found by the IMEI or serial on its barcode. */
 type KnownUnit = {
@@ -65,7 +65,7 @@ type Props = {
   onNotice: (message: string) => void;
 };
 
-const conditions = [["NEW", "New"], ["EX_UK", "Ex-UK"], ["TRADE_IN", "Trade-in"]] as const;
+const conditions = [["NEW", "New"], ["EX_UK", "Ex-UK"]] as const;
 
 const deviceTypes = [["iPhone", "iPhone"], ["iPad", "iPad"], ["Mac", "MacBook / Mac"], ["Apple Watch", "Watch"], ["AirPods", "AirPods"], ["Apple accessories", "Accessory"]] as const;
 const typesWithBattery = ["iPhone", "iPad", "Mac", "Apple Watch"];
@@ -97,10 +97,6 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState<ReceiveCondition>("NEW");
   const [vendorName, setVendorName] = useState("");
-  const [sourceName, setSourceName] = useState("");
-  const [sourcePhone, setSourcePhone] = useState("");
-  const [hasReceipt, setHasReceipt] = useState(false);
-  const [hasBox, setHasBox] = useState(false);
   const [deviceName, setDeviceName] = useState("");
   const [category, setCategory] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
@@ -159,11 +155,6 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     });
   }
 
-  function sourceReady() {
-    if (condition === "TRADE_IN") return sourceName.trim().length >= 2 && sourcePhone.replace(/\D/g, "").length >= 9;
-    return vendorName.trim().length >= 2;
-  }
-
   async function resolveMatches(raw: string, current: ReceiveCondition): Promise<{ matches: ScanMatch[]; catalog: CatalogHint | null; device: ScannedDevice; known: KnownUnit | null }> {
     const parsed = parseDeviceScan(raw);
     const identity = lookupAppleIdentity(raw);
@@ -217,12 +208,6 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     setDevice(emptyScannedDevice());
     setKnown(null);
     setHint("");
-    if (condition === "TRADE_IN") {
-      setSourceName("");
-      setSourcePhone("");
-      setHasReceipt(false);
-      setHasBox(false);
-    }
   }
 
   async function receive() {
@@ -251,18 +236,8 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           fmi: device.fmi,
           sim: device.sim,
           version: device.version,
-          ...(condition === "TRADE_IN"
-            ? {
-                sourceName: sourceName.trim(),
-                sourcePhone: sourcePhone.trim(),
-                hasReceipt,
-                hasBox,
-                ...(sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
-              }
-            : {
-                vendorName: vendorName.trim(),
-                ...(condition === "EX_UK" && sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
-              }),
+          vendorName: vendorName.trim(),
+          ...(condition === "EX_UK" && sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
         }),
       });
       const result = await response.json();
@@ -347,7 +322,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       setHint(
         found.known?.status === "SOLD"
           ? `Sold before${found.known.invoiceNumber ? ` on ${found.known.invoiceNumber}` : ""}. Its saved details are filled in; receiving it starts a new record.`
-          : suggested && nextCondition !== "TRADE_IN" && suggested !== nextCondition
+          : suggested && suggested !== nextCondition
             ? `This Apple part number looks ${suggested === "NEW" ? "new retail" : "refurbished"}. Check New or Ex-UK.`
             : !found.matches.length && !found.catalog && !found.device.name && !found.known && !(adding && (deviceName || category))
               ? `${scannedDevice.imei || scannedDevice.serial ? "Code read." : "New code."} It does not say the model, so choose what this is and its model once. Submit then adds it to the system${scannedDevice.imei || scannedDevice.serial ? " and prints its barcode label" : ""}.`
@@ -384,7 +359,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     condition !== "NEW" && !hasCode ? "IMEI or serial" : "",
     needsBattery && !device.batteryHealth ? "battery health" : "",
     matches.length > 1 && !chosen ? "which product" : "",
-    !onShelf && !sourceReady() ? (condition === "TRADE_IN" ? "owner’s name and phone" : "vendor") : "",
+    !onShelf && vendorName.trim().length < 2 ? "vendor" : "",
   ].filter(Boolean);
   const shownFields = detailFields.filter(([key]) => (key !== "imei" && key !== "sim") || !deviceType || typesWithSim.includes(deviceType));
   const blank = (key: keyof ScannedDevice) => (key === "imei" || key === "serial" ? !hasCode : key === "storage" || key === "colour" ? !device[key] : false);
@@ -399,11 +374,13 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label="Condition of the next scan">
+      <div className="mb-3 grid grid-cols-2 gap-2" role="group" aria-label="Condition of the next scan">
         {conditions.map(([value, label]) => (
           <button key={value} type="button" aria-pressed={condition === value} onClick={() => changeCondition(value)} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold ${condition === value ? "border-[#111111] bg-[#111111] text-white" : "border-[#e5e5e5] bg-white text-[#2d2d2d] hover:border-[#c4c4c4]"}`}>{label}</button>
         ))}
       </div>
+
+      <p className="mb-3 text-[11px] leading-4 text-[#6b6b6b]">Taking a trade-in? It starts with the sale of the new phone: use Add a trade-in on the <a href="/sales" className="font-semibold underline">Sales</a> page.</p>
 
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <DeviceCamera onCode={(text) => void handleScan(text)} />
@@ -454,7 +431,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
                   Received {new Date(known.receivedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}{known.source ? ` from ${known.source}` : ""} as {conditionLabels[known.condition] ?? known.condition}. Details come from its saved record. Check them, then print the label. <a href={`/devices?q=${encodeURIComponent(device.imei || device.serial)}`} className="font-semibold underline">Phone history</a>
                 </p>
               ) : (
-                <div className="grid grid-cols-3 gap-2" role="group" aria-label="Condition">
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Condition">
                   {conditions.map(([value, label]) => (
                     <button key={value} type="button" aria-pressed={condition === value} onClick={() => changeCondition(value)} className={`min-h-10 rounded-lg border text-xs font-semibold ${condition === value ? "border-[#111111] bg-[#111111] text-white" : "border-[#e5e5e5] text-[#2d2d2d]"}`}>{label}</button>
                   ))}
@@ -515,16 +492,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
               ) : null}
 
               {!onShelf ? (
-                condition === "TRADE_IN" ? (
-                  <div className="grid gap-3 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-3 sm:grid-cols-2">
-                    <label className="text-xs font-medium text-[#526057]">Person who brought it<input value={sourceName} onChange={(event) => setSourceName(event.target.value)} placeholder="Name as on ID" className={`${fieldClass} ${sourceName.trim().length < 2 ? "border-[#eb6834]" : ""}`} /></label>
-                    <label className="text-xs font-medium text-[#526057]">Their phone<input type="tel" inputMode="tel" value={sourcePhone} onChange={(event) => setSourcePhone(event.target.value)} placeholder="07xx xxx xxx" className={`${fieldClass} ${sourcePhone.replace(/\D/g, "").length < 9 ? "border-[#eb6834]" : ""}`} /></label>
-                    <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-[#1a1a1a]"><input type="checkbox" checked={hasReceipt} onChange={(event) => setHasReceipt(event.target.checked)} className="h-4 w-4" />Receipt</label>
-                    <label className="flex min-h-10 items-center gap-2 text-sm font-medium text-[#1a1a1a]"><input type="checkbox" checked={hasBox} onChange={(event) => setHasBox(event.target.checked)} className="h-4 w-4" />Original box</label>
-                  </div>
-                ) : (
                   <label className="block text-xs font-medium text-[#526057]">Vendor<input value={vendorName} onChange={(event) => setVendorName(event.target.value)} placeholder="Supplier this stock came from" className={`${fieldClass} ${vendorName.trim().length < 2 ? "border-[#eb6834]" : ""}`} /></label>
-                )
               ) : null}
 
               {!onShelf ? (

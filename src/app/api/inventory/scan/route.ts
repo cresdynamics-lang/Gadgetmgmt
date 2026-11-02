@@ -11,7 +11,7 @@ import { deviceHasIdentity, emptyScannedDevice, overlayDevice, parseDeviceScan, 
 import { deviceIdentifiers } from "@/lib/device-units";
 import { matchScanProducts, parseScanPayload, type ScanableProduct } from "@/lib/inventory-scan";
 import { prisma } from "@/lib/prisma";
-import { receiveExUkStock, receiveNewStock, receiveProductStock, receiveTradeInStock } from "@/lib/receive-stock";
+import { receiveExUkStock, receiveNewStock, receiveProductStock } from "@/lib/receive-stock";
 
 const scanSelect = {
   id: true,
@@ -155,10 +155,6 @@ const receiveSchema = z.object({
   productId: z.string().min(8).max(40).optional(),
   condition: z.enum(["NEW", "EX_UK", "TRADE_IN"]),
   vendorName: z.string().trim().max(120).optional(),
-  sourceName: z.string().trim().max(120).optional(),
-  sourcePhone: z.string().trim().max(20).optional(),
-  hasReceipt: z.boolean().optional(),
-  hasBox: z.boolean().optional(),
   sellingPrice: z.coerce.number().int().positive().max(2_000_000_000).optional(),
   deviceName: z.string().trim().max(160).optional(),
   category: z.enum(productCategories).optional(),
@@ -227,16 +223,12 @@ export async function POST(request: Request) {
   const parsed = receiveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Mark the stock as New, Ex-UK or trade-in, then scan a barcode, QR code, IMEI or About details." }, { status: 400 });
 
-  if (parsed.data.condition !== "TRADE_IN" && (parsed.data.vendorName || "").trim().length < 2) {
-    return NextResponse.json({ error: "Enter the vendor name before receiving New or Ex-UK stock." }, { status: 400 });
-  }
+  // A trade-in only enters stock through the sale it pays towards, with its value and seller on record.
   if (parsed.data.condition === "TRADE_IN") {
-    if ((parsed.data.sourceName || "").trim().length < 2) {
-      return NextResponse.json({ error: "Enter the name of the person who brought the trade-in." }, { status: 400 });
-    }
-    if ((parsed.data.sourcePhone || "").replace(/\D/g, "").length < 9) {
-      return NextResponse.json({ error: "Enter the phone number of the person who brought the trade-in." }, { status: 400 });
-    }
+    return NextResponse.json({ error: "Trade-ins start with the sale of the new phone. Use Add a trade-in on the Sales page." }, { status: 400 });
+  }
+  if ((parsed.data.vendorName || "").trim().length < 2) {
+    return NextResponse.json({ error: "Enter the vendor name before receiving New or Ex-UK stock." }, { status: 400 });
   }
 
   const scan = parseScanPayload(parsed.data.code);
@@ -246,46 +238,6 @@ export async function POST(request: Request) {
   const identified = identifiedFields(device, identity, parsed.data.category);
   if (!parsed.data.productId && lookupResult.matches.length === 0 && identified.name && !identified.category) {
     return NextResponse.json({ error: "Choose what this device is: iPhone, iPad, MacBook, Watch, AirPods or accessory.", matches: [], catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 400 });
-  }
-
-  if (parsed.data.condition === "TRADE_IN" && !parsed.data.productId && lookupResult.matches.length === 0) {
-    const name = identified.name;
-    if (!name || name === "Apple device") {
-      return NextResponse.json({
-        error: "Name the trade-in device, then Receive. Scan Settings → About, the IMEI barcode, or the Apple model number.",
-        matches: [],
-        catalog: lookupResult.catalog,
-        device,
-        code: scan.code || lookupResult.code,
-        kind: scan.kind,
-      }, { status: 404 });
-    }
-    const inventory = await receiveTradeInStock(prisma, {
-      branchId: session.user.branchId,
-      userId: session.user.id,
-      userName: session.user.name ?? "Staff member",
-      quantity: parsed.data.quantity,
-      ...identified,
-      name,
-      sellingPrice: parsed.data.sellingPrice,
-      scannedCode: parsed.data.code,
-      sourceName: parsed.data.sourceName!.trim(),
-      sourcePhone: parsed.data.sourcePhone!.trim(),
-      hasReceipt: parsed.data.hasReceipt === true,
-      hasBox: parsed.data.hasBox === true,
-      reference: parsed.data.reference,
-      note: parsed.data.note,
-    });
-    if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
-    await recordActivity({
-      userId: session.user.id,
-      sessionId: session.user.sessionId,
-      action: "TRADE_IN_STOCKED",
-      summary: `Received trade-in ${inventory.product.name} from ${parsed.data.sourceName} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
-      entityType: "InventoryItem",
-      entityId: inventory.id,
-    });
-    return NextResponse.json({ ...inventory, catalog: lookupResult.catalog, device, code: scan.code || lookupResult.code, kind: scan.kind }, { status: 201 });
   }
 
   if (parsed.data.condition === "EX_UK" && !parsed.data.productId && lookupResult.matches.length === 0) {
@@ -410,7 +362,7 @@ export async function POST(request: Request) {
     quantity: parsed.data.quantity,
     reorderLevel: parsed.data.reorderLevel,
     reference: parsed.data.reference || `${scan.kind === "imei" ? "IMEI" : "SCAN"}-${(scan.code || lookupResult.code).slice(-16)}`,
-    note: parsed.data.note || (parsed.data.condition === "TRADE_IN" ? undefined : "Scanned on arrival"),
+    note: parsed.data.note || "Scanned on arrival",
     imei: device.imei || (scan.kind === "imei" ? scan.code : null),
     device: {
       serial: device.serial || null,
@@ -424,12 +376,8 @@ export async function POST(request: Request) {
     scannedCode: parsed.data.code,
     mpn: device.mpn || null,
     colour: device.colour || null,
-    vendorName: parsed.data.condition === "TRADE_IN" ? null : parsed.data.vendorName,
-    sourceKind: parsed.data.condition === "TRADE_IN" ? "TRADE_IN" : "VENDOR",
-    sourceName: parsed.data.condition === "TRADE_IN" ? parsed.data.sourceName : null,
-    sourcePhone: parsed.data.condition === "TRADE_IN" ? parsed.data.sourcePhone : null,
-    hasReceipt: parsed.data.condition === "TRADE_IN" ? parsed.data.hasReceipt === true : null,
-    hasBox: parsed.data.condition === "TRADE_IN" ? parsed.data.hasBox === true : null,
+    vendorName: parsed.data.vendorName,
+    sourceKind: "VENDOR",
   });
 
   if (!inventory) {
@@ -440,7 +388,7 @@ export async function POST(request: Request) {
   await recordActivity({
     userId: session.user.id,
     sessionId: session.user.sessionId,
-    action: parsed.data.condition === "TRADE_IN" ? "TRADE_IN_STOCKED" : "STOCK_RECEIVED",
+    action: "STOCK_RECEIVED",
     summary: `Scanned in ${parsed.data.quantity} of ${inventory.product.name} (${inventory.previousStock} → ${inventory.stockOnHand} on hand)`,
     entityType: "InventoryItem",
     entityId: inventory.id,

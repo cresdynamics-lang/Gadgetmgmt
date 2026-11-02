@@ -169,10 +169,9 @@ async function queueReminders(now: Date) {
             expiresAt: new Date(now.getTime() + 7 * 86_400_000),
           },
         });
-        const link = `${baseUrl}/request/${token}`;
         const dueDate = installment.dueDate.toLocaleDateString("en-KE", { dateStyle: "medium", timeZone: "Africa/Nairobi" });
         const salutation = `Hello ${customer.name}, installment ${installment.sequence} of your Gadget Hub payment plan ${dueLabel(daysUntilDue)} (${dueDate}).`;
-        const body = `${salutation} Amount due: KES ${amount.toLocaleString("en-KE")}. Pay securely here: ${link}. Need help? Call ${plan.branch.name} on ${plan.branch.phone}.`;
+        const body = `${salutation} Amount due: KES ${amount.toLocaleString("en-KE")}. Please pay by M-Pesa or cash. Need help? Call ${plan.branch.name} on ${plan.branch.phone}.`;
         await transaction.customerNotification.createMany({
           data: channels.map(({ channel, recipient }) => ({
             branchId: plan.branch.id,
@@ -239,7 +238,7 @@ async function queueOwnerDigests(now: Date) {
   let queued = 0;
   for (const branch of branches) {
     const [sales, salePayments, creditPayments, overduePlans, pendingReferences, inventory] = await Promise.all([
-      prisma.sale.aggregate({ where: { branchId: branch.id, createdAt: { gte: start, lt: end }, status: { in: ["PAID", "PARTIAL"] } }, _sum: { total: true }, _count: true }),
+      prisma.sale.aggregate({ where: { branchId: branch.id, createdAt: { gte: start, lt: end }, status: { in: ["PAID", "PARTIAL"] } }, _sum: { total: true, tradeInValue: true }, _count: true }),
       prisma.salePayment.aggregate({ where: { sale: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
       prisma.payment.aggregate({ where: { creditPlan: { branchId: branch.id }, createdAt: { gte: start, lt: end } }, _sum: { amount: true } }),
       prisma.creditPlan.aggregate({ where: { branchId: branch.id, balance: { gt: 0 }, nextDueDate: { lt: start }, status: { not: "PAID_OFF" } }, _sum: { balance: true }, _count: true }),
@@ -251,7 +250,7 @@ async function queueOwnerDigests(now: Date) {
     const lowStock = inventory.filter((item) => item.stockOnHand - item.reservedStock <= item.reorderLevel).length;
     const facts = {
       salesTransactions: sales._count,
-      salesValueKes: sales._sum.total ?? 0,
+      salesValueKes: (sales._sum.total ?? 0) + (sales._sum.tradeInValue ?? 0),
       collectedKes: collected,
       overdueAccounts: overduePlans._count,
       overdueBalanceKes: overduePlans._sum.balance ?? 0,
@@ -263,7 +262,7 @@ async function queueOwnerDigests(now: Date) {
     const aiNote = await dailyAiNote(facts);
     const body = [
       `GadgetHub daily operations · ${branch.name} · ${date}`,
-      `Sales: ${sales._count} transactions · KES ${(sales._sum.total ?? 0).toLocaleString("en-KE")}`,
+      `Sales: ${sales._count} transactions · KES ${((sales._sum.total ?? 0) + (sales._sum.tradeInValue ?? 0)).toLocaleString("en-KE")}`,
       `Collections received: KES ${collected.toLocaleString("en-KE")}`,
       `Overdue credit: ${overduePlans._count} accounts · KES ${(overduePlans._sum.balance ?? 0).toLocaleString("en-KE")}`,
       `M-Pesa references awaiting staff review: ${pendingReferences}`,

@@ -10,6 +10,7 @@ import { needsReorder } from "@/lib/stock-levels";
 import { BarList, ChartPanel, DailySalesChart, GoalBars, SalesPeriodCard, ShareBar, StatusBreakdown } from "@/components/dashboard-charts";
 import { daysUntilDue, flaggedCreditStatuses } from "@/lib/credit-lifecycle";
 import { addDays, nairobiDateKey, startOfNairobiDay, startOfNairobiMonth, startOfNairobiWeek, startOfNextNairobiMonth } from "@/lib/sales-periods";
+import { saleLineValue, saleValue } from "@/lib/sale-value";
 
 export const instant = false;
 
@@ -85,7 +86,7 @@ export default async function DashboardPage() {
   const windowStart = new Date(Math.min(addDays(chartStart, -6).getTime(), lastMonthStart.getTime()));
   const completed = { in: ["PAID", "PARTIAL"] as ("PAID" | "PARTIAL")[] };
   const [chartSales, paymentsByMethod, lipaCollected, openPlans, stockItems, goals, customerCount, newCustomers] = await Promise.all([
-    canSeeSales ? prisma.sale.findMany({ where: { ...scope, status: completed, createdAt: { gte: windowStart } }, select: { total: true, tradeInValue: true, createdAt: true, saleItems: { select: { quantity: true, total: true, product: { select: { category: true } } } } } }) : [],
+    canSeeSales ? prisma.sale.findMany({ where: { ...scope, status: completed, createdAt: { gte: windowStart } }, select: { total: true, tradeInValue: true, createdAt: true, saleItems: { select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, product: { select: { category: true } } } } } }) : [],
     canSeeFinance ? prisma.salePayment.groupBy({ by: ["method"], where: { createdAt: { gte: monthStart }, sale: scope }, _sum: { amount: true } }) : [],
     canSeeFinance ? prisma.payment.aggregate({ where: { createdAt: { gte: monthStart }, creditPlan: scope }, _sum: { amount: true } }) : null,
     canSeeCredit ? prisma.creditPlan.findMany({ where: { ...scope, balance: { gt: 0 }, status: { not: "PAID_OFF" } }, select: { balance: true, nextDueDate: true, status: true } }) : [],
@@ -96,7 +97,7 @@ export default async function DashboardPage() {
   ]);
   const sumSales = (from: Date, to = addDays(today, 1)) => chartSales.filter((sale) => sale.createdAt >= from && sale.createdAt < to);
   const monthSales = sumSales(monthStart, startOfNextNairobiMonth(now));
-  const total = (rows: { total: number }[]) => rows.reduce((sum, row) => sum + row.total, 0);
+  const total = (rows: { total: number; tradeInValue: number }[]) => rows.reduce((sum, row) => sum + saleValue(row), 0);
   const dayValue = (from: Date) => total(sumSales(from, addDays(from, 1)));
   const dailySeries = Array.from({ length: 30 }, (_, index) => {
     const from = addDays(chartStart, index);
@@ -117,7 +118,7 @@ export default async function DashboardPage() {
   const byType = new Map<string, { value: number; units: number }>();
   for (const sale of monthSales) for (const line of sale.saleItems) {
     const row = byType.get(line.product.category) ?? { value: 0, units: 0 };
-    row.value += line.total; row.units += line.quantity; byType.set(line.product.category, row);
+    row.value += saleLineValue(line); row.units += line.quantity; byType.set(line.product.category, row);
   }
   const methodTotal = (method: string) => paymentsByMethod.find((row) => row.method === method)?._sum.amount ?? 0;
   const receivedThisMonth = ["MPESA", "CASH", "CARD"].reduce((sum, method) => sum + methodTotal(method), 0) + (lipaCollected?._sum.amount ?? 0);
@@ -175,7 +176,7 @@ export default async function DashboardPage() {
 
         <div className="grid gap-5 lg:grid-cols-2">
           {canSeeSales ? <ChartPanel title="Sales by product type" subtitle="This month" figure={money(total(monthSales))}><BarList rows={[...byType].map(([label, row]) => ({ label, value: row.value, note: `${row.units} ${row.units === 1 ? "unit" : "units"}` })).sort((a, b) => b.value - a.value)} empty="No sales yet this month."/></ChartPanel> : null}
-          {canSeeFinance ? <ChartPanel title="How customers paid" subtitle="Sale payments this month" figure={money(methodTotal("MPESA") + methodTotal("CASH") + methodTotal("CARD"))}><ShareBar segments={[{ label: "M-Pesa", value: methodTotal("MPESA") }, { label: "Cash", value: methodTotal("CASH") }, { label: "Card", value: methodTotal("CARD") }]} empty="No payments received yet this month."/></ChartPanel> : null}
+          {canSeeFinance ? <ChartPanel title="How customers paid" subtitle="Sale payments this month" figure={money(methodTotal("MPESA") + methodTotal("CASH") + methodTotal("CARD"))}><ShareBar segments={[{ label: "M-Pesa", value: methodTotal("MPESA") }, { label: "Cash", value: methodTotal("CASH") }, ...(methodTotal("CARD") > 0 ? [{ label: "Card", value: methodTotal("CARD") }] : [])]} empty="No payments received yet this month."/></ChartPanel> : null}
           {canSeeCredit ? <ChartPanel title="Lipa Mdogo Mdogo accounts" subtitle="Money still owed, by payment state" figure={money(lipaOwed)}>{openPlans.length ? <StatusBreakdown buckets={lipaBuckets}/> : <p className="px-4 py-8 text-center text-sm text-[#6b6b6b]">No Lipa accounts with money owed.</p>}</ChartPanel> : null}
           {canSeeSales ? <ChartPanel title="Sales goals" subtitle="Progress over each goal's own period">{goalRows.length ? <GoalBars goals={goalRows}/> : <p className="px-4 py-8 text-center text-sm text-[#6b6b6b]">No goals set. Add one in Sales reports.</p>}</ChartPanel> : null}
         </div>

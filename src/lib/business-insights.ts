@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { saleLineValue, saleValue } from "@/lib/sale-value";
 import type { Prisma } from "@prisma/client";
 
 type InsightScope = { branchId?: string };
@@ -20,12 +21,15 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
       where: salesWhere,
       select: {
         total: true,
+        tradeInValue: true,
         paidAmount: true,
         createdAt: true,
         saleItems: {
           select: {
             quantity: true,
-            total: true,
+            unitPrice: true,
+            discountAmount: true,
+            taxAmount: true,
             unitCost: true,
             product: { select: { name: true, sku: true } },
           },
@@ -53,13 +57,13 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
   const currentSales = sales.filter((sale) => sale.createdAt >= currentStart);
   const previousSales = sales.filter((sale) => sale.createdAt < currentStart);
   const summarizeSales = (periodSales: typeof sales) => {
-    const total = periodSales.reduce((sum, sale) => sum + sale.total, 0);
+    const total = periodSales.reduce((sum, sale) => sum + saleValue(sale), 0);
     const collected = periodSales.reduce((sum, sale) => sum + sale.paidAmount, 0);
     const items = periodSales.flatMap((sale) => sale.saleItems);
     const units = items.reduce((sum, item) => sum + item.quantity, 0);
     const costedItems = items.filter((item) => item.unitCost > 0);
     const costedUnits = costedItems.reduce((sum, item) => sum + item.quantity, 0);
-    const estimatedGrossProfit = costedItems.length ? costedItems.reduce((sum, item) => sum + item.total - item.unitCost * item.quantity, 0) : null;
+    const estimatedGrossProfit = costedItems.length ? costedItems.reduce((sum, item) => sum + saleLineValue(item) - item.unitCost * item.quantity, 0) : null;
     return {
       salesCount: periodSales.length,
       total,
@@ -78,7 +82,7 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
     for (const item of sale.saleItems) {
       const existing = productSales.get(item.product.sku) ?? { name: item.product.name, sku: item.product.sku, units: 0, total: 0 };
       existing.units += item.quantity;
-      existing.total += item.total;
+      existing.total += saleLineValue(item);
       productSales.set(item.product.sku, existing);
     }
   }
@@ -126,7 +130,7 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
     const end = new Date(start.getTime() + DAY_MS);
     return {
       label: start.toLocaleDateString("en-KE", { day: "numeric", month: "short", timeZone: "Africa/Nairobi" }),
-      total: roundKes(currentSales.filter((sale) => sale.createdAt >= start && sale.createdAt < end).reduce((sum, sale) => sum + sale.total, 0)),
+      total: roundKes(currentSales.filter((sale) => sale.createdAt >= start && sale.createdAt < end).reduce((sum, sale) => sum + saleValue(sale), 0)),
     };
   });
 

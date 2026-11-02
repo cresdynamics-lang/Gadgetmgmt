@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { AppShell } from "@/components/app-shell";
 import { conditionLabels } from "@/lib/catalog";
 import { kenyaDateTime } from "@/lib/kenya-time";
+import { paymentLabel } from "@/lib/payment-labels";
 
 type Person = { name: string | null; phone: string | null };
 type Life = {
@@ -30,7 +31,6 @@ const statusTone: Record<Life["status"], string> = {
   SOLD: "bg-[#f5f5f5] text-[#2d2d2d]",
   UNKNOWN: "bg-[#f5f5f5] text-[#6b6b6b]",
 };
-const paymentLabels: Record<string, string> = { CASH: "Cash", MPESA: "M-Pesa", MPESA_STK: "M-Pesa prompt", CARD: "Card", CREDIT: "Lipa Mdogo Mdogo", SPLIT: "Split", PAY_LINK: "Payer link", LAYAWAY: "Layaway" };
 const proofLabels: Record<string, string> = { RECEIPT: "Receipt", BOX: "Box", BOTH: "Receipt and box" };
 
 function Fact({ label, value }: { label: string; value: string | null | undefined }) {
@@ -84,7 +84,7 @@ function LifeCard({ life }: { life: Life }) {
           <div className="min-w-0 text-xs leading-5">
             <p className="font-semibold text-[#1a1a1a]">{life.status === "RESERVED" ? "Held for a sale awaiting payment" : "Sold"} · {kenyaDateTime(life.sale.at)}</p>
             <p className="text-[#4a4a4a]">{life.sale.customer ? `To ${personLine(life.sale.customer)}` : "Walk-in customer"}{life.sale.price !== null ? ` · ${money(life.sale.price)}` : ""}</p>
-            <p className="text-[#848b81]">{[`Invoice ${life.sale.invoiceNumber}`, paymentLabels[life.sale.paymentMethod] ?? life.sale.paymentMethod, life.sale.by && `Sold by ${life.sale.by}`].filter(Boolean).join(" · ")}</p>
+            <p className="text-[#848b81]">{[`Invoice ${life.sale.invoiceNumber}`, paymentLabel(life.sale.paymentMethod), life.sale.by && `Sold by ${life.sale.by}`].filter(Boolean).join(" · ")}</p>
             {life.sale.price !== null ? <a href={`/api/pos/${life.sale.id}/receipt`} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#111111] underline-offset-2 hover:underline"><Download className="h-3 w-3" />Download receipt</a> : null}
           </div>
         </li> : null}

@@ -50,11 +50,10 @@ function receiptPayLinks(receipt: Receipt) {
     ...(receipt.salePaymentLink ? [{ label: `Pay invoice ${receipt.invoiceNumber}`, url: `${origin}/request/${receipt.salePaymentLink.token}` }] : []),
     ...(receipt.creditPlanLinks ?? []).flatMap((plan) => [
       { label: `${plan.productName} account`, url: `${origin}/pay/${plan.token}` },
-      ...(plan.payerToken ? [{ label: `Pay ${plan.productName}`, url: `${origin}/request/${plan.payerToken}` }] : []),
-    ]),
+          ]),
   ];
 }
-const paymentMethods = [{ value: "CASH", label: "Cash" }, { value: "MPESA_STK", label: "M-Pesa prompt" }, { value: "MPESA", label: "M-Pesa manual" }, { value: "CARD", label: "Card" }, { value: "CREDIT", label: "Lipa plan" }, { value: "SPLIT", label: "Split" }, { value: "PAY_LINK", label: "Payer link" }] as const;
+const paymentMethods = [{ value: "CASH", label: "Cash" }, { value: "MPESA", label: "M-Pesa" }, { value: "CREDIT", label: "Lipa plan" }, { value: "SPLIT", label: "Split" }] as const;
 const blankCustomer: NewCustomer = { name: "", phone: "", email: "" };
 
 export default function SalesPage() {
@@ -64,6 +63,9 @@ export default function SalesPage() {
   const [cart, setCart] = useState<Record<string, number>>({});
   // IMEIs / serials scanned for each cart line, so the sale records exactly which phones left.
   const [cartUnits, setCartUnits] = useState<Record<string, string[]>>({});
+  // Prices changed at the till for this sale, as typed. Anything not here sells at the product's own price.
+  const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
+  const [canChangePrice, setCanChangePrice] = useState(false);
   const [unitDrafts, setUnitDrafts] = useState<Record<string, string>>({});
   const [scanning, setScanning] = useState(false);
   const [receiptEmail, setReceiptEmail] = useState("");
@@ -73,10 +75,6 @@ export default function SalesPage() {
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState<NewCustomer>(blankCustomer);
   const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethods)[number]["value"]>("CASH");
-  const [payerPhone, setPayerPhone] = useState("");
-  const [payerConsent, setPayerConsent] = useState(false);
-  const [mpesaPhone, setMpesaPhone] = useState("");
-  const [resendingPrompt, setResendingPrompt] = useState(false);
   const [creditTermMonths, setCreditTermMonths] = useState<3 | 6 | 12>(3);
   const [tradeIn, setTradeIn] = useState<TradeInForm>(blankTradeInForm);
   const [confirmingTradeIn, setConfirmingTradeIn] = useState(false);
@@ -84,19 +82,16 @@ export default function SalesPage() {
   const { data: session } = useSession();
   const staffName = session?.user?.name ?? "the staff member";
   const [creditDepositAmount, setCreditDepositAmount] = useState("");
-  const [creditDepositMethod, setCreditDepositMethod] = useState<"CASH" | "MPESA" | "CARD">("MPESA");
-  const [creditDepositReference, setCreditDepositReference] = useState("");
+  const [creditDepositMethod, setCreditDepositMethod] = useState<"CASH" | "MPESA">("MPESA");
   const [creditImei, setCreditImei] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
-  const [firstTenderMethod, setFirstTenderMethod] = useState<"CASH" | "MPESA" | "CARD">("CASH");
-  const [secondTenderMethod, setSecondTenderMethod] = useState<"CASH" | "MPESA" | "CARD">("MPESA");
+  const [firstTenderMethod, setFirstTenderMethod] = useState<"CASH" | "MPESA">("CASH");
+  const [secondTenderMethod, setSecondTenderMethod] = useState<"CASH" | "MPESA">("MPESA");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [copiedCustomerLink, setCopiedCustomerLink] = useState("");
-  const [copiedPayerLink, setCopiedPayerLink] = useState("");
-  const [copiedSaleLink, setCopiedSaleLink] = useState(false);
   const [firstDueDate, setFirstDueDate] = useState("");
   const [cashierMode, setCashierMode] = useState(false);
   const productSearch = useRef<HTMLInputElement>(null);
@@ -112,20 +107,6 @@ export default function SalesPage() {
     window.setTimeout(() => setCopiedCustomerLink((current) => current === token ? "" : current), 2200);
   }
 
-  async function copyPayerLink(token: string) {
-    const link = `${window.location.origin}/request/${token}`;
-    try { await navigator.clipboard.writeText(link); } catch { window.prompt("Copy this secure payer link", link); }
-    setCopiedPayerLink(token);
-    window.setTimeout(() => setCopiedPayerLink((current) => current === token ? "" : current), 2200);
-  }
-
-  async function copySalePayerLink(token: string) {
-    const link = `${window.location.origin}/request/${token}`;
-    try { await navigator.clipboard.writeText(link); } catch { window.prompt("Copy this secure payment link", link); }
-    setCopiedSaleLink(true);
-    window.setTimeout(() => setCopiedSaleLink(false), 2200);
-  }
-
   async function loadCatalogue() {
     const response = await fetch("/api/pos", { cache: "no-store" });
     const data = await response.json();
@@ -135,6 +116,7 @@ export default function SalesPage() {
     const requestedCustomerId = new URLSearchParams(window.location.search).get("customer");
     if (requestedCustomerId && data.customers.some((customer: Customer) => customer.id === requestedCustomerId)) setCustomerId(requestedCustomerId);
     setCreditPolicy(data.creditPolicy ?? { minimumDepositPercent: 40, defaultCreditLimit: 0 });
+    setCanChangePrice(data.canChangePrice === true);
   }
 
   useEffect(() => {
@@ -189,7 +171,9 @@ export default function SalesPage() {
     .filter((item): item is { product: Product; quantity: number } => Boolean(item.product));
   const missingScans = (product: Product, quantity: number) => Math.max(0, scansRequired({ quantity, untracked: product.untrackedUnits, tracked: product.trackedUnits }) - (cartUnits[product.id]?.length ?? 0));
   const scansOutstanding = cartItems.some(({ product, quantity }) => missingScans(product, quantity) > 0);
-  const subtotal = cartItems.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0);
+  const unitPrice = (product: Product) => product.id in priceEdits ? Math.max(0, Math.trunc(Number(priceEdits[product.id]) || 0)) : product.sellingPrice;
+  const priceMissing = cartItems.some(({ product }) => unitPrice(product) <= 1);
+  const subtotal = cartItems.reduce((sum, item) => sum + unitPrice(item.product) * item.quantity, 0);
   const acceptedTradeIn = tradeInValue(tradeIn, subtotal);
   const total = Math.max(0, subtotal - acceptedTradeIn);
   const deposit = Number(creditDepositAmount) || 0;
@@ -201,12 +185,13 @@ export default function SalesPage() {
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const tradeInCustomer = selectedCustomer ?? (showNewCustomer && newCustomer.name.trim() ? newCustomer : null);
   const newCustomerReady = newCustomer.name.trim().length >= 2 && newCustomer.phone.trim().length >= 7;
-  const checkoutBlocked = !cartItems.length || submitting || scansOutstanding || Boolean(receiptEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmail.trim())) || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100) || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "MPESA_STK" && mpesaPhone.trim().length < 9) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod));
+  const checkoutBlocked = !cartItems.length || submitting || scansOutstanding || priceMissing || Boolean(receiptEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmail.trim())) || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100))) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod));
   const receiptSubtotal = receipt?.saleItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) ?? 0;
   const categories = ["All items", ...Array.from(new Set(products.map((product) => product.category))).sort((a, b) => a.localeCompare(b))];
   const filteredProducts = products.filter((product) => (activeCategory === "All items" || product.category === activeCategory) && `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase()));
 
   function setQuantity(product: Product, quantity: number) {
+    if (quantity < 1) resetPrice(product.id);
     setCart((current) => {
       const next = { ...current };
       if (quantity < 1) delete next[product.id];
@@ -253,6 +238,14 @@ export default function SalesPage() {
     }
   }
 
+  function resetPrice(productId: string) {
+    setPriceEdits((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+  }
+
   function removeScannedUnit(productId: string, code: string) {
     setCartUnits((current) => ({ ...current, [productId]: (current[productId] ?? []).filter((item) => item !== code) }));
   }
@@ -275,19 +268,16 @@ export default function SalesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity, ...(cartUnits[product.id]?.length ? { units: cartUnits[product.id] } : {}) })),
+          items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity, ...(unitPrice(product) !== product.sellingPrice ? { unitPrice: unitPrice(product) } : {}), ...(cartUnits[product.id]?.length ? { units: cartUnits[product.id] } : {}) })),
           customerId: customerId || null,
           ...(showNewCustomer ? { newCustomer } : {}),
           paymentMethod,
           ...(!showNewCustomer && !selectedCustomer?.email && receiptEmail.trim() ? { receiptEmail: receiptEmail.trim() } : {}),
-          ...(paymentMethod === "PAY_LINK" ? { payerPhone, payerConsent } : {}),
-          ...(paymentMethod === "MPESA_STK" ? { mpesaPhone } : {}),
           ...(tradeIn.active && acceptedTradeIn > 0 ? { tradeIn: tradeInPayload(tradeIn, subtotal) } : {}),
           ...(paymentMethod === "CREDIT" ? {
             creditTermMonths,
             creditDepositAmount: Number(creditDepositAmount),
             creditDepositMethod,
-            ...(creditDepositMethod === "MPESA" ? { creditDepositReference } : {}),
             ...(creditImei ? { imei: creditImei } : {}),
           } : {}),
           paymentBreakdown: paymentMethod === "SPLIT" ? [
@@ -316,13 +306,10 @@ export default function SalesPage() {
       setShowNewCustomer(false);
       setNewCustomer(blankCustomer);
       setPaymentMethod("CASH");
-      setPayerPhone("");
-      setPayerConsent(false);
-      setMpesaPhone("");
       setCreditDepositAmount("");
-      setCreditDepositReference("");
       setCreditImei("");
       setTradeIn(blankTradeInForm);
+      setPriceEdits({});
       await loadCatalogue();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Sale could not be completed.");
@@ -331,23 +318,6 @@ export default function SalesPage() {
     }
   }
 
-  async function resendPrompt() {
-    if (!receipt?.stkPrompt) return;
-    setResendingPrompt(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/payment-requests/${receipt.stkPrompt.token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: receipt.stkPrompt.phone }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "The M-Pesa prompt could not be resent.");
-      setReceipt((current) => current ? { ...current, paymentRequests: [{ status: "PROCESSING" }], stkPrompt: current.stkPrompt ? { ...current.stkPrompt, status: "PROCESSING", message: "Prompt sent again. Ask the customer to enter their M-Pesa PIN." } : current.stkPrompt } : current);
-    } catch (resendError) {
-      setError(resendError instanceof Error ? resendError.message : "The M-Pesa prompt could not be resent.");
-    } finally {
-      setResendingPrompt(false);
-    }
-  }
-
-  const promptStatus = receipt?.paymentRequests?.[0]?.status ?? receipt?.stkPrompt?.status;
 
   return (
     <AppShell>
@@ -363,6 +333,7 @@ export default function SalesPage() {
                 ["Condition", `${tradeIn.grade ? tradeInGrades[tradeIn.grade].label : "—"}${tradeIn.batteryHealth ? ` · battery ${tradeIn.batteryHealth}%` : ""}`],
                 ["Proof of ownership", [tradeIn.receiptSeen ? "Receipt" : null, tradeIn.boxSeen ? "Box" : null].filter(Boolean).join(" and ")],
                 ["Seller", `${tradeIn.sellerName} · ${tradeIn.sellerPhone}`],
+                ["Sold for", money(subtotal)],
                 ["Trade-in value", money(acceptedTradeIn)],
                 ["Resale price", money(Number(tradeIn.resalePrice) || 0)],
                 ["Customer pays", money(total)],
@@ -431,16 +402,9 @@ export default function SalesPage() {
           </section>
         ) : null}
 
-        {receipt?.stkPrompt && receipt.status !== "PAID" ? <section className={`flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4 sm:p-5 ${promptStatus === "FAILED" || receipt.status === "VOIDED" ? "border-[#e8c4b5] bg-[#fff6f1]" : "border-[#c4c4c4] bg-[#f5f5f5]"}`} aria-live="polite" aria-label="M-Pesa prompt status">
-          <div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#4a4a4a]">M-Pesa prompt · {receipt.stkPrompt.phone.replace(/^254/, "0")}</p><p className="mt-1 text-sm font-semibold text-[#111111]">{receipt.status === "VOIDED" ? "Prompt expired. Stock has been released." : promptStatus === "FAILED" ? "The customer did not complete the payment" : promptStatus === "REVIEW" ? "Payment received but needs a manual check" : `Waiting for the customer to enter their PIN · ${money(receipt.total)}`}</p><p className="mt-1 text-xs text-[#6b6b6b]">{promptStatus === "FAILED" ? "They may have cancelled, entered a wrong PIN or not had enough balance. You can resend the prompt up to 3 times." : `${receipt.stkPrompt.message} The sale completes by itself when M-Pesa confirms. The money settles to the business Stanbic account.`}</p></div>
-          {promptStatus === "FAILED" && receipt.status === "PENDING" ? <button type="button" disabled={resendingPrompt} onClick={() => void resendPrompt()} className="rounded-xl bg-[#111111] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-60">{resendingPrompt ? "Sending…" : "Resend prompt"}</button> : receipt.status === "PENDING" ? <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#4a4a4a]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#2f7d4f]"/>Checking every few seconds</span> : null}
-        </section> : null}
-
-        {receipt?.salePaymentLink && receipt.status === "PENDING" ? <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#c4c4c4] bg-[#f5f5f5] p-4 sm:p-5" aria-label="Third-party sale payment link"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#4a4a4a]">{receipt.payerMessage?.status === "SENT" ? "Payment link sent" : receipt.payerMessage?.status === "FAILED" ? "SMS delivery needs attention" : "Payment link queued"}</p><p className="mt-1 text-sm font-semibold text-[#1a1a1a]">{receipt.payerMessage?.status === "SENT" ? `Secure ${money(receipt.salePaymentLink.amount)} link sent to ${receipt.payerMessage.recipient}.` : receipt.payerMessage?.status === "QUEUED" ? `Secure link is queued for ${receipt.payerMessage.recipient}.` : `Send the payer a secure link for ${money(receipt.salePaymentLink.amount)}.`}</p><p className="mt-1 text-xs text-[#74786d]">{receipt.payerMessage?.status === "FAILED" ? "The link is still available below. Copy it and send it manually; the SMS will retry automatically." : receipt.payerMessage?.status === "QUEUED" ? "The outbox will retry delivery. You can copy the link if the payer needs it now." : "Stock is reserved until payment arrives or this request expires. The payer’s mobile number is prefilled on the payment page."}</p></div><button type="button" onClick={() => void copySalePayerLink(receipt.salePaymentLink!.token)} className="rounded-lg bg-[#1a1a1a] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#1a1a1a]">{copiedSaleLink ? "Link copied" : "Copy payer link"}</button></section> : null}
-
         {receipt?.creditPlanLinks?.length ? <section className="rounded-xl border border-[#e7dfcb] bg-[#fbf8f0] p-4 sm:p-5" aria-label="Customer payment links">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#94784e]">Customer and payer links</p><p className="mt-1 text-sm font-semibold text-[#1a1a1a]">Share the right link with each person</p><p className="mt-1 text-xs text-[#74786d]">The customer schedule shows the account. The separate payer link hides those details and starts an M-Pesa prompt when Daraja is configured.</p></div></div>
-          <div className="mt-3 space-y-2">{receipt.creditPlanLinks.map((plan, index) => <div key={`${plan.productName}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e9e4d8] bg-white px-3 py-2.5"><span className="min-w-0"><span className="block truncate text-xs font-medium text-[#1a1a1a]">{plan.productName}</span><span className="mt-0.5 block font-mono text-[10px] text-[#889287]">PayBill reference: {plan.planReference}</span></span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void copyCustomerLink(plan.token)} className="rounded-md border border-[#c4c4c4] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#1a1a1a] hover:bg-[#f5f5f5]">{copiedCustomerLink === plan.token ? "Copied" : "Customer schedule"}</button>{plan.payerToken ? <button type="button" onClick={() => void copyPayerLink(plan.payerToken!)} className="rounded-md bg-[#1a1a1a] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#1a1a1a]">{copiedPayerLink === plan.payerToken ? "Copied" : `Payer link · ${money(plan.payerAmount ?? 0)}`}</button> : null}</div></div>)}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#94784e]">Customer payment schedule</p><p className="mt-1 text-sm font-semibold text-[#1a1a1a]">Share this link with the customer</p><p className="mt-1 text-xs text-[#74786d]">It shows their account and what is still due.</p></div></div>
+          <div className="mt-3 space-y-2">{receipt.creditPlanLinks.map((plan, index) => <div key={`${plan.productName}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e9e4d8] bg-white px-3 py-2.5"><span className="min-w-0"><span className="block truncate text-xs font-medium text-[#1a1a1a]">{plan.productName}</span><span className="mt-0.5 block font-mono text-[10px] text-[#889287]">Reference: {plan.planReference}</span></span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void copyCustomerLink(plan.token)} className="rounded-md border border-[#c4c4c4] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#1a1a1a] hover:bg-[#f5f5f5]">{copiedCustomerLink === plan.token ? "Copied" : "Customer schedule"}</button></div></div>)}</div>
         </section> : null}
 
         <div className="sales-layout grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
@@ -452,7 +416,7 @@ export default function SalesPage() {
 
           <form onSubmit={completeSale} className="sales-checkout h-fit overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white shadow-[0_10px_28px_rgba(0,0,0,.06)] xl:sticky xl:top-[96px]">
             <div className="flex items-center justify-between border-b border-[#e5e5e5] bg-[#f5f5f5] px-4 py-3.5"><div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e5e5e5] text-[#2d2d2d]"><ShoppingBag className="h-4 w-4"/></span><div><h3 className="text-sm font-semibold text-[#111111]">Current sale</h3><p className="mt-0.5 text-[10px] text-[#8b978f]">Review before checkout</p></div></div><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-[#6d7f73] ring-1 ring-[#e5e5e5]">{cartItems.reduce((sum, item) => sum + item.quantity, 0)} units</span></div>
-            {cartItems.length ? <div className="divide-y divide-[#f5f5f5] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#1a1a1a]">{product.name}</p><p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5e5e5] bg-[#f5f5f5]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#f5f5f5]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#1a1a1a]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#4a4a4a] transition hover:bg-[#f5f5f5] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#1a1a1a]">{money(product.sellingPrice * quantity)}</span></div>{cartUnits[product.id]?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{cartUnits[product.id].map((code) => <span key={code} className="inline-flex items-center gap-1 rounded-full bg-[#f5f5f5] px-2 py-0.5 font-mono text-[10px] text-[#2d2d2d] ring-1 ring-[#e5e5e5]">{code}<button type="button" onClick={() => removeScannedUnit(product.id, code)} aria-label={`Remove ${code}`} className="text-[#aa746b] hover:text-[#a54f40]">×</button></span>)}</div> : null}{missingScans(product, quantity) > 0 ? <label className="mt-2 block text-[10px] font-semibold text-[#a15d3d]">Scan the IMEI of {missingScans(product, quantity) === 1 ? "the phone" : `${missingScans(product, quantity)} phones`} being sold<input value={unitDrafts[product.id] ?? ""} onChange={(event) => setUnitDrafts((current) => ({ ...current, [product.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addScannedUnit(unitDrafts[product.id] ?? "", product.id).then((added) => { if (added) setUnitDrafts((current) => ({ ...current, [product.id]: "" })); }); } }} placeholder="Scan IMEI, serial or QR, then Enter" className="mt-1 w-full rounded-lg border border-[#e6c9b8] bg-white px-2.5 py-2 font-mono text-xs font-normal text-[#111111] outline-none focus:border-[#a15d3d]"/></label> : null}</div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f5f5f5] text-[#6b6b6b]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#2d2d2d]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customer’s basket.</p></div></div>}
+            {cartItems.length ? <div className="divide-y divide-[#f5f5f5] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#1a1a1a]">{product.name}</p>{canChangePrice ? <div className="mt-1.5"><label className="flex items-center gap-1.5 text-[10px] text-[#87948c]">Selling at KES<input type="number" inputMode="numeric" min={2} step={1} value={priceEdits[product.id] ?? product.sellingPrice} onChange={(event) => setPriceEdits((current) => ({ ...current, [product.id]: event.target.value }))} aria-label={`Selling price for ${product.name}`} className={`w-24 rounded-md border bg-white px-2 py-1 text-xs font-semibold tabular-nums text-[#111111] outline-none focus:border-[#1a1a1a] ${unitPrice(product) <= 1 ? "border-[#a54f40]" : "border-[#c4c4c4]"}`}/>each</label>{unitPrice(product) !== product.sellingPrice ? <p className="mt-1 text-[10px] text-[#a15d3d]">Listed at {money(product.sellingPrice)} · {unitPrice(product) > 1 ? `${money(Math.abs(unitPrice(product) - product.sellingPrice))} ${unitPrice(product) > product.sellingPrice ? "more" : "less"} · ` : ""}<button type="button" onClick={() => resetPrice(product.id)} className="font-semibold underline underline-offset-2">Use listed price</button></p> : null}</div> : <p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p>}</div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5e5e5] bg-[#f5f5f5]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#f5f5f5]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#1a1a1a]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#4a4a4a] transition hover:bg-[#f5f5f5] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#1a1a1a]">{money(unitPrice(product) * quantity)}</span></div>{cartUnits[product.id]?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{cartUnits[product.id].map((code) => <span key={code} className="inline-flex items-center gap-1 rounded-full bg-[#f5f5f5] px-2 py-0.5 font-mono text-[10px] text-[#2d2d2d] ring-1 ring-[#e5e5e5]">{code}<button type="button" onClick={() => removeScannedUnit(product.id, code)} aria-label={`Remove ${code}`} className="text-[#aa746b] hover:text-[#a54f40]">×</button></span>)}</div> : null}{missingScans(product, quantity) > 0 ? <label className="mt-2 block text-[10px] font-semibold text-[#a15d3d]">Scan the IMEI of {missingScans(product, quantity) === 1 ? "the phone" : `${missingScans(product, quantity)} phones`} being sold<input value={unitDrafts[product.id] ?? ""} onChange={(event) => setUnitDrafts((current) => ({ ...current, [product.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addScannedUnit(unitDrafts[product.id] ?? "", product.id).then((added) => { if (added) setUnitDrafts((current) => ({ ...current, [product.id]: "" })); }); } }} placeholder="Scan IMEI, serial or QR, then Enter" className="mt-1 w-full rounded-lg border border-[#e6c9b8] bg-white px-2.5 py-2 font-mono text-xs font-normal text-[#111111] outline-none focus:border-[#a15d3d]"/></label> : null}</div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f5f5f5] text-[#6b6b6b]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#2d2d2d]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customer’s basket.</p></div></div>}
             <div className="space-y-4 border-t border-[#e5e5e5] p-4">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Customer <span className="font-normal normal-case tracking-normal">(optional for cash sales)</span></span>{customerId ? <span className="text-[10px] font-medium text-[#4a4a4a]">Existing account</span> : null}</div>
@@ -467,21 +431,20 @@ export default function SalesPage() {
                 </div> : <div className="flex gap-2"><select value={customerId} onChange={(event) => { setCustomerId(event.target.value); setShowNewCustomer(false); setNewCustomer(blankCustomer); }} className="min-w-0 flex-1 rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#1a1a1a]"><option value="">Walk-in customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select><button type="button" onClick={() => { setCustomerId(""); setShowNewCustomer(true); }} aria-label="Add a new customer" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#e5e5e5] bg-[#f5f5f5] px-3 text-[11px] font-semibold text-[#2d2d2d] transition hover:bg-[#e5e5e5]"><Plus className="h-3.5 w-3.5"/>New</button></div>}
                 {!showNewCustomer && !selectedCustomer?.email ? <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[.1em] text-[#748176]">Email receipt to <span className="font-normal normal-case tracking-normal">(optional)</span><input type="email" maxLength={254} autoComplete="off" value={receiptEmail} onChange={(event) => setReceiptEmail(event.target.value)} placeholder="customer@example.com" className="mt-1 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#1a1a1a]"/><span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[#879287]">The receipt PDF is emailed as soon as the sale is recorded{selectedCustomer ? " and the email is saved on their account" : ""}.</span></label> : selectedCustomer?.email ? <p className="mt-1.5 text-[10px] text-[#879287]">Receipt PDF will be emailed to {selectedCustomer.email}.</p> : null}
               </div>
-              <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#69746c]">How are they paying?</legend><div className="grid grid-cols-3 overflow-hidden rounded-lg border border-[#c4c4c4] sm:grid-cols-4">{paymentMethods.map((method) => <button key={method.value} type="button" aria-pressed={paymentMethod === method.value} onClick={() => { setPaymentMethod(method.value); if (method.value === "CREDIT" && !customerId) setShowNewCustomer(true); }} className={`px-1 py-2.5 text-[10px] font-semibold transition sm:text-xs ${paymentMethod === method.value ? "bg-[#111111] text-white" : "bg-white text-[#5f6e63] hover:bg-[#f5f5f5]"}`}>{method.label}</button>)}</div>{paymentMethod === "CREDIT" ? <p className="mt-1.5 text-[10px] text-[#78867b]">Start a Lipa plan and collect the customer details below. If the customer has an email address, payment reminders by email are switched on as part of the agreement.</p> : paymentMethod === "MPESA_STK" ? <div className="mt-3 space-y-2 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#68796d]">Customer’s Safaricom number<input required type="tel" autoComplete="tel" minLength={9} maxLength={20} value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} placeholder="07xx xxx xxx" className="mt-1.5 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label><p className="text-[9px] text-[#879287]">The customer gets an M-Pesa prompt for the total and enters their PIN on their phone. The sale completes when M-Pesa confirms, and the money settles to the business Stanbic account.</p></div> : paymentMethod === "PAY_LINK" ? <div className="mt-3 space-y-2.5 rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#68796d]">Payer’s mobile number<input required type="tel" autoComplete="tel" minLength={7} maxLength={30} value={payerPhone} onChange={(event) => setPayerPhone(event.target.value)} placeholder="07xx xxx xxx" className="mt-1.5 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label><label className="flex items-start gap-2 text-[10px] leading-4 text-[#707c72]"><input type="checkbox" required checked={payerConsent} onChange={(event) => setPayerConsent(event.target.checked)} className="mt-0.5 accent-[#1a1a1a]"/><span>I have the payer’s permission to text them this one-time link.</span></label><p className="text-[9px] text-[#879287]">The secure link will be sent by SMS after recording the sale. The number will be prefilled for the M-Pesa prompt.</p></div> : null}</fieldset>
+              <fieldset><legend className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#69746c]">How are they paying?</legend><div className="grid grid-cols-2 overflow-hidden rounded-lg border border-[#c4c4c4] sm:grid-cols-4">{paymentMethods.map((method) => <button key={method.value} type="button" aria-pressed={paymentMethod === method.value} onClick={() => { setPaymentMethod(method.value); if (method.value === "CREDIT" && !customerId) setShowNewCustomer(true); }} className={`px-1 py-2.5 text-[10px] font-semibold transition sm:text-xs ${paymentMethod === method.value ? "bg-[#111111] text-white" : "bg-white text-[#5f6e63] hover:bg-[#f5f5f5]"}`}>{method.label}</button>)}</div>{paymentMethod === "CREDIT" ? <p className="mt-1.5 text-[10px] text-[#78867b]">Start a Lipa plan and collect the customer details below. If the customer has an email address, payment reminders by email are switched on as part of the agreement.</p> : paymentMethod === "MPESA" ? <p className="mt-1.5 text-[10px] leading-4 text-[#78867b]">Once the customer has paid, confirm it here. No code is needed. The sale shows as paid by M-Pesa, and the owner can check it on the M-Pesa statement.</p> : paymentMethod === "CASH" ? <p className="mt-1.5 text-[10px] leading-4 text-[#78867b]">Once you have the cash, confirm it here. The sale shows as paid by cash.</p> : null}</fieldset>
               <TradeInPanel form={tradeIn} onChange={setTradeIn} subtotal={subtotal} staffName={staffName} customer={tradeInCustomer}/>
               {paymentMethod === "CREDIT" ? <div className="space-y-3 rounded-xl border border-[#e6e1d5] bg-[#fbfaf6] p-3.5">
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e5e5e5] text-[#2d2d2d]"><CreditCard className="h-4 w-4"/></span><div><p className="text-xs font-semibold text-[#1a1a1a]">Lipa Mdogo Mdogo</p><p className="mt-0.5 text-[10px] text-[#7d8175]">Minimum 40% deposit. The rest is split over the plan.</p></div></div><span className="rounded-full bg-[#f1eadb] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-[#886d3e]">Take home</span></div>
                 <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Repayment term</p><div className="grid grid-cols-3 gap-1.5">{([3, 6, 12] as const).map((months) => <button key={months} type="button" aria-pressed={creditTermMonths === months} onClick={() => setCreditTermMonths(months)} className={`rounded-lg border px-2 py-2 text-center transition ${creditTermMonths === months ? "border-[#2d2d2d] bg-[#e5e5e5] text-[#2d2d2d] shadow-[inset_0_0_0_1px_#2d2d2d]" : "border-[#e5e2d8] bg-white text-[#74796d] hover:border-[#c4c4c4]"}`}><span className="block text-xs font-bold">{months}</span><span className="text-[9px]">months</span></button>)}</div></div>
                 <div><label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]" htmlFor="credit-deposit">Deposit collected today</label><div className="relative mt-1.5"><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[10px] font-semibold text-[#889187]">KES</span><input id="credit-deposit" type="number" min={Math.max(1, Math.ceil(total * creditPolicy.minimumDepositPercent / 100))} max={Math.max(1, total - 1)} step="1" required value={creditDepositAmount} onChange={(event) => setCreditDepositAmount(event.target.value)} placeholder="Enter amount received" className="w-full rounded-lg border border-[#e3e1d7] bg-white py-2.5 pl-12 pr-3 text-sm normal-case tracking-normal outline-none focus:border-[#6b6b6b]"/></div><div className="mt-2 flex items-center justify-between gap-2"><span className="text-[9px] text-[#8a8d80]">Minimum {creditPolicy.minimumDepositPercent}% of amount after trade-in</span><div className="flex gap-1.5">{([40, 50, 60] as const).map((percent) => <button key={percent} type="button" disabled={total < 2 || percent < creditPolicy.minimumDepositPercent} onClick={() => setCreditDepositAmount(String(Math.max(1, Math.min(total - 1, Math.round(total * percent / 100)))))} className="rounded-md border border-[#e5e2d8] bg-white px-2 py-1 text-[9px] font-semibold text-[#627366] hover:border-[#a3a3a3] disabled:opacity-40">{percent}%</button>)}</div></div></div>
-                <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Deposit paid by<select value={creditDepositMethod} onChange={(event) => setCreditDepositMethod(event.target.value as typeof creditDepositMethod)} className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#111111]"><option value="MPESA">M-Pesa</option><option value="CASH">Cash</option><option value="CARD">Card</option></select></label>
-                {creditDepositMethod === "MPESA" ? <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Verified M-Pesa transaction code<input required minLength={6} maxLength={32} value={creditDepositReference} onChange={(event) => setCreditDepositReference(event.target.value.toUpperCase())} placeholder="e.g. QWE123ABC" className="mt-1 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal"/><span className="mt-1 block text-[10px] font-normal normal-case leading-4 tracking-normal text-[#8b887c]">Confirm the deposit in M-Pesa before checkout. The code is added to the payment record.</span></label> : null}
+                <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Deposit paid by<select value={creditDepositMethod} onChange={(event) => setCreditDepositMethod(event.target.value as typeof creditDepositMethod)} className="mt-1.5 w-full rounded-lg border border-[#e3e1d7] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#111111]"><option value="MPESA">M-Pesa</option><option value="CASH">Cash</option></select></label>
                 {cartItems.length === 1 && cartItems[0].quantity === 1 ? <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Device IMEI <span className="font-normal normal-case tracking-normal">(optional)</span><input inputMode="numeric" pattern="[0-9]{14,16}" minLength={14} maxLength={16} value={creditImei} onChange={(event) => setCreditImei(event.target.value.replace(/\D/g, ""))} placeholder="15-digit device IMEI" className="mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal"/><span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[var(--muted)]">Saved on the account to help identify the device during collections and recovery.</span></label> : null}
                 <div className="rounded-xl border border-[#e6e6dc] bg-white p-3.5"><div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[#768176]"><Sparkles className="h-3.5 w-3.5 text-[#9b8150]"/>Plan at a glance</div><div className="grid grid-cols-2 gap-2"><div className="rounded-lg bg-[#f5f5f5] p-2.5"><p className="text-[9px] text-[#839084]">Amount after deposit</p><p className="mt-1 text-xs font-bold tabular-nums text-[#1a1a1a]">{money(creditBalance)}</p></div><div className="rounded-lg bg-[#f5f5f5] p-2.5"><p className="text-[9px] text-[#839084]">Each month of that amount</p><p className="mt-1 text-xs font-bold tabular-nums text-[#1a1a1a]">{money(estimatedInstallment)}</p></div></div><div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[#eeece5] pt-2.5 text-[10px] text-[#7c857b]"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5"/>First due {firstDueDate || "next month"}</span><span>{creditTermMonths} payments of the remaining amount</span></div><p className="mt-2 text-[9px] leading-relaxed text-[#96988d]">Monthly instalments are the amount paid after the deposit, split over {creditTermMonths} months.</p></div>
                 <p className="flex items-start gap-1.5 text-[9px] leading-relaxed text-[#888a7e]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#6b6b6b]"/>Review the deposit with the customer before confirming. Checkout deducts stock and opens their payment account.</p>
               </div> : null}
-              {paymentMethod === "SPLIT" ? <div className="space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Split tender</p><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="First payment method" value={firstTenderMethod} onChange={(event) => setFirstTenderMethod(event.target.value as typeof firstTenderMethod)} className="border border-[#c4c4c4] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select><input aria-label="First payment amount in KES" type="number" min="1" max={Math.max(1, total - 1)} step="1" required value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="w-full border border-[#c4c4c4] px-2 py-2 text-sm" /></div><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="Second payment method" value={secondTenderMethod} onChange={(event) => setSecondTenderMethod(event.target.value as typeof secondTenderMethod)} className="border border-[#c4c4c4] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select><p className="border border-[#e5e5e5] bg-[#f5f5f5] px-2 py-2 text-sm">{money(Math.max(0, total - Number(paidAmount || 0)))}</p></div>{firstTenderMethod === secondTenderMethod ? <p role="alert" className="text-xs text-red-700">Choose two different payment methods.</p> : null}</div> : null}
+              {paymentMethod === "SPLIT" ? <div className="space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Split tender</p><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="First payment method" value={firstTenderMethod} onChange={(event) => setFirstTenderMethod(event.target.value as typeof firstTenderMethod)} className="border border-[#c4c4c4] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option></select><input aria-label="First payment amount in KES" type="number" min="1" max={Math.max(1, total - 1)} step="1" required value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="w-full border border-[#c4c4c4] px-2 py-2 text-sm" /></div><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="Second payment method" value={secondTenderMethod} onChange={(event) => setSecondTenderMethod(event.target.value as typeof secondTenderMethod)} className="border border-[#c4c4c4] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option></select><p className="border border-[#e5e5e5] bg-[#f5f5f5] px-2 py-2 text-sm">{money(Math.max(0, total - Number(paidAmount || 0)))}</p></div>{firstTenderMethod === secondTenderMethod ? <p role="alert" className="text-xs text-red-700">Choose two different payment methods.</p> : null}</div> : null}
               <div className="rounded-xl bg-[#f5f5f5] px-3.5 py-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-[#708076]">Total due</span><span className="text-xl font-bold tracking-[-.04em] tabular-nums text-[#1a1a1a]">{money(total)}</span></div>{acceptedTradeIn > 0 ? <p className="mt-1.5 text-[10px] text-[#92a096]">After {money(acceptedTradeIn)} {tradeIn.model || "device"} trade-in</p> : <p className="mt-1.5 text-[10px] text-[#92a096]">Prices include all selected Apple items</p>}</div>
-              <button type="submit" disabled={checkoutBlocked} className={`min-h-12 w-full rounded-xl px-4 py-3 text-sm font-semibold transition ${checkoutBlocked ? "cursor-not-allowed bg-[#d4d4d4] text-[#6b6b6b]" : "bg-[#111111] text-white shadow-[0_5px_16px_rgba(0,0,0,.13)] hover:bg-[#1a1a1a]"}`}>{submitting ? "Recording sale…" : paymentMethod === "CREDIT" ? "Collect deposit & start plan" : paymentMethod === "PAY_LINK" ? "Record sale & text payer" : paymentMethod === "MPESA_STK" ? "Send M-Pesa prompt" : "Complete sale"}</button>
+              <button type="submit" disabled={checkoutBlocked} className={`min-h-12 w-full rounded-xl px-4 py-3 text-sm font-semibold transition ${checkoutBlocked ? "cursor-not-allowed bg-[#d4d4d4] text-[#6b6b6b]" : "bg-[#111111] text-white shadow-[0_5px_16px_rgba(0,0,0,.13)] hover:bg-[#1a1a1a]"}`}>{submitting ? "Recording sale…" : paymentMethod === "CREDIT" ? "Collect deposit & start plan" : paymentMethod === "CASH" ? "Confirm paid by cash" : paymentMethod === "MPESA" ? "Confirm paid by M-Pesa" : "Confirm paid"}</button>
               {paymentMethod === "CREDIT" ? <p className="flex items-center justify-center gap-1.5 text-[9px] text-[#93988d]"><ShieldCheck className="h-3 w-3"/>Sale, deposit, customer and schedule are recorded together</p> : null}
             </div>
           </form>

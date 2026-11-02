@@ -96,7 +96,7 @@ export default function NotificationsPage() {
 
   const latestRun = jobRuns[0];
   const setupItems = automation ? [
-    ["Collections secret", automation.cronSecretConfigured], ["Public HTTPS URL", automation.publicHttpsUrl], ["Email delivery", automation.providers.email], ["SMS delivery", automation.providers.sms], ["WhatsApp templates", automation.providers.whatsapp], ["M-Pesa STK", automation.providers.mpesaStk], ["M-Pesa C2B", automation.providers.mpesaC2b],
+    ["Collections secret", automation.cronSecretConfigured], ["Public HTTPS URL", automation.publicHttpsUrl], ["Email delivery", automation.providers.email], ["SMS delivery", automation.providers.sms], ["WhatsApp templates", automation.providers.whatsapp],
   ] : [];
   const statCards: { label: string; value: number; Icon: typeof Clock3; color: string; tint: string }[] = [
     { label: "In the queue", value: counts.queued, Icon: Clock3, color: "#8c6d32", tint: "#fbf7ee" },

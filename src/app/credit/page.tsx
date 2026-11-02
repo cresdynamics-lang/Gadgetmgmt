@@ -149,26 +149,6 @@ export default function CreditPage() {
     }
   }
 
-  async function createThirdPartyRequest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selected) return;
-    const amount = Number(new FormData(event.currentTarget).get("amount"));
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch(`/api/credit/${selected.id}/payment-request`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Could not create a payment request.");
-      const link = `${window.location.origin}/request/${result.token}`;
-      try { await navigator.clipboard.writeText(link); } catch { window.prompt("Copy this private payment request link", link); }
-      setNotice("A private payment link for the selected amount was copied. The payer can enter their own M-Pesa number.");
-    } catch (linkError) {
-      setError(linkError instanceof Error ? linkError.message : "Could not create a payment request.");
-    }
-  }
-
   async function reviewSubmission(submissionId: string, decision: "APPROVE" | "REJECT") {
     setError("");
     setNotice("");
@@ -301,15 +281,10 @@ export default function CreditPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold">Record an installment</h3><p className="mt-1 text-xs text-[#69746c]">{selected.customer.name} · {selected.termMonths}-month plan · Balance {money(selected.balance)} · Ref {selected.planReference}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label="Credit account" value={selected.id} onChange={(event) => setSelectedId(event.target.value)} className="border border-[#c4c4c4] bg-white px-3 py-2 text-sm">{outstanding.map((plan) => <option key={plan.id} value={plan.id}>{plan.customer.name} · {plan.product.name}</option>)}</select><button type="button" onClick={() => downloadCreditAgreementPdf({ planReference: selected.planReference, customer: selected.customer, branch: selected.branch, product: selected.product, imei: selected.imei, totalAmount: selected.totalAmount, depositAmount: selected.depositAmount, balance: selected.balance, termMonths: selected.termMonths, installments: selected.installments })} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-xs font-semibold"><Download className="h-3.5 w-3.5"/>Agreement PDF</button><button type="button" onClick={() => void sharePaymentLink()} className="rounded-lg border border-[#c4c4c4] bg-[#faf9f5] px-3 py-2 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f1f0e9]">Copy customer link</button></div></div>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="text-xs font-medium text-[#526057]">Amount received (KES)<input id="credit-payment-amount" name="amount" type="number" min="1" max={selected.balance} step="1" defaultValue={selected.balance} required className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm text-[#111111]" />{selected.earlySettlementOffer ? <span className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#e5e5e5] px-3 py-2 text-[11px] text-[#1a1a1a]"><span>Pay {money(selected.earlySettlementOffer.payOffAmount)} before the next due date and save {money(selected.earlySettlementOffer.discountAmount)}.</span><button type="button" onClick={() => { const field = document.getElementById("credit-payment-amount") as HTMLInputElement | null; if (field) field.value = String(selected.earlySettlementOffer?.payOffAmount ?? selected.balance); }} className="font-semibold underline underline-offset-2">Use payoff amount</button></span> : null}</label>
-            <label className="text-xs font-medium text-[#526057]">Method<select name="method" className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select></label>
+            <label className="text-xs font-medium text-[#526057]">Method<select name="method" className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option></select></label>
             <label className="text-xs font-medium text-[#526057]">Payment reference <span className="font-normal">(optional)</span><input name="reference" maxLength={100} className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm text-[#111111]" /></label>
           </div>
           <div className="mt-4 flex justify-end"><button disabled={saving} className="bg-[#111111] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? "Recording…" : "Record payment"}</button></div>
-        </form> : null}
-
-        {selected ? <form onSubmit={createThirdPartyRequest} className="flex flex-col gap-4 border border-[#e5e5e5] bg-[#f5f5f5] p-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-xl"><p className="text-[10px] font-semibold uppercase tracking-[.15em] text-[#718272]">Let someone else pay</p><h3 className="mt-1 text-sm font-semibold text-[#1a1a1a]">Create a private M-Pesa payment link</h3><p className="mt-1 text-xs leading-5 text-[#737a70]">The payer sees only the business and requested amount. They enter their own number; the account updates after M-Pesa confirms payment.</p></div>
-          <div className="flex w-full gap-2 sm:w-auto"><label className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074] sm:w-36">Amount (KES)<input name="amount" type="number" min="1" max={selected.balance} defaultValue={selected.balance} required className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#111111]"/></label><button className="self-end bg-[#1a1a1a] px-4 py-[11px] text-xs font-semibold text-white transition hover:bg-[#1a1a1a]">Copy payer link</button></div>
         </form> : null}
 
         {selected?.installments.length ? <section className="border border-[#e5e5e5] bg-white"><div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Repayment schedule · {selected.termMonths} months</h3><p className="mt-1 text-xs text-[#69746c]">The customer’s shared account page updates as payments are recorded.</p></div><div className="grid gap-px bg-[#eeece4] sm:grid-cols-2 lg:grid-cols-3">{selected.installments.map((installment) => <div key={installment.id} className="flex items-center justify-between gap-3 bg-white px-4 py-3"><span><span className="block text-xs font-semibold text-[#1a1a1a]">Payment {installment.sequence}</span><span className="mt-1 block text-[10px] text-[#898c81]">{new Date(installment.dueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}</span></span><span className="text-right"><span className="block text-xs font-semibold tabular-nums">{money(installment.amount)}</span><span className="mt-1 block text-[9px] uppercase tracking-wider text-[#747b70]">{installment.paidAt ? "Paid" : installment.paidAmount ? "Part paid" : "Upcoming"}</span></span></div>)}</div></section> : null}        {selected?.payments.length ? <section className="border border-[#e5e5e5] bg-white"><div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent installments · {selected.customer.name}</h3></div><div className="divide-y divide-[#e5e5e5]">{selected.payments.map((payment) => <div key={payment.id} className="flex flex-wrap justify-between gap-3 px-4 py-3 text-sm"><span className="text-[#69746c]">{new Date(payment.createdAt).toLocaleString("en-KE")} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</span><strong>{money(payment.amount)}</strong></div>)}</div></section> : null}

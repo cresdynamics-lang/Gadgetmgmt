@@ -5,6 +5,7 @@ import { canSeeAllBranches, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { addDays, daysBetween, nairobiDateKey, resolveSalesRange, startOfNairobiDay, startOfNairobiMonth, startOfNairobiWeek, startOfNextNairobiMonth, type SalesRange } from "@/lib/sales-periods";
+import { saleLineValue, saleValue } from "@/lib/sale-value";
 
 const ranges: SalesRange[] = ["today", "week", "month", "custom"];
 const completed = { in: ["PAID", "PARTIAL"] as ("PAID" | "PARTIAL")[] };
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
         id: true, invoiceNumber: true, total: true, paymentMethod: true, tradeInValue: true, tradeInModel: true, createdAt: true,
         cashier: { select: { id: true, name: true } },
         customer: { select: { name: true } },
-        saleItems: { select: { quantity: true, total: true, unitCost: true, product: { select: { name: true, category: true, condition: true } } } },
+        saleItems: { select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, unitCost: true, product: { select: { name: true, category: true, condition: true } } } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
+  const revenue = sales.reduce((sum, sale) => sum + saleValue(sale), 0);
   const units = sales.reduce((sum, sale) => sum + sale.saleItems.reduce((lineSum, line) => lineSum + line.quantity, 0), 0);
 
   const byStaff = new Map<string, { id: string; name: string; sales: number; units: number; revenue: number }>();
@@ -48,12 +49,12 @@ export async function GET(request: Request) {
   for (const sale of sales) {
     const staff = byStaff.get(sale.cashier.id) ?? { id: sale.cashier.id, name: sale.cashier.name, sales: 0, units: 0, revenue: 0 };
     staff.sales += 1;
-    staff.revenue += sale.total;
+    staff.revenue += saleValue(sale);
     for (const line of sale.saleItems) {
       staff.units += line.quantity;
       const category = byCategory.get(line.product.category) ?? { category: line.product.category, units: 0, revenue: 0 };
       category.units += line.quantity;
-      category.revenue += line.total;
+      category.revenue += saleLineValue(line);
       byCategory.set(line.product.category, category);
     }
     byStaff.set(sale.cashier.id, staff);
@@ -64,7 +65,7 @@ export async function GET(request: Request) {
     const dayStart = addDays(start, index);
     const dayEnd = addDays(dayStart, 1);
     const daySales = sales.filter((sale) => sale.createdAt >= dayStart && sale.createdAt < dayEnd);
-    return { date: nairobiDateKey(dayStart), revenue: daySales.reduce((sum, sale) => sum + sale.total, 0), sales: daySales.length };
+    return { date: nairobiDateKey(dayStart), revenue: daySales.reduce((sum, sale) => sum + saleValue(sale), 0), sales: daySales.length };
   }) : [];
 
   // Goal progress is measured over each goal's own period, whatever range is on screen.
@@ -77,10 +78,10 @@ export async function GET(request: Request) {
   const goals = await Promise.all(targets.map(async (target) => {
     const window = goalWindow(target);
     const [totals, lines] = await Promise.all([
-      prisma.sale.aggregate({ where: { ...branchScope, status: completed, createdAt: { gte: window.from, lt: window.to } }, _sum: { total: true }, _count: true }),
+      prisma.sale.aggregate({ where: { ...branchScope, status: completed, createdAt: { gte: window.from, lt: window.to } }, _sum: { total: true, tradeInValue: true }, _count: true }),
       prisma.saleItem.aggregate({ where: { sale: { ...branchScope, status: completed, createdAt: { gte: window.from, lt: window.to } } }, _sum: { quantity: true } }),
     ]);
-    const achieved = totals._sum.total ?? 0;
+    const achieved = (totals._sum.total ?? 0) + (totals._sum.tradeInValue ?? 0);
     return {
       id: target.id, period: target.period, label: target.label, amount: target.amount, unitsTarget: target.unitsTarget,
       from: window.from, to: window.to, achieved, unitsSold: lines._sum.quantity ?? 0, salesCount: totals._count,
@@ -105,7 +106,7 @@ export async function GET(request: Request) {
     finance = {
       collectedByMethod: salePayments.map((row) => ({ method: row.method, amount: row._sum.amount ?? 0 })),
       lipaCollections: creditPayments._sum.amount ?? 0,
-      grossProfit: sales.reduce((sum, sale) => sum + sale.saleItems.reduce((lineSum, line) => lineSum + line.total - line.unitCost * line.quantity, 0), 0),
+      grossProfit: sales.reduce((sum, sale) => sum + sale.saleItems.reduce((lineSum, line) => lineSum + saleLineValue(line) - line.unitCost * line.quantity, 0), 0),
       tradeInValue: sales.reduce((sum, sale) => sum + sale.tradeInValue, 0),
       outstandingLipa: outstanding._sum.balance ?? 0,
       settlementBank: process.env.MPESA_SETTLEMENT_BANK || "Stanbic Bank",
@@ -120,7 +121,7 @@ export async function GET(request: Request) {
     daily,
     lines: sales.slice(0, 60).flatMap((sale) => sale.saleItems.map((line) => ({
       saleId: sale.id, invoiceNumber: sale.invoiceNumber, createdAt: sale.createdAt, product: line.product.name, condition: line.product.condition,
-      quantity: line.quantity, total: line.total, paymentMethod: sale.paymentMethod, cashier: sale.cashier.name, customer: sale.customer?.name ?? null,
+      quantity: line.quantity, total: saleLineValue(line), paymentMethod: sale.paymentMethod, cashier: sale.cashier.name, customer: sale.customer?.name ?? null,
     }))),
     goals,
     finance,

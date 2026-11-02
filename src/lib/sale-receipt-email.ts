@@ -1,6 +1,7 @@
 import { brandInstagram, brandWebsite } from "@/lib/brand";
 import { queueAndSendNotice } from "@/lib/customer-notice";
 import { prisma } from "@/lib/prisma";
+import { paymentLabel } from "@/lib/payment-labels";
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
@@ -28,7 +29,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
       const codes = item.deviceUnits.map((unit) => unit.imei ? `IMEI ${unit.imei}` : `Serial ${unit.serial}`);
       return `• ${item.quantity} × ${item.product.name}: ${money(item.total)}${codes.length ? `\n   ${codes.join(", ")}` : ""}`;
     });
-    const payments = sale.payments.map((payment) => `${payment.method === "MPESA" ? "M-Pesa" : payment.method === "CARD" ? "Card" : "Cash"} ${money(payment.amount)}${payment.reference ? ` (${payment.reference})` : ""}`);
+    const payments = sale.payments.map((payment) => `${paymentLabel(payment.method)} ${money(payment.amount)}${payment.reference ? ` (${payment.reference})` : ""}`);
     const balance = Math.max(0, sale.total - sale.paidAmount);
     const notice = await queueAndSendNotice({
       branchId: sale.branchId,

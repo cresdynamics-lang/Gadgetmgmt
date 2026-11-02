@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { kenyaDateTime } from "@/lib/kenya-time";
+import { paymentLabel } from "@/lib/payment-labels";
 
 type Invoice = {
   id: string;
@@ -31,7 +32,6 @@ const ranges: { value: Range; label: string }[] = [
   { value: "month", label: "This month" },
   { value: "all", label: "All" },
 ];
-const paymentLabels: Record<string, string> = { CASH: "Cash", MPESA: "M-Pesa", MPESA_STK: "M-Pesa prompt", CARD: "Card", CREDIT: "Lipa Mdogo Mdogo", SPLIT: "Split", PAY_LINK: "Payer link", LAYAWAY: "Layaway" };
 
 function EmailState({ invoice }: { invoice: Invoice }) {
   const email = invoice.email;
@@ -155,7 +155,7 @@ export default function InvoicesPage() {
                         <span className="text-[11px] text-[#848b81]">{kenyaDateTime(invoice.createdAt)}</span>
                       </div>
                       <p className="mt-1 truncate text-sm font-medium text-[#1a1a1a]">{invoice.items || "Sale"}</p>
-                      <p className="mt-0.5 text-xs text-[#69746c]">{invoice.customer ? `${invoice.customer.name} · ${invoice.customer.phone}` : "Walk-in customer"} · {paymentLabels[invoice.paymentMethod] ?? invoice.paymentMethod} · by {invoice.cashier}</p>
+                      <p className="mt-0.5 text-xs text-[#69746c]">{invoice.customer ? `${invoice.customer.name} · ${invoice.customer.phone}` : "Walk-in customer"} · {paymentLabel(invoice.paymentMethod)} · by {invoice.cashier}</p>
                       <div className="mt-1.5 max-w-full"><EmailState invoice={invoice} /></div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">

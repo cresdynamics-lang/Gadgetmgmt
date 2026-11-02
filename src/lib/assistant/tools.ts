@@ -3,6 +3,7 @@ import { sessionPresence } from "@/lib/activity";
 import { daysUntilDue, flaggedCreditStatuses } from "@/lib/credit-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { addDays, nairobiDateKey, nairobiMidnight, startOfNairobiDay, startOfNairobiMonth, startOfNairobiWeek, startOfNextNairobiMonth } from "@/lib/sales-periods";
+import { saleLineValue, saleValue } from "@/lib/sale-value";
 
 /**
  * Read-only tools the AI assistant can call. Each tool needs a permission: the assistant is only
@@ -65,7 +66,7 @@ const salesSummary: AssistantTool = {
     const { period, start, end } = resolvePeriod(args, now);
     const sales = await prisma.sale.findMany({
       where: { ...branchScope(user), status: completed, createdAt: { gte: start, lt: end } },
-      select: { total: true, tradeInValue: true, paymentMethod: true, cashier: { select: { name: true } }, saleItems: { select: { quantity: true, total: true, unitCost: true, product: { select: { name: true, category: true } } } } },
+      select: { total: true, tradeInValue: true, paymentMethod: true, cashier: { select: { name: true } }, saleItems: { select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, unitCost: true, product: { select: { name: true, category: true } } } } },
     });
     const byStaff = new Map<string, { sales: number; value: number }>();
     const byCategory = new Map<string, { units: number; value: number }>();
@@ -74,17 +75,18 @@ const salesSummary: AssistantTool = {
     let grossProfit = 0;
     for (const sale of sales) {
       const staff = byStaff.get(sale.cashier.name) ?? { sales: 0, value: 0 };
-      staff.sales += 1; staff.value += sale.total; byStaff.set(sale.cashier.name, staff);
+      staff.sales += 1; staff.value += saleValue(sale); byStaff.set(sale.cashier.name, staff);
       for (const line of sale.saleItems) {
         units += line.quantity;
-        grossProfit += line.total - line.unitCost * line.quantity;
+        const lineValue = saleLineValue(line);
+        grossProfit += lineValue - line.unitCost * line.quantity;
         const category = byCategory.get(line.product.category) ?? { units: 0, value: 0 };
-        category.units += line.quantity; category.value += line.total; byCategory.set(line.product.category, category);
+        category.units += line.quantity; category.value += lineValue; byCategory.set(line.product.category, category);
         const product = byProduct.get(line.product.name) ?? { units: 0, value: 0 };
-        product.units += line.quantity; product.value += line.total; byProduct.set(line.product.name, product);
+        product.units += line.quantity; product.value += lineValue; byProduct.set(line.product.name, product);
       }
     }
-    const value = sales.reduce((sum, sale) => sum + sale.total, 0);
+    const value = sales.reduce((sum, sale) => sum + saleValue(sale), 0);
     return {
       period, from: day(start), to: day(addDays(end, -1)), currency: "KES",
       salesValue: value, numberOfSales: sales.length, unitsSold: units, averageSale: sales.length ? Math.round(value / sales.length) : 0,
@@ -266,11 +268,11 @@ const recentSales: AssistantTool = {
       where: { ...branchScope(user), status: completed, createdAt: { gte: start, lt: end }, ...(member ? { cashier: { name: { contains: member, mode: "insensitive" } } } : {}) },
       orderBy: { createdAt: "desc" },
       take: limitArg(args.limit, 20, 50),
-      select: { invoiceNumber: true, total: true, paidAmount: true, paymentMethod: true, createdAt: true, cashier: { select: { name: true } }, customer: { select: { name: true } }, saleItems: { select: { quantity: true, product: { select: { name: true } } } } },
+      select: { invoiceNumber: true, total: true, tradeInValue: true, paidAmount: true, paymentMethod: true, createdAt: true, cashier: { select: { name: true } }, customer: { select: { name: true } }, saleItems: { select: { quantity: true, product: { select: { name: true } } } } },
     });
     return {
       period, from: day(start), to: day(addDays(end, -1)), currency: "KES",
-      sales: sales.map((sale) => ({ invoice: sale.invoiceNumber, date: sale.createdAt.toISOString(), total: sale.total, paid: sale.paidAmount, paidBy: sale.paymentMethod === "CREDIT" ? "Lipa Mdogo Mdogo" : sale.paymentMethod, soldBy: sale.cashier.name, customer: sale.customer?.name ?? "Walk-in", items: sale.saleItems.map((line) => `${line.quantity} × ${line.product.name}`) })),
+      sales: sales.map((sale) => ({ invoice: sale.invoiceNumber, date: sale.createdAt.toISOString(), saleValue: saleValue(sale), tradeIn: sale.tradeInValue, total: sale.total, paid: sale.paidAmount, paidBy: sale.paymentMethod === "CREDIT" ? "Lipa Mdogo Mdogo" : sale.paymentMethod, soldBy: sale.cashier.name, customer: sale.customer?.name ?? "Walk-in", items: sale.saleItems.map((line) => `${line.quantity} × ${line.product.name}`) })),
     };
   },
 };
@@ -291,8 +293,8 @@ const goals: AssistantTool = {
       currency: "KES",
       goals: await Promise.all(targets.map(async (target) => {
         const [from, to] = windowFor(target);
-        const total = await prisma.sale.aggregate({ where: { ...branchScope(user), status: completed, createdAt: { gte: from, lt: to } }, _sum: { total: true } });
-        const achieved = total._sum.total ?? 0;
+        const total = await prisma.sale.aggregate({ where: { ...branchScope(user), status: completed, createdAt: { gte: from, lt: to } }, _sum: { total: true, tradeInValue: true } });
+        const achieved = (total._sum.total ?? 0) + (total._sum.tradeInValue ?? 0);
         return { period: target.period, label: target.label, goal: target.amount, achieved, percent: target.amount ? Math.round((achieved / target.amount) * 100) : 0, from: day(from), to: day(addDays(to, -1)) };
       })),
     };

@@ -15,6 +15,7 @@ import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mp
 import { prisma } from "@/lib/prisma";
 import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit, SaleUnitError } from "@/lib/device-units";
 import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, type TradeInCheckId } from "@/lib/trade-in";
+import { paymentLabel } from "@/lib/payment-labels";
 
 export async function GET() {
   const session = await auth();
@@ -61,6 +62,7 @@ export async function GET() {
     })),
     customers,
     creditPolicy: creditPolicy ?? { minimumDepositPercent: 40, defaultCreditLimit: 0 },
+    canChangePrice: hasPermission(session.user, "sales.adjust"),
   });
 }
 
@@ -68,6 +70,8 @@ const checkoutSchema = z.object({
   items: z.array(z.object({
     productId: z.string().cuid(),
     quantity: z.number().int().min(1).max(1000),
+    // The price agreed at the till when it differs from the product's own price.
+    unitPrice: z.number().int().min(2).max(2_000_000_000).optional(),
     // IMEIs or serials scanned for this line, so the sale records exactly which phones left.
     units: z.array(z.string().trim().toUpperCase().regex(/^[A-Z0-9]{8,20}$/)).max(1000).optional(),
   })).min(1).max(100),
@@ -142,9 +146,6 @@ const checkoutSchema = z.object({
   if (data.paymentMethod === "CREDIT" && (!data.creditTermMonths || !data.creditDepositAmount || !data.creditDepositMethod)) {
     context.addIssue({ code: "custom", path: ["creditTermMonths"], message: "Choose a loan term, deposit amount and deposit payment method." });
   }
-  if (data.paymentMethod === "CREDIT" && data.creditDepositMethod === "MPESA" && !data.creditDepositReference) {
-    context.addIssue({ code: "custom", path: ["creditDepositReference"], message: "Enter the verified M-Pesa transaction code for the deposit." });
-  }
   if (data.paymentMethod === "CREDIT" && data.creditDepositMethod !== "MPESA" && data.creditDepositReference) {
     context.addIssue({ code: "custom", path: ["creditDepositReference"], message: "An M-Pesa transaction code is only valid for an M-Pesa deposit." });
   }
@@ -165,6 +166,8 @@ export async function POST(request: Request) {
 
   const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The checkout details are invalid." }, { status: 400 });
+  // Staff mark how a sale was paid. M-Pesa prompts and payment links are not used.
+  if (["MPESA_STK", "PAY_LINK"].includes(parsed.data.paymentMethod)) return NextResponse.json({ error: "Record this sale as paid by cash or M-Pesa." }, { status: 400 });
   const payerPhone = parsed.data.paymentMethod === "PAY_LINK" ? normalizeKenyanPhone(parsed.data.payerPhone ?? "") : null;
   if (parsed.data.paymentMethod === "PAY_LINK" && !payerPhone) return NextResponse.json({ error: "Enter a valid Kenyan mobile number for the payer." }, { status: 400 });
   const mpesaPhone = parsed.data.paymentMethod === "MPESA_STK" ? normalizeKenyanPhone(parsed.data.mpesaPhone ?? "") : null;
@@ -183,6 +186,9 @@ export async function POST(request: Request) {
   if (parsed.data.paymentMethod === "SPLIT" && !parsed.data.paymentBreakdown) {
     return NextResponse.json({ error: "Enter at least two payment methods for a split tender." }, { status: 400 });
   }
+  if (parsed.data.items.some((item) => item.unitPrice !== undefined) && !hasPermission(session.user, "sales.adjust")) {
+    return NextResponse.json({ error: "Your permissions cannot change selling prices." }, { status: 403 });
+  }
   if ((parsed.data.discountAmount > 0 || parsed.data.taxAmount > 0) && !hasPermission(session.user, "sales.adjust")) {
     return NextResponse.json({ error: "Your permissions cannot apply checkout adjustments." }, { status: 403 });
   }
@@ -195,7 +201,12 @@ export async function POST(request: Request) {
 
   const quantities = new Map<string, number>();
   const scannedUnits = new Map<string, string[]>();
+  const agreedPrices = new Map<string, number>();
   for (const item of parsed.data.items) {
+    if (item.unitPrice !== undefined) {
+      if ((agreedPrices.get(item.productId) ?? item.unitPrice) !== item.unitPrice) return NextResponse.json({ error: "One product cannot have two prices in the same sale." }, { status: 400 });
+      agreedPrices.set(item.productId, item.unitPrice);
+    }
     quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
     scannedUnits.set(item.productId, [...(scannedUnits.get(item.productId) ?? []), ...(item.units ?? [])]);
   }
@@ -223,10 +234,11 @@ export async function POST(request: Request) {
           throw new Error(`INSUFFICIENT_STOCK:${product.name}`);
         }
         // Phones received without a price are saved at KES 1 as a placeholder; they cannot be sold until priced.
-        if (product.sellingPrice <= 1) throw new Error(`PRICE_NOT_SET:${product.name}`);
-        const lineSubtotal = product.sellingPrice * quantity;
+        const unitPrice = agreedPrices.get(product.id) ?? product.sellingPrice;
+        if (unitPrice <= 1) throw new Error(`PRICE_NOT_SET:${product.name}`);
+        const lineSubtotal = unitPrice * quantity;
         if (!Number.isSafeInteger(lineSubtotal) || lineSubtotal < 1 || lineSubtotal > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
-        return { product, inventory, quantity, subtotal: lineSubtotal };
+        return { product, inventory, quantity, unitPrice, subtotal: lineSubtotal };
       });
 
       const saleUnits = await allocateSaleUnits(transaction, {
@@ -318,7 +330,9 @@ export async function POST(request: Request) {
         tradeInRemaining -= lineTradeIn;
         const lineTax = isLast ? taxRemaining : proportionalIntegerShare(parsed.data.taxAmount, item.subtotal, subtotal);
         taxRemaining -= lineTax;
-        return { ...item, lineDiscount, lineTax, total: item.subtotal - lineDiscount - lineTradeIn + lineTax };
+        // value is the full price the line sold for; total is what is left to pay on it after the trade-in.
+        const value = item.subtotal - lineDiscount + lineTax;
+        return { ...item, lineDiscount, lineTax, value, total: value - lineTradeIn };
       });
 
       // The traded-in phone joins stock as its own item, priced for resale.
@@ -374,14 +388,14 @@ export async function POST(request: Request) {
           tradeInProductId: tradeInProduct?.id ?? null,
           status: awaitsPayment ? "PENDING" : paidAmount === total ? "PAID" : "PARTIAL",
           saleItems: {
-            create: saleLines.map(({ product, quantity, lineDiscount, lineTax, total: lineTotal }) => ({
+            create: saleLines.map(({ product, quantity, unitPrice, lineDiscount, lineTax, value }) => ({
               productId: product.id,
               quantity,
-              unitPrice: product.sellingPrice,
+              unitPrice,
               unitCost: product.costPrice,
               discountAmount: lineDiscount,
               taxAmount: lineTax,
-              total: lineTotal,
+              total: value,
             })),
           },
           ...(awaitsPayment || total < 1 ? {} : { payments: {
@@ -630,7 +644,8 @@ export async function POST(request: Request) {
       const soldUnits = await transaction.deviceUnit.findMany({ where: { saleId: createdSale.id }, select: { saleItemId: true, imei: true, serial: true } });
       createdSale.saleItems = createdSale.saleItems.map((item) => ({ ...item, units: soldUnits.filter((unit) => unit.saleItemId === item.id).map((unit) => unit.imei || unit.serial || "").filter(Boolean) }));
 
-      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId, stkRequest, tradeInProduct };
+      const priceChanges = lineItems.filter(({ product, unitPrice }) => unitPrice !== product.sellingPrice);
+      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId, stkRequest, tradeInProduct, priceChanges };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     let payerMessage: { recipient: string; status: "SENT" | "FAILED" | "QUEUED" } | null = null;
@@ -684,10 +699,20 @@ export async function POST(request: Request) {
       userId: session.user.id,
       sessionId: session.user.sessionId,
       action: "SALE_CREATED",
-      summary: `Recorded ${created.invoiceNumber} · ${created.paymentMethod === "CREDIT" ? "Lipa" : created.paymentMethod} · KES ${created.total.toLocaleString("en-KE")}`,
+      summary: `Recorded ${created.invoiceNumber} · ${paymentLabel(created.paymentMethod)} · KES ${created.total.toLocaleString("en-KE")}`,
       entityType: "Sale",
       entityId: created.id,
     });
+    for (const { product, unitPrice } of sale.priceChanges) {
+      await recordActivity({
+        userId: session.user.id,
+        sessionId: session.user.sessionId,
+        action: "PRICE_UPDATED",
+        summary: `Sold ${product.name} at KES ${unitPrice.toLocaleString("en-KE")} instead of KES ${product.sellingPrice.toLocaleString("en-KE")} on ${created.invoiceNumber}${unitPrice < product.costPrice ? " · below buying price" : ""}`,
+        entityType: "Sale",
+        entityId: created.id,
+      });
+    }
     if (sale.tradeInProduct) {
       await recordActivity({
         userId: session.user.id,
