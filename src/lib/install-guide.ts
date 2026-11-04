@@ -22,8 +22,8 @@ export function installGuide(userAgent: string, touchPoints: number): InstallGui
       steps: [
         ...(inApp ? ["This app's own browser cannot install. Open its menu and choose Open in Safari."] : []),
         "Tap the Share button. If you don't see it, tap ⋯ first.",
-        "Tap Add to Home Screen. If it isn't listed, tap View More.",
-        `Tap Add. Gadget Hub appears on your ${device} Home Screen.`,
+        "Scroll down and tap Add to Home Screen. If it isn't listed, tap View More.",
+        `If you see Open as Web App, keep it on. Tap Add, then open Gadget Hub from your ${device} Home Screen.`,
       ],
     };
   }

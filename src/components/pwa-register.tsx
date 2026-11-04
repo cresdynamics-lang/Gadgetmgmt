@@ -32,7 +32,6 @@ function remember(storage: "local" | "session", key: string) {
 export function PwaRegister() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [guide, setGuide] = useState<InstallGuide | null>(null);
-  const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -84,18 +83,18 @@ export function PwaRegister() {
   }
 
   function install() {
-    if (!installEvent) {
-      setShowSteps(true);
-      return;
-    }
-    void installEvent.prompt().finally(() => setInstallEvent(null));
+    if (!installEvent) return;
+    void installEvent.prompt()
+      // Browsers allow one prompt per event; if it cannot open, the directions still get the app installed.
+      .catch(() => setGuide(installGuide(navigator.userAgent, navigator.maxTouchPoints)))
+      .finally(() => setInstallEvent(null));
   }
 
   if (!installEvent && !guide) return null;
   return (
     <div role="dialog" aria-label="Install Gadget Hub" className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-[80] rounded-2xl border border-[#e5e5e5] bg-white p-4 shadow-[0_16px_40px_rgba(0,0,0,.22)] print:hidden sm:left-auto sm:right-4 sm:w-96">
       <p className="text-sm font-semibold text-[#111111]">Install Gadget Hub</p>
-      {showSteps && guide ? (
+      {guide && !installEvent ? (
         <>
           <p className="mt-1 text-xs leading-5 text-[#667066]">On this {guide.device}:</p>
           <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm leading-5 text-[#2d2d2d]">
@@ -106,8 +105,8 @@ export function PwaRegister() {
         <p className="mt-1 text-xs leading-5 text-[#667066]">Add this app to your phone or computer for a full-screen, always-ready workspace.</p>
       )}
       <div className="mt-3 flex gap-2">
-        {showSteps ? null : <button type="button" onClick={install} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#111111] px-4 text-sm font-semibold text-white"><Download className="h-4 w-4" />Install</button>}
-        <button type="button" onClick={later} className={`min-h-11 rounded-xl border border-[#d4d4d4] px-4 text-sm font-semibold text-[#2d2d2d] ${showSteps ? "flex-1" : ""}`}>{showSteps ? "Got it" : "Later"}</button>
+        {installEvent ? <button type="button" onClick={install} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#111111] px-4 text-sm font-semibold text-white"><Download className="h-4 w-4" />Install</button> : null}
+        <button type="button" onClick={later} className={`min-h-11 rounded-xl border border-[#d4d4d4] px-4 text-sm font-semibold text-[#2d2d2d] ${installEvent ? "" : "flex-1"}`}>{installEvent ? "Later" : "Got it"}</button>
       </div>
     </div>
   );

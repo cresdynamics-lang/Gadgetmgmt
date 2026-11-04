@@ -2,6 +2,7 @@ import { brandInstagram, brandWebsite } from "@/lib/brand";
 import { queueAndSendNotice } from "@/lib/customer-notice";
 import { prisma } from "@/lib/prisma";
 import { paymentLabel } from "@/lib/payment-labels";
+import { tradeInReceiptLines } from "@/lib/trade-in";
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
@@ -17,6 +18,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
       where: { id: saleId },
       select: {
         id: true, invoiceNumber: true, branchId: true, customerId: true, status: true, total: true, paidAmount: true, tradeInValue: true, tradeInModel: true, createdAt: true,
+        tradeIn: { select: { storage: true, color: true, serial: true, grade: true, batteryHealth: true, hasBox: true, hasCharger: true, sellerName: true } },
         customer: { select: { name: true, email: true } },
         branch: { select: { name: true, phone: true } },
         saleItems: { select: { quantity: true, total: true, product: { select: { name: true } }, deviceUnits: { select: { imei: true, serial: true } } } },
@@ -44,6 +46,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
         "",
         ...lines,
         ...(sale.tradeInValue > 0 ? [`• Trade-in${sale.tradeInModel ? ` (${sale.tradeInModel})` : ""}: −${money(sale.tradeInValue)}`] : []),
+        ...(sale.tradeIn ? tradeInReceiptLines(sale.tradeIn).map((line) => `   ${line}`) : []),
         "",
         `Total: ${money(sale.total)}`,
         `Paid: ${money(sale.paidAmount)}${payments.length ? ` · ${payments.join(", ")}` : ""}`,

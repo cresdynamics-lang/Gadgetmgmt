@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Printer, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
 import { useSession } from "next-auth/react";
@@ -8,7 +9,7 @@ import { downloadSaleReceipt } from "@/lib/receipt-pdf";
 import { BrandLogo } from "@/components/brand-logo";
 import { brandInstagram, brandWebsite } from "@/lib/brand";
 import { appleSerialFromScan } from "@/lib/apple-barcodes";
-import { tradeInBrandLabel, tradeInDeclaration, tradeInGrades, tradeInChecks } from "@/lib/trade-in";
+import { tradeInBrandLabel, tradeInDeclaration, tradeInGrades, tradeInChecks, tradeInReceiptLines, type TradeInReceiptDetails } from "@/lib/trade-in";
 import { assessTradeInForm, blankTradeInForm, TradeInPanel, tradeInLabelData, tradeInPayload, tradeInValue, type TradeInForm } from "@/components/trade-in-panel";
 import { printPhoneLabel, type PhoneLabelData } from "@/lib/phone-label";
 import { scansRequired } from "@/lib/device-units";
@@ -30,6 +31,7 @@ type Receipt = {
   tradeInBrand?: string | null;
   tradeInModel?: string | null;
   tradeInValue?: number;
+  tradeIn?: TradeInReceiptDetails | null;
   branch: { name: string; address: string; phone: string };
   cashier: { name: string };
   customer: { name: string; phone: string } | null;
@@ -42,6 +44,7 @@ type Receipt = {
   stkPrompt?: { token: string; phone: string; status: "PROCESSING" | "FAILED"; message: string } | null;
   paymentRequests?: { status: string }[];
   emailedTo?: string | null;
+  emailFailedTo?: string | null;
 };
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 function receiptPayLinks(receipt: Receipt) {
@@ -364,7 +367,7 @@ export default function SalesPage() {
               <div className="flex flex-wrap gap-2 print:hidden">
                 {receipt.status === "PAID" || receipt.status === "PARTIAL" ? <><button type="button" onClick={() => window.print()} className="rounded-lg border border-[#d8d5c9] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f5f4ef]">Print receipt</button>
                 <button type="button" onClick={() => downloadSaleReceipt({ ...receipt, paymentLinks: receiptPayLinks(receipt) })} className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d5c9] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f5f4ef]"><Download className="h-3.5 w-3.5" />Save PDF</button></> : <span className="self-center text-[10px] font-medium text-[#876b3e]">Receipt available after payment clears</span>}
-                {receipt.emailedTo ? <span className="self-center text-[10px] font-medium text-[#2f6b43]">Emailed to {receipt.emailedTo}</span> : null}
+                {receipt.emailedTo ? <span className="self-center text-[10px] font-medium text-[#2f6b43]">Emailed to {receipt.emailedTo}</span> : receipt.emailFailedTo ? <Link href="/invoices" className="self-center text-[10px] font-medium text-[#a03d2f] underline">Could not email {receipt.emailFailedTo}. Send it again from Invoices</Link> : <Link href="/invoices" className="self-center text-[10px] font-medium text-[#a15d3d] underline">Not emailed: no email for this client. Send it from Invoices</Link>}
                 {tradeInLabel ? <button type="button" onClick={() => printPhoneLabel(tradeInLabel)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d5c9] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#1a1a1a] hover:bg-[#f5f4ef]"><Printer className="h-3.5 w-3.5" />Print 90×50 mm label</button> : null}
                 <button type="button" onClick={() => { setReceipt(null); setTradeInLabel(null); }} className="rounded-lg bg-[#1a1a1a] px-3.5 py-2.5 text-xs font-semibold text-white hover:bg-[#1a1a1a]">New sale</button>
               </div>
@@ -391,6 +394,7 @@ export default function SalesPage() {
                 <div className="flex items-center justify-between text-[#667066]"><span>Subtotal</span><span className="tabular-nums">{money(receiptSubtotal)}</span></div>
                 {(receipt.discountAmount ?? 0) > 0 ? <div className="flex items-center justify-between text-[#667066]"><span>Discount</span><span className="tabular-nums">- {money(receipt.discountAmount ?? 0)}</span></div> : null}
                 {(receipt.tradeInValue ?? 0) > 0 ? <div className="flex items-center justify-between text-[#667066]"><span>Trade-in{receipt.tradeInBrand && receipt.tradeInModel ? ` · ${tradeInBrandLabel(receipt.tradeInBrand)} ${receipt.tradeInModel}` : ""}</span><span className="tabular-nums">- {money(receipt.tradeInValue ?? 0)}</span></div> : null}
+                {receipt.tradeIn ? <ul className="text-[11px] leading-5 text-[#667066]">{tradeInReceiptLines(receipt.tradeIn).map((line) => <li key={line}>{line}</li>)}</ul> : null}
                 {(receipt.taxAmount ?? 0) > 0 ? <div className="flex items-center justify-between text-[#667066]"><span>Tax</span><span className="tabular-nums">{money(receipt.taxAmount ?? 0)}</span></div> : null}
                 <div className="flex items-center justify-between border-t border-[#e2dfd4] pt-3 text-base font-semibold text-[#111111]"><span>Total</span><span className="tabular-nums">{money(receipt.total)}</span></div>
                 <div className="flex items-center justify-between text-[#667066]"><span>Paid</span><span className="tabular-nums">{money(receipt.paidAmount)}</span></div>

@@ -18,6 +18,8 @@ export const metadata: Metadata = {
     icon: "/brand/icon-black.png",
     apple: "/brand/apple-icon.png",
   },
+  // Older iPhones need Apple's own tag to open the app full screen; Next only writes the standard one.
+  other: { "apple-mobile-web-app-capable": "yes" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

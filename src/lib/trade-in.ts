@@ -59,6 +59,21 @@ export const tradeInGrades = {
 } as const;
 export type TradeInGrade = keyof typeof tradeInGrades;
 
+/** What the customer's receipt records about the device they handed in. Leaves out the shop's resale price and checks. */
+export type TradeInReceiptDetails = { storage?: string | null; color?: string | null; serial: string; grade: string; batteryHealth?: number | null; hasBox: boolean; hasCharger: boolean; sellerName: string };
+
+export function tradeInReceiptLines(tradeIn: TradeInReceiptDetails) {
+  const grade = tradeInGrades[tradeIn.grade as TradeInGrade]?.label ?? tradeIn.grade;
+  const specs = [tradeIn.storage, tradeIn.color].filter(Boolean).join(" · ");
+  return [
+    `${/^\d{14,16}$/.test(tradeIn.serial) ? "IMEI" : "Serial"} ${tradeIn.serial}`,
+    ...(specs ? [specs] : []),
+    `Condition: ${grade}${tradeIn.batteryHealth ? ` · Battery ${tradeIn.batteryHealth}%` : ""}`,
+    `${tradeIn.hasBox ? "With box" : "No box"} · ${tradeIn.hasCharger ? "With charger" : "No charger"}`,
+    `Handed in by ${tradeIn.sellerName}`,
+  ];
+}
+
 /** Wording the cashier signs off on before a trade-in is accepted. Stored with each trade-in. */
 export function tradeInDeclaration(staffName: string) {
   return `I, ${staffName}, confirm that I personally inspected this device and the seller’s documents, and that every check ticked above is true.`;

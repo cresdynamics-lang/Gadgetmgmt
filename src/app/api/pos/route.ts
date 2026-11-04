@@ -14,7 +14,7 @@ import { deliverNotification } from "@/lib/notifications";
 import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
 import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit, SaleUnitError } from "@/lib/device-units";
-import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, type TradeInCheckId } from "@/lib/trade-in";
+import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, tradeInReceiptLines, type TradeInCheckId } from "@/lib/trade-in";
 import { paymentLabel } from "@/lib/payment-labels";
 
 export async function GET() {
@@ -733,12 +733,14 @@ export async function POST(request: Request) {
         entityId: created.id,
       });
     }
+    const tradeInDetails = parsed.data.tradeIn ? { ...parsed.data.tradeIn, serial: parsed.data.tradeIn.imei } : null;
     const receiptEmail = parsed.data.receiptEmail;
     if (receiptEmail && created.customerId && !created.customer?.email) {
       await prisma.customer.update({ where: { id: created.customerId }, data: { email: receiptEmail } }).catch(() => null);
     }
     const customerEmail = created.customer?.email || receiptEmail;
     let emailedTo: string | null = null;
+    let emailFailedTo: string | null = null;
     const paymentBase = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
     if (customerEmail && created.customer?.emailRemindersEnabled !== false && paymentBase && (sale.creditPlanLinks.length || sale.salePaymentLink)) {
       const links = [
@@ -755,14 +757,16 @@ export async function POST(request: Request) {
         kind: "SALE_PAYMENT_LINKS",
         recipient: customerEmail,
         subject: `Your Gadget Hub invoice ${created.invoiceNumber}`,
-        body: `Hello ${created.customer?.name ?? "there"}, your invoice ${created.invoiceNumber} for KES ${created.total.toLocaleString("en-KE")} is attached. Paid so far: KES ${created.paidAmount.toLocaleString("en-KE")}. Open a link below to review or pay:\n${links}`,
+        body: `Hello ${created.customer?.name ?? "there"}, your invoice ${created.invoiceNumber} for KES ${created.total.toLocaleString("en-KE")} is attached. Paid so far: KES ${created.paidAmount.toLocaleString("en-KE")}. Open a link below to review your account:\n${links}${tradeInDetails ? `\n\nTrade-in received (${created.tradeInModel}), KES ${created.tradeInValue.toLocaleString("en-KE")}:\n${tradeInReceiptLines(tradeInDetails).join("\n")}` : ""}`,
         dedupeKey: `sale-links:${created.id}`,
       });
       if (notice.sent) emailedTo = customerEmail;
+      else emailFailedTo = customerEmail;
     } else if (customerEmail && (created.status === "PAID" || created.status === "PARTIAL")) {
       if (await sendSaleReceiptEmail(created.id, customerEmail)) emailedTo = customerEmail;
+      else emailFailedTo = customerEmail;
     }
-    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo }, { status: 201 });
+    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo, emailFailedTo, tradeIn: tradeInDetails && { storage: tradeInDetails.storage, color: tradeInDetails.color, serial: tradeInDetails.serial, grade: tradeInDetails.grade, batteryHealth: tradeInDetails.batteryHealth, hasBox: tradeInDetails.hasBox, hasCharger: tradeInDetails.hasCharger, sellerName: tradeInDetails.sellerName } }, { status: 201 });
   } catch (error) {
     if (error instanceof SaleUnitError) return NextResponse.json({ error: error.userMessage }, { status: 409 });
     if (error instanceof Error && error.message === "DEVICE_UNIT_CHANGED") return NextResponse.json({ error: "One of the scanned phones was just sold or moved. Scan again." }, { status: 409 });

@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 
 import { brandInstagram, brandInstagramUrl, brandMarkDataUrl, brandWebsite, brandWebsiteUrl } from "@/lib/brand";
 import { paymentLabel } from "@/lib/payment-labels";
+import { tradeInReceiptLines, type TradeInReceiptDetails } from "@/lib/trade-in";
 
 export type SaleReceiptData = {
   invoiceNumber: string;
@@ -13,6 +14,7 @@ export type SaleReceiptData = {
   tradeInBrand?: string | null;
   tradeInModel?: string | null;
   tradeInValue?: number;
+  tradeIn?: TradeInReceiptDetails | null;
   createdAt: string;
   branch: { name: string; address: string; phone: string; email?: string | null };
   cashier: { name: string };
@@ -305,7 +307,7 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
 
   y += 10;
   // Keep the payment summary together; it moves to the next page only when it cannot fit.
-  const summaryHeight = 52 + (receipt.paymentLinks?.length ?? 0) * 12 + ((receipt.discountAmount ?? 0) > 0 ? 6 : 0) + ((receipt.tradeInValue ?? 0) > 0 ? 6 : 0) + ((receipt.taxAmount ?? 0) > 0 ? 6 : 0);
+  const summaryHeight = 52 + (receipt.paymentLinks?.length ?? 0) * 12 + ((receipt.discountAmount ?? 0) > 0 ? 6 : 0) + ((receipt.tradeInValue ?? 0) > 0 ? 6 : 0) + (receipt.tradeIn ? 20 : 0) + ((receipt.taxAmount ?? 0) > 0 ? 6 : 0);
   if (y + summaryHeight > 285) continuationPage(false);
   const totalLabelX = right - 67;
   const totalValueX = right;
@@ -329,6 +331,20 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.text(paymentLines, margin, y + 7);
+  let leftBottom = y + 7 + paymentLines.length * 4.5;
+  if (receipt.tradeIn) {
+    const tradeInLines = doc.splitTextToSize([receipt.tradeInModel ?? "Device", ...tradeInReceiptLines(receipt.tradeIn)].join("\n"), totalLabelX - margin - 6) as string[];
+    leftBottom += 4;
+    doc.setTextColor(...gold);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("TRADE-IN RECEIVED", margin, leftBottom);
+    doc.setTextColor(...muted);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(tradeInLines, margin, leftBottom + 6);
+    leftBottom += 6 + tradeInLines.length * 4.5;
+  }
   y += 7;
 
   doc.setDrawColor(229, 229, 229);
@@ -336,11 +352,12 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   y += 7;
   amountRow("Subtotal", money(subtotal));
   if ((receipt.discountAmount ?? 0) > 0) amountRow("Discount", `- ${money(receipt.discountAmount ?? 0)}`);
-  if ((receipt.tradeInValue ?? 0) > 0) amountRow(receipt.tradeInModel ? `Trade-in · ${receipt.tradeInModel}` : "Trade-in", `- ${money(receipt.tradeInValue ?? 0)}`);
+  if ((receipt.tradeInValue ?? 0) > 0) amountRow("Trade-in", `- ${money(receipt.tradeInValue ?? 0)}`);
   if ((receipt.taxAmount ?? 0) > 0) amountRow("Tax", money(receipt.taxAmount ?? 0));
   amountRow("Total", money(receipt.total), { strong: true, color: ink });
   amountRow("Paid", money(receipt.paidAmount));
   amountRow("Balance due", money(Math.max(receipt.total - receipt.paidAmount, 0)), { strong: true, color: gold });
+  y = Math.max(y, leftBottom);
   if (receipt.paymentLinks?.length) {
     y += 4;
     doc.setTextColor(...ink);
