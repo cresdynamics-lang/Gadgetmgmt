@@ -177,7 +177,9 @@ const priceSchema = z.object({
   productId: z.string().cuid(),
   sellingPrice: z.number().int().positive().max(2_000_000_000).optional(),
   costPrice: z.number().int().nonnegative().max(2_000_000_000).optional(),
-}).strict().refine((data) => data.sellingPrice !== undefined || data.costPrice !== undefined);
+  colour: z.string().trim().max(40).optional(),
+  configuration: z.string().trim().max(80).optional(),
+}).strict().refine((data) => data.sellingPrice !== undefined || data.costPrice !== undefined || data.colour !== undefined || data.configuration !== undefined);
 
 /** Change a product's selling price, and its buying price for people who can see finances. */
 export async function PATCH(request: Request) {
@@ -194,21 +196,27 @@ export async function PATCH(request: Request) {
 
   const product = await prisma.product.findFirst({
     where: { id: parsed.data.productId, ...(canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" }) },
-    select: { id: true, name: true, sellingPrice: true, costPrice: true },
+    select: { id: true, name: true, sellingPrice: true, costPrice: true, colour: true, configuration: true },
   });
   if (!product) return NextResponse.json({ error: "That product was not found." }, { status: 404 });
 
+  const colour = parsed.data.colour === undefined ? undefined : parsed.data.colour || null;
+  const configuration = parsed.data.configuration === undefined ? undefined : parsed.data.configuration || null;
   const updated = await prisma.product.update({
     where: { id: product.id },
     data: {
       ...(parsed.data.sellingPrice !== undefined ? { sellingPrice: parsed.data.sellingPrice } : {}),
       ...(parsed.data.costPrice !== undefined ? { costPrice: parsed.data.costPrice } : {}),
+      ...(colour !== undefined ? { colour } : {}),
+      ...(configuration !== undefined ? { configuration } : {}),
     },
-    select: { id: true, sellingPrice: true, costPrice: true },
+    select: { id: true, sellingPrice: true, costPrice: true, colour: true, configuration: true },
   });
   const changes = [
     parsed.data.sellingPrice !== undefined && parsed.data.sellingPrice !== product.sellingPrice ? `selling price KES ${product.sellingPrice.toLocaleString("en-KE")} → ${parsed.data.sellingPrice.toLocaleString("en-KE")}` : null,
     parsed.data.costPrice !== undefined && parsed.data.costPrice !== product.costPrice ? "buying price updated" : null,
+    colour !== undefined && colour !== product.colour ? `colour ${product.colour || "not set"} → ${colour || "not set"}` : null,
+    configuration !== undefined && configuration !== product.configuration ? `specs ${product.configuration || "not set"} → ${configuration || "not set"}` : null,
   ].filter(Boolean);
   if (changes.length) {
     await recordActivity({

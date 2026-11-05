@@ -9,7 +9,7 @@ async function main() {
   const shop = await prisma.branch.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } });
   if (!shop) throw new Error("No active branch found. Run the main seed first.");
   const result = await seedPriceList(prisma, shop.id);
-  console.log(`${shop.name}: added ${result.created} of ${result.total} price-list products.`);
+  console.log(`${shop.name}: ${result.created} added, ${result.updated} updated, ${result.total} on the price list.`);
 }
 
 main()
