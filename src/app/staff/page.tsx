@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, KeyRound, Plus, Search, ShieldCheck, UsersRound } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 import { canSeeAllBranches, hasPermission, permissionLabels, permissionsForRole, roleNames, type Permission, type PermissionGrantMode } from "@/lib/access";
@@ -27,6 +27,13 @@ export default function StaffPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [adding, setAdding] = useState(false);
+  const addForm = useRef<HTMLFormElement>(null);
+  // The form opens under the button; bring it into view and ready to type, on phones too.
+  useEffect(() => {
+    if (!adding) return;
+    addForm.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    addForm.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+  }, [adding]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingMemberId, setSavingMemberId] = useState("");
@@ -174,41 +181,8 @@ export default function StaffPage() {
         </div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#4a4a4a] bg-[#f5f5f5] px-4 py-3 text-sm text-[#1a1a1a]">{notice}</p> : null}
-
-        <div className="staff-metrics grid gap-3 sm:grid-cols-3">
-          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r">
-            <p className="text-xs text-[#69746c]">Staff accounts</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : staff.length}</p>
-          </div>
-          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r">
-            <p className="text-xs text-[#69746c]">Active</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : activeCount}</p>
-          </div>
-          <div className="px-4 py-4">
-            <p className="text-xs text-[#69746c]">Sales recorded by team</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : staff.reduce((sum, member) => sum + member._count.sales, 0)}</p>
-          </div>
-        </div>
-
-        <section className="rounded-2xl border border-[#e5e5e5] bg-white p-4 sm:p-5">
-          <h3 className="text-sm font-semibold">Access by role</h3>
-          <p className="mt-1 text-xs text-[#819087]">Each role starts with a default set. Super admin can add any extra permission. Inventory and finance extras can be free, or on condition: a 5-minute code is emailed, then the person stays signed in for the minutes you set.</p>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {Object.entries(roleNames).map(([role, name]) => (
-              <div key={role} className="rounded-xl border border-[#e5e5e5] bg-[#f8f8f8] p-3.5">
-                <p className="text-xs font-semibold text-[#111111]">{name}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {permissionsForRole(role).map((permission) => (
-                    <span key={permission} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-[#526057] ring-1 ring-[#e5e5e5]">{permissionLabels[permission]}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
         {adding && canManage ? (
-          <form onSubmit={createStaff} className="border border-[#e5e5e5] bg-white p-4">
+          <form ref={addForm} onSubmit={createStaff} className="scroll-mt-24 border border-[#e5e5e5] bg-white p-4">
             <div className="mb-4 flex items-center gap-2">
               <UsersRound className="h-4 w-4 text-[#1a1a1a]" />
               <h3 className="text-sm font-semibold">Add a staff account</h3>
@@ -264,6 +238,39 @@ export default function StaffPage() {
             </div>
           </form>
         ) : null}
+
+        <div className="staff-metrics grid gap-3 sm:grid-cols-3">
+          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r">
+            <p className="text-xs text-[#69746c]">Staff accounts</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : staff.length}</p>
+          </div>
+          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r">
+            <p className="text-xs text-[#69746c]">Active</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : activeCount}</p>
+          </div>
+          <div className="px-4 py-4">
+            <p className="text-xs text-[#69746c]">Sales recorded by team</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : staff.reduce((sum, member) => sum + member._count.sales, 0)}</p>
+          </div>
+        </div>
+
+        <section className="rounded-2xl border border-[#e5e5e5] bg-white p-4 sm:p-5">
+          <h3 className="text-sm font-semibold">Access by role</h3>
+          <p className="mt-1 text-xs text-[#819087]">Each role starts with a default set. Super admin can add any extra permission. Inventory and finance extras can be free, or on condition: a 5-minute code is emailed, then the person stays signed in for the minutes you set.</p>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {Object.entries(roleNames).map(([role, name]) => (
+              <div key={role} className="rounded-xl border border-[#e5e5e5] bg-[#f8f8f8] p-3.5">
+                <p className="text-xs font-semibold text-[#111111]">{name}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {permissionsForRole(role).map((permission) => (
+                    <span key={permission} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-[#526057] ring-1 ring-[#e5e5e5]">{permissionLabels[permission]}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
 
         <section className="staff-directory overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white shadow-[0_5px_22px_rgba(0,0,0,.035)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8ebe8] px-4 py-4 sm:px-5">

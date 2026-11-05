@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
+import { findReturningCustomer } from "@/lib/customer-match";
 
 const lateStatuses = ["DUE", "GRACE", "LATE_1", "LATE_2", "LATE_3", "RECOVERY", "OVERDUE"] as const;
 const customerSchema = z.object({
@@ -96,6 +97,10 @@ export async function POST(request: Request) {
   const branchId = session.user.role === "OWNER" ? parsed.data.branchId ?? session.user.branchId : session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Select a branch before creating a customer." }, { status: 400 });
 
+  const returning = await findReturningCustomer(prisma, branchId, parsed.data);
+  if (returning) {
+    return NextResponse.json({ error: `${returning.name} (${returning.phone}) is already a client. Open their record instead.`, existingId: returning.id }, { status: 409 });
+  }
   const customer = await prisma.customer.create({
     data: {
       name: parsed.data.name, phone: parsed.data.phone, email: parsed.data.email || null,

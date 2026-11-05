@@ -20,6 +20,7 @@ import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, 
 import { paymentLabel } from "@/lib/payment-labels";
 import { MAX_WARRANTY_MONTHS, warrantyLabel } from "@/lib/warranty";
 import { getWarrantyDefaults } from "@/lib/warranty-settings";
+import { findReturningCustomer } from "@/lib/customer-match";
 
 export async function GET() {
   const session = await auth();
@@ -271,16 +272,25 @@ export async function POST(request: Request) {
 
       let customerId = parsed.data.customerId ?? null;
       if (parsed.data.newCustomer) {
-        const createdCustomer = await transaction.customer.create({
-          data: {
-            name: parsed.data.newCustomer.name,
-            phone: parsed.data.newCustomer.phone,
-            email: parsed.data.newCustomer.email || null,
-            branchId,
-          },
-          select: { id: true },
-        });
-        customerId = createdCustomer.id;
+        // A client typed in as new who has bought here before keeps their one record.
+        const returning = await findReturningCustomer(transaction, branchId, parsed.data.newCustomer);
+        if (returning) {
+          if (!returning.email && parsed.data.newCustomer.email) {
+            await transaction.customer.update({ where: { id: returning.id }, data: { email: parsed.data.newCustomer.email.toLowerCase() } });
+          }
+          customerId = returning.id;
+        } else {
+          const createdCustomer = await transaction.customer.create({
+            data: {
+              name: parsed.data.newCustomer.name,
+              phone: parsed.data.newCustomer.phone,
+              email: parsed.data.newCustomer.email || null,
+              branchId,
+            },
+            select: { id: true },
+          });
+          customerId = createdCustomer.id;
+        }
       }
 
       if (customerId) {

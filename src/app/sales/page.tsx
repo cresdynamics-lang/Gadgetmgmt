@@ -20,6 +20,7 @@ type Product = { id: string; sku: string; name: string; category: string; condit
 type Customer = { id: string; name: string; phone: string; email: string | null };
 type CreditPolicy = { minimumDepositPercent: number; defaultCreditLimit: number };
 type NewCustomer = { name: string; phone: string; email: string };
+type ReturningClient = { id: string; name: string; phone: string; email: string | null; purchases: number; lastPurchase: string | null };
 type Receipt = {
   id: string;
   invoiceNumber: string;
@@ -81,6 +82,7 @@ export default function SalesPage() {
   const [customerId, setCustomerId] = useState("");
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState<NewCustomer>(blankCustomer);
+  const [returning, setReturning] = useState<ReturningClient | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethods)[number]["value"]>("CASH");
   const [creditTermMonths, setCreditTermMonths] = useState<LipaMonths>(6);
   const [tradeIn, setTradeIn] = useState<TradeInForm>(blankTradeInForm);
@@ -191,6 +193,31 @@ export default function SalesPage() {
   const tradeInAssessment = assessTradeInForm(tradeIn, subtotal);
   const tradeInReady = !tradeIn.active || (tradeInAssessment.eligible && acceptedTradeIn < subtotal);
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
+  // As the phone or email is typed, spot a client who has bought here before.
+  useEffect(() => {
+    const phone = newCustomer.phone.replace(/\D/g, "");
+    const email = newCustomer.email.trim();
+    if (!showNewCustomer || (phone.length < 9 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      const clear = window.setTimeout(() => setReturning(null), 0);
+      return () => window.clearTimeout(clear);
+    }
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/pos/customer-match?phone=${encodeURIComponent(newCustomer.phone)}&email=${encodeURIComponent(email)}`, { cache: "no-store" })
+        .then((response) => response.ok ? response.json() : { match: null })
+        .then((data) => setReturning(data.match ?? null))
+        .catch(() => setReturning(null));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [showNewCustomer, newCustomer.phone, newCustomer.email]);
+
+  function pickReturningClient(client: ReturningClient) {
+    setCustomers((current) => current.some((customer) => customer.id === client.id) ? current : [...current, { id: client.id, name: client.name, phone: client.phone, email: client.email }]);
+    setCustomerId(client.id);
+    setShowNewCustomer(false);
+    setNewCustomer(blankCustomer);
+    setReturning(null);
+  }
+
   const tradeInCustomer = selectedCustomer ?? (showNewCustomer && newCustomer.name.trim() ? newCustomer : null);
   const newCustomerReady = newCustomer.name.trim().length >= 2 && newCustomer.phone.trim().length >= 7;
   const checkoutBlocked = !cartItems.length || submitting || scansOutstanding || priceMissing || Boolean(receiptEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmail.trim())) || !tradeInReady || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < Math.ceil(total * creditPolicy.minimumDepositPercent / 100))) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod));
@@ -439,6 +466,7 @@ export default function SalesPage() {
                     <label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#748176]">Mobile number<input required minLength={7} maxLength={30} autoComplete="tel" type="tel" value={newCustomer.phone} onChange={(event) => setNewCustomer((current) => ({ ...current, phone: event.target.value }))} placeholder="07xx xxx xxx" className="mt-1 w-full rounded-lg border border-[#e5e5e5] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label>
                     <label className="block text-[10px] font-semibold uppercase tracking-[.1em] text-[#748176]">Email <span className="font-normal normal-case tracking-normal">(optional)</span><input type="email" maxLength={254} autoComplete="email" value={newCustomer.email} onChange={(event) => setNewCustomer((current) => ({ ...current, email: event.target.value }))} placeholder="name@example.com" className="mt-1 w-full rounded-lg border border-[#e5e5e5] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#6b6b6b]"/></label>
                   </div>
+                  {returning ? <div role="status" className="mt-2.5 rounded-lg border border-[#b9d8c3] bg-[#eef7f1] p-2.5 text-xs text-[#1f4d2f]"><p className="font-semibold">Returning client: {returning.name} · {returning.phone}</p><p className="mt-0.5 text-[11px]">{returning.purchases ? `${returning.purchases} past purchase${returning.purchases === 1 ? "" : "s"}${returning.lastPurchase ? `, last on ${new Date(returning.lastPurchase).toLocaleDateString("en-KE", { dateStyle: "medium", timeZone: "Africa/Nairobi" })}` : ""}` : "On file, no purchases yet"}. This sale will be added to their record.</p><button type="button" onClick={() => pickReturningClient(returning)} className="mt-1.5 font-semibold underline underline-offset-2">Use saved client</button></div> : null}
                   <p className="mt-2.5 text-[10px] leading-relaxed text-[#879287]">The customer and their payment schedule are saved together when checkout completes.</p>
                 </div> : <div className="flex gap-2"><select value={customerId} onChange={(event) => { setCustomerId(event.target.value); setShowNewCustomer(false); setNewCustomer(blankCustomer); }} className="min-w-0 flex-1 rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#1a1a1a]"><option value="">Walk-in customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select><button type="button" onClick={() => { setCustomerId(""); setShowNewCustomer(true); }} aria-label="Add a new customer" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#e5e5e5] bg-[#f5f5f5] px-3 text-[11px] font-semibold text-[#2d2d2d] transition hover:bg-[#e5e5e5]"><Plus className="h-3.5 w-3.5"/>New</button></div>}
                 {!showNewCustomer && !selectedCustomer?.email ? <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[.1em] text-[#748176]">Email receipt to <span className="font-normal normal-case tracking-normal">(optional)</span><input type="email" maxLength={254} autoComplete="off" value={receiptEmail} onChange={(event) => setReceiptEmail(event.target.value)} placeholder="customer@example.com" className="mt-1 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-[#111111] outline-none focus:border-[#1a1a1a]"/><span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[#879287]">The receipt PDF is emailed as soon as the sale is recorded{selectedCustomer ? " and the email is saved on their account" : ""}.</span></label> : selectedCustomer?.email ? <p className="mt-1.5 text-[10px] text-[#879287]">Receipt PDF will be emailed to {selectedCustomer.email}.</p> : null}
