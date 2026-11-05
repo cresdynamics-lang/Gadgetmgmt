@@ -22,7 +22,7 @@ type Life = {
   details: { colour: string | null; storage: string | null; mpn: string | null; modelNumber: string | null; batteryHealth: number | null; fmi: string | null; sim: string | null; osVersion: string | null };
   received: { at: string; by: string | null; sourceKind: string | null; vendorName: string | null; source: Person | null; reference: string | null; cost: number | null };
   tradeIn: { grade: string; ownershipProof: string; receiptReference: string | null; hasBox: boolean; hasCharger: boolean; value: number | null; seller: Person; assessedBy: string } | null;
-  sale: { id: string; invoiceNumber: string; at: string; by: string | null; status: string; paymentMethod: string; customer: Person | null; price: number | null } | null;
+  sale: { id: string; invoiceNumber: string; at: string; by: string | null; status: string; paymentMethod: string; customer: Person | null; price: number | null; warranty: { months: number; until: string | null; active: boolean } } | null;
   credit: { planReference: string; status: string; balance: number; totalAmount: number } | null;
 };
 
@@ -113,6 +113,7 @@ function LifeCard({ life, showPhotos }: { life: Life; showPhotos: boolean }) {
             <p className="font-semibold text-[#1a1a1a]">{life.status === "RESERVED" ? "Held for a sale awaiting payment" : "Sold"} · {kenyaDateTime(life.sale.at)}</p>
             <p className="text-[#4a4a4a]">{life.sale.customer ? `To ${personLine(life.sale.customer)}` : "Walk-in customer"}{life.sale.price !== null ? ` · ${money(life.sale.price)}` : ""}</p>
             <p className="text-[#848b81]">{[`Invoice ${life.sale.invoiceNumber}`, paymentLabel(life.sale.paymentMethod), life.sale.by && `Sold by ${life.sale.by}`].filter(Boolean).join(" · ")}</p>
+            <p className={life.sale.warranty.active ? "font-medium text-[#2f6b43]" : "text-[#848b81]"}>{life.sale.warranty.months && life.sale.warranty.until ? `Warranty ${life.sale.warranty.months} months, ${life.sale.warranty.active ? "valid until" : "ended"} ${new Date(life.sale.warranty.until).toLocaleDateString("en-KE", { dateStyle: "medium", timeZone: "Africa/Nairobi" })}` : "No warranty recorded"}</p>
             {life.sale.price !== null ? <a href={`/api/pos/${life.sale.id}/receipt`} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#111111] underline-offset-2 hover:underline"><Download className="h-3 w-3" />Download receipt</a> : null}
           </div>
         </li> : null}

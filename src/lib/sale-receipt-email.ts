@@ -3,6 +3,7 @@ import { queueAndSendNotice } from "@/lib/customer-notice";
 import { prisma } from "@/lib/prisma";
 import { paymentLabel } from "@/lib/payment-labels";
 import { tradeInReceiptLines } from "@/lib/trade-in";
+import { warrantyLabel } from "@/lib/warranty";
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
@@ -21,15 +22,15 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
         tradeIn: { select: { storage: true, color: true, serial: true, grade: true, batteryHealth: true, hasBox: true, hasCharger: true, sellerName: true, sellerPhone: true, sellerEmail: true, sellerIdNumber: true } },
         customer: { select: { name: true, email: true } },
         branch: { select: { name: true, phone: true } },
-        saleItems: { select: { quantity: true, total: true, product: { select: { name: true } }, deviceUnits: { select: { imei: true, serial: true } } } },
+        saleItems: { select: { quantity: true, total: true, warrantyMonths: true, product: { select: { name: true } }, deviceUnits: { select: { imei: true, serial: true, unitCode: true } } } },
         payments: { select: { method: true, amount: true, reference: true } },
       },
     });
     const to = resend ? recipient || sale?.customer?.email : sale?.customer?.email || recipient;
     if (!sale || !to || (sale.status !== "PAID" && sale.status !== "PARTIAL")) return false;
     const lines = sale.saleItems.map((item) => {
-      const codes = item.deviceUnits.map((unit) => unit.imei ? `IMEI ${unit.imei}` : `Serial ${unit.serial}`);
-      return `• ${item.quantity} × ${item.product.name}: ${money(item.total)}${codes.length ? `\n   ${codes.join(", ")}` : ""}`;
+      const codes = item.deviceUnits.map((unit) => [unit.imei ? `IMEI ${unit.imei}` : unit.serial ? `Serial ${unit.serial}` : "", unit.unitCode ?? ""].filter(Boolean).join(" · "));
+      return [`• ${item.quantity} × ${item.product.name}: ${money(item.total)}`, ...codes.map((code) => `   ${code}`), `   ${warrantyLabel(sale.createdAt, item.warrantyMonths)}`].join("\n");
     });
     const payments = sale.payments.map((payment) => `${paymentLabel(payment.method)} ${money(payment.amount)}${payment.reference ? ` (${payment.reference})` : ""}`);
     const balance = Math.max(0, sale.total - sale.paidAmount);

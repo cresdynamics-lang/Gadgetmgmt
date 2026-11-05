@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import { brandInstagram, brandInstagramUrl, brandMarkDataUrl, brandWebsite, brandWebsiteUrl } from "@/lib/brand";
 import { paymentLabel } from "@/lib/payment-labels";
 import { tradeInReceiptLines, type TradeInReceiptDetails } from "@/lib/trade-in";
+import { warrantyLabel } from "@/lib/warranty";
 
 export type SaleReceiptData = {
   invoiceNumber: string;
@@ -19,8 +20,8 @@ export type SaleReceiptData = {
   branch: { name: string; address: string; phone: string; email?: string | null };
   cashier: { name: string };
   customer: { name: string; phone: string; email?: string | null } | null;
-  /** `units` are the IMEIs / serials of the phones sold on that line. */
-  saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string }; units?: string[] }[];
+  /** `units` are the IMEIs / serials of the phones sold on that line; `unitCodes` their GadgetHub barcodes. */
+  saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string }; units?: string[]; unitCodes?: string[]; warrantyMonths?: number }[];
   payments: { amount: number; method: string }[];
   paymentLinks?: { label: string; url: string }[];
 };
@@ -245,7 +246,7 @@ function createTradeInReceiptPdf(receipt: SaleReceiptData) {
   y += 5;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  for (const item of receipt.saleItems.slice(0, 4)) {
+  for (const item of receipt.saleItems) {
     const title = doc.splitTextToSize(`${item.quantity} × ${item.product.name}`, 120) as string[];
     doc.setTextColor(...ink);
     doc.text(title, margin, y);
@@ -253,14 +254,13 @@ function createTradeInReceiptPdf(receipt: SaleReceiptData) {
     doc.text(money(item.total), right, y, { align: "right" });
     doc.setFont("helvetica", "normal");
     y += title.length * 4;
-    const codes = (item.units ?? []).slice(0, 2).map((code) => (/^\d{15}$/.test(code) ? `IMEI ${code}` : `Serial ${code}`)).join(" · ");
-    if (codes) {
-      doc.setTextColor(...muted);
-      doc.setFontSize(8);
-      doc.text(codes, margin, y);
-      y += 4;
-      doc.setFontSize(9);
-    }
+    const codes = [...(item.units ?? []).map((code) => (/^\d{15}$/.test(code) ? `IMEI ${code}` : `Serial ${code}`)), ...(item.unitCodes ?? [])].join(" · ");
+    doc.setTextColor(...muted);
+    doc.setFontSize(8);
+    const details = doc.splitTextToSize([codes, item.warrantyMonths !== undefined ? warrantyLabel(receipt.createdAt, item.warrantyMonths) : ""].filter(Boolean).join("\n"), right - margin) as string[];
+    doc.text(details, margin, y);
+    y += details.length * 4;
+    doc.setFontSize(9);
     y += 1;
   }
 
@@ -420,7 +420,9 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
 
   for (const item of receipt.saleItems) {
     const titleLines = doc.splitTextToSize(item.product.name, tableWidth - 93);
-    const unitLines = item.units?.length ? doc.splitTextToSize(item.units.map((code) => (/^\d{15}$/.test(code) ? `IMEI ${code}` : `Sr# ${code}`)).join("  ·  "), tableWidth - 93) : [];
+    const unitText = [...(item.units ?? []).map((code) => (/^\d{15}$/.test(code) ? `IMEI ${code}` : `Sr# ${code}`)), ...(item.unitCodes ?? [])].join("  ·  ");
+    const warrantyText = item.warrantyMonths !== undefined ? warrantyLabel(receipt.createdAt, item.warrantyMonths) : "";
+    const unitLines = doc.splitTextToSize([unitText, warrantyText].filter(Boolean).join("\n"), tableWidth - 93) as string[];
     const rowHeight = Math.max(11, titleLines.length * 4 + unitLines.length * 3.6 + 6);
     if (y + rowHeight > 268) continuationPage(true);
     doc.setDrawColor(229, 229, 229);

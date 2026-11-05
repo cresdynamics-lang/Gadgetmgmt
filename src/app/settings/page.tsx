@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Save } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
+import { DEFAULT_WARRANTY_MONTHS, MAX_WARRANTY_MONTHS, type WarrantyDefaults } from "@/lib/warranty";
 
 type Branch = { id: string; name: string; code: string; address: string; phone: string; email: string | null; isActive: boolean };
 const roleNames: Record<string, string> = { OWNER: "Administrator", BRANCH_MANAGER: "Branch manager", CASHIER: "Cashier", INVENTORY_LEAD: "Inventory lead" };
@@ -18,6 +19,8 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState("");
   const [approvalEmail, setApprovalEmail] = useState("");
   const [savingApproval, setSavingApproval] = useState(false);
+  const [warranty, setWarranty] = useState<WarrantyDefaults>(DEFAULT_WARRANTY_MONTHS);
+  const [savingWarranty, setSavingWarranty] = useState(false);
   const selected = branches.find((branch) => branch.id === selectedId) ?? branches[0];
   const canEditApprovals = session?.user.role === "OWNER";
 
@@ -37,6 +40,8 @@ export default function SettingsPage() {
           const approvalResponse = await fetch("/api/settings/approvals", { cache: "no-store" });
           const approvalData = await approvalResponse.json();
           if (approvalResponse.ok) setApprovalEmail(approvalData.email ?? "");
+          const warrantyResponse = await fetch("/api/settings/warranty", { cache: "no-store" });
+          if (warrantyResponse.ok) setWarranty(await warrantyResponse.json());
         }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load branch profile.");
@@ -118,6 +123,41 @@ export default function SettingsPage() {
                 <input type="email" value={approvalEmail} onChange={(event) => setApprovalEmail(event.target.value)} placeholder="you@example.com" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
               </label>
               <button disabled={savingApproval} className="rounded-xl bg-[#1a1a1a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{savingApproval ? "Saving…" : "Save inbox"}</button>
+            </div>
+          </form>
+        ) : null}
+        {canEditApprovals ? (
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSavingWarranty(true);
+              setError("");
+              setNotice("");
+              try {
+                const response = await fetch("/api/settings/warranty", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(warranty) });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error ?? "Warranty periods could not be saved.");
+                setWarranty(result);
+                setNotice("New sales will use these warranty periods.");
+              } catch (saveError) {
+                setError(saveError instanceof Error ? saveError.message : "Warranty periods could not be saved.");
+              } finally {
+                setSavingWarranty(false);
+              }
+            }}
+            className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white shadow-[0_4px_18px_rgba(0,0,0,.03)]"
+          >
+            <div className="border-b border-[#e5e5e5] bg-[#f5f5f5] px-5 py-4 sm:px-6">
+              <h3 className="text-sm font-semibold text-[#1a1a1a]">Warranty</h3>
+              <p className="mt-1 text-xs text-[#77847a]">Months of warranty printed on each receipt line. Staff who can change prices can change it for one sale.</p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3 p-5 sm:p-6">
+              {([["NEW", "New"], ["EX_UK", "Ex-UK"], ["TRADE_IN", "Trade-in resale"]] as const).map(([condition, label]) => (
+                <label key={condition} className="w-36 text-xs font-medium text-[#526057]">{label} (months)
+                  <input type="number" inputMode="numeric" min={0} max={MAX_WARRANTY_MONTHS} required value={warranty[condition]} onChange={(event) => setWarranty((current) => ({ ...current, [condition]: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))} className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
+                </label>
+              ))}
+              <button disabled={savingWarranty} className="rounded-xl bg-[#1a1a1a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{savingWarranty ? "Saving…" : "Save warranty"}</button>
             </div>
           </form>
         ) : null}

@@ -18,6 +18,8 @@ import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit
 import { allocateUnitCode } from "@/lib/unit-code";
 import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, tradeInReceiptLines, type TradeInCheckId } from "@/lib/trade-in";
 import { paymentLabel } from "@/lib/payment-labels";
+import { MAX_WARRANTY_MONTHS } from "@/lib/warranty";
+import { getWarrantyDefaults } from "@/lib/warranty-settings";
 
 export async function GET() {
   const session = await auth();
@@ -35,6 +37,7 @@ export async function GET() {
         name: true,
         category: true,
         sellingPrice: true,
+        condition: true,
         inventory: {
           where: { branchId },
           select: { stockOnHand: true, reservedStock: true },
@@ -65,6 +68,7 @@ export async function GET() {
     customers,
     creditPolicy: creditPolicy ?? { minimumDepositPercent: 40, defaultCreditLimit: 0 },
     canChangePrice: hasPermission(session.user, "sales.adjust"),
+    warrantyDefaults: await getWarrantyDefaults(),
   });
 }
 
@@ -74,6 +78,8 @@ const checkoutSchema = z.object({
     quantity: z.number().int().min(1).max(1000),
     // The price agreed at the till when it differs from the product's own price.
     unitPrice: z.number().int().min(2).max(2_000_000_000).optional(),
+    // Months of shop warranty when the till changes it from the default for the product's condition.
+    warrantyMonths: z.number().int().min(0).max(MAX_WARRANTY_MONTHS).optional(),
     // IMEIs or serials scanned for this line, so the sale records exactly which phones left.
     units: z.array(z.string().trim().toUpperCase().regex(/^[A-Z0-9]{8,20}$/)).max(1000).optional(),
   })).min(1).max(100),
@@ -193,6 +199,9 @@ export async function POST(request: Request) {
   if (parsed.data.items.some((item) => item.unitPrice !== undefined) && !hasPermission(session.user, "sales.adjust")) {
     return NextResponse.json({ error: "Your permissions cannot change selling prices." }, { status: 403 });
   }
+  if (parsed.data.items.some((item) => item.warrantyMonths !== undefined) && !hasPermission(session.user, "sales.adjust")) {
+    return NextResponse.json({ error: "Your permissions cannot change the warranty." }, { status: 403 });
+  }
   if ((parsed.data.discountAmount > 0 || parsed.data.taxAmount > 0) && !hasPermission(session.user, "sales.adjust")) {
     return NextResponse.json({ error: "Your permissions cannot apply checkout adjustments." }, { status: 403 });
   }
@@ -203,10 +212,13 @@ export async function POST(request: Request) {
     if (!assessment.eligible) return NextResponse.json({ error: `Trade-in cannot be accepted: ${assessment.blockers[0]}`, tradeInBlockers: assessment.blockers }, { status: 400 });
   }
 
+  const warrantyDefaults = await getWarrantyDefaults();
   const quantities = new Map<string, number>();
   const scannedUnits = new Map<string, string[]>();
   const agreedPrices = new Map<string, number>();
+  const agreedWarranty = new Map<string, number>();
   for (const item of parsed.data.items) {
+    if (item.warrantyMonths !== undefined) agreedWarranty.set(item.productId, item.warrantyMonths);
     if (item.unitPrice !== undefined) {
       if ((agreedPrices.get(item.productId) ?? item.unitPrice) !== item.unitPrice) return NextResponse.json({ error: "One product cannot have two prices in the same sale." }, { status: 400 });
       agreedPrices.set(item.productId, item.unitPrice);
@@ -225,6 +237,7 @@ export async function POST(request: Request) {
           name: true,
           costPrice: true,
           sellingPrice: true,
+          condition: true,
           inventory: { where: { branchId }, select: { id: true, stockOnHand: true, reservedStock: true } },
         },
       });
@@ -402,6 +415,7 @@ export async function POST(request: Request) {
               discountAmount: lineDiscount,
               taxAmount: lineTax,
               total: value,
+              warrantyMonths: agreedWarranty.get(product.id) ?? warrantyDefaults[product.condition],
             })),
           },
           ...(awaitsPayment || total < 1 ? {} : { payments: {
@@ -780,7 +794,13 @@ export async function POST(request: Request) {
       if (await sendSaleReceiptEmail(created.id, customerEmail)) emailedTo = customerEmail;
       else emailFailedTo = customerEmail;
     }
-    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo, emailFailedTo, tradeInUnitCode: sale.tradeInUnitCode, tradeIn: tradeInDetails && { storage: tradeInDetails.storage, color: tradeInDetails.color, serial: tradeInDetails.serial, grade: tradeInDetails.grade, batteryHealth: tradeInDetails.batteryHealth, hasBox: tradeInDetails.hasBox, hasCharger: tradeInDetails.hasCharger, sellerName: tradeInDetails.sellerName, sellerPhone: tradeInDetails.sellerPhone, sellerEmail: tradeInDetails.sellerEmail, sellerIdNumber: tradeInDetails.sellerIdNumber } }, { status: 201 });
+    // The receipt shows each phone sold on its line, with its GadgetHub barcode.
+    const soldUnits = await prisma.deviceUnit.findMany({ where: { saleId: created.id }, select: { saleItemId: true, imei: true, serial: true, unitCode: true } });
+    const saleItems = created.saleItems.map((item) => {
+      const units = soldUnits.filter((unit) => unit.saleItemId === item.id);
+      return { ...item, units: units.map((unit) => unit.imei || unit.serial || "").filter(Boolean), unitCodes: units.map((unit) => unit.unitCode || "").filter(Boolean) };
+    });
+    return NextResponse.json({ ...created, saleItems, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo, emailFailedTo, tradeInUnitCode: sale.tradeInUnitCode, tradeIn: tradeInDetails && { storage: tradeInDetails.storage, color: tradeInDetails.color, serial: tradeInDetails.serial, grade: tradeInDetails.grade, batteryHealth: tradeInDetails.batteryHealth, hasBox: tradeInDetails.hasBox, hasCharger: tradeInDetails.hasCharger, sellerName: tradeInDetails.sellerName, sellerPhone: tradeInDetails.sellerPhone, sellerEmail: tradeInDetails.sellerEmail, sellerIdNumber: tradeInDetails.sellerIdNumber } }, { status: 201 });
   } catch (error) {
     if (error instanceof SaleUnitError) return NextResponse.json({ error: error.userMessage }, { status: 409 });
     if (error instanceof Error && error.message === "DEVICE_UNIT_CHANGED") return NextResponse.json({ error: "One of the scanned phones was just sold or moved. Scan again." }, { status: 409 });

@@ -15,7 +15,7 @@ export async function loadSaleDocument(saleId: string, branchId?: string | null)
       branch: { select: { name: true, address: true, phone: true, email: true } },
       cashier: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
-      saleItems: { select: { quantity: true, unitPrice: true, total: true, product: { select: { name: true, sku: true } }, deviceUnits: { select: { imei: true, serial: true } } } },
+      saleItems: { select: { quantity: true, unitPrice: true, total: true, warrantyMonths: true, product: { select: { name: true, sku: true } }, deviceUnits: { select: { imei: true, serial: true, unitCode: true } } } },
       payments: { select: { amount: true, method: true } },
     },
   });
@@ -23,7 +23,7 @@ export async function loadSaleDocument(saleId: string, branchId?: string | null)
   const data: SaleReceiptData = {
     ...sale,
     createdAt: sale.createdAt.toISOString(),
-    saleItems: sale.saleItems.map(({ deviceUnits, ...item }) => ({ ...item, units: deviceUnits.map((unit) => unit.imei || unit.serial || "").filter(Boolean) })),
+    saleItems: sale.saleItems.map(({ deviceUnits, ...item }) => ({ ...item, units: deviceUnits.map((unit) => unit.imei || unit.serial || "").filter(Boolean), unitCodes: deviceUnits.map((unit) => unit.unitCode || "").filter(Boolean) })),
   };
   return data;
 }

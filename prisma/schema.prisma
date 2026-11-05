@@ -342,6 +342,8 @@ model SaleItem {
   discountAmount Int          @default(0)
   taxAmount      Int          @default(0)
   total          Int
+  /// Shop warranty given on this line, in months from the sale. 0 means none.
+  warrantyMonths Int          @default(0)
   deviceUnits    DeviceUnit[]
   createdAt      DateTime     @default(now())
 }

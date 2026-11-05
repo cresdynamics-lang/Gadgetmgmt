@@ -7,6 +7,7 @@ import { denied } from "@/lib/authz";
 import { parseDeviceScan } from "@/lib/device-scan";
 import { prisma } from "@/lib/prisma";
 import { saleLineValue } from "@/lib/sale-value";
+import { warrantyEnds } from "@/lib/warranty";
 
 const unitInclude = {
   product: { select: { name: true, sku: true, condition: true, configuration: true, productGroup: true } },
@@ -14,10 +15,16 @@ const unitInclude = {
   soldBy: { select: { name: true } },
   tradeIn: { select: { grade: true, ownershipProof: true, receiptReference: true, hasBox: true, hasCharger: true, value: true, sellerName: true, sellerPhone: true, assessedBy: { select: { name: true } } } },
   sale: { select: { id: true, invoiceNumber: true, createdAt: true, status: true, paymentMethod: true, customer: { select: { name: true, phone: true } } } },
-  saleItem: { select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true } },
+  saleItem: { select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, warrantyMonths: true } },
 } satisfies Prisma.DeviceUnitInclude;
 
 type UnitRow = Prisma.DeviceUnitGetPayload<{ include: typeof unitInclude }>;
+
+function warrantyView(soldAt: Date, months: number) {
+  if (!months) return { months: 0, until: null, active: false };
+  const until = warrantyEnds(soldAt, months);
+  return { months, until: until.toISOString(), active: until.getTime() > Date.now() };
+}
 
 /** The life story of a phone by IMEI or serial: where it came from, and who bought it, when and for how much. */
 export async function GET(request: Request) {
@@ -62,7 +69,7 @@ export async function GET(request: Request) {
       id: true, imei: true, name: true, sku: true, condition: true, configuration: true, productGroup: true, colour: true, costPrice: true, createdAt: true,
       inventory: { select: { stockOnHand: true, reservedStock: true } },
       movements: { where: { type: "RECEIPT" }, orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true, vendorName: true, sourceKind: true, sourceName: true, sourcePhone: true, reference: true, user: { select: { name: true } } } },
-      saleItems: { orderBy: { createdAt: "desc" }, take: 1, select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, sale: { select: { id: true, invoiceNumber: true, createdAt: true, status: true, paymentMethod: true, cashier: { select: { name: true } }, customer: { select: { name: true, phone: true } } } } } },
+      saleItems: { orderBy: { createdAt: "desc" }, take: 1, select: { quantity: true, unitPrice: true, discountAmount: true, taxAmount: true, warrantyMonths: true, sale: { select: { id: true, invoiceNumber: true, createdAt: true, status: true, paymentMethod: true, cashier: { select: { name: true } }, customer: { select: { name: true, phone: true } } } } } },
       tradeInRecord: { select: { grade: true, ownershipProof: true, receiptReference: true, hasBox: true, hasCharger: true, value: true, sellerName: true, sellerPhone: true, assessedBy: { select: { name: true } } } },
     },
     take: 20,
@@ -114,6 +121,7 @@ export async function GET(request: Request) {
         paymentMethod: unit.sale.paymentMethod,
         customer: unit.sale.customer ? person(unit.sale.customer.name, unit.sale.customer.phone) : null,
         price: show.price && unit.saleItem ? Math.round(saleLineValue(unit.saleItem) / Math.max(1, unit.saleItem.quantity)) : null,
+        warranty: warrantyView(unit.soldAt ?? unit.sale.createdAt, unit.saleItem?.warrantyMonths ?? 0),
       } : null,
     })),
     ...legacyProducts.map((product) => {
@@ -148,6 +156,7 @@ export async function GET(request: Request) {
           paymentMethod: sold.sale.paymentMethod,
           customer: sold.sale.customer ? person(sold.sale.customer.name, sold.sale.customer.phone) : null,
           price: show.price ? Math.round(saleLineValue(sold) / Math.max(1, sold.quantity)) : null,
+          warranty: warrantyView(sold.sale.createdAt, sold.warrantyMonths),
         } : null,
       };
     }),

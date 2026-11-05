@@ -1,0 +1,1 @@
+ALTER TABLE "SaleItem" ADD COLUMN "warrantyMonths" INTEGER NOT NULL DEFAULT 0;
