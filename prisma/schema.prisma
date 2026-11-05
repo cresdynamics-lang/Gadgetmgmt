@@ -823,6 +823,8 @@ model DeviceUnit {
   soldBy        User?                @relation("DeviceUnitSoldBy", fields: [soldById], references: [id], onDelete: SetNull)
   /// Barcode printed for this physical unit. The same model can share a product; this code does not.
   unitCode      String?              @unique
+  /// The supplier's own barcode sticker on an Ex-UK phone, kept alongside the GadgetHub code.
+  supplierCode  String?
   photos        DevicePhoto[]
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
@@ -831,6 +833,7 @@ model DeviceUnit {
   @@index([serial])
   @@index([productId, status])
   @@index([saleId])
+  @@index([supplierCode])
   @@index([receivedAt])
 }
 

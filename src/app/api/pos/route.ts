@@ -6,7 +6,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { canUseCapability, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
-import { recordActivity } from "@/lib/activity";
+import { recordActivity, recordDeviceActivity } from "@/lib/activity";
 import { queueAndSendNotice } from "@/lib/customer-notice";
 import { sendSaleReceiptEmail } from "@/lib/sale-receipt-email";
 import { lipaFromDeposit, splitInstallments } from "@/lib/lipa";
@@ -18,7 +18,7 @@ import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit
 import { allocateUnitCode } from "@/lib/unit-code";
 import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, tradeInReceiptLines, type TradeInCheckId } from "@/lib/trade-in";
 import { paymentLabel } from "@/lib/payment-labels";
-import { MAX_WARRANTY_MONTHS } from "@/lib/warranty";
+import { MAX_WARRANTY_MONTHS, warrantyLabel } from "@/lib/warranty";
 import { getWarrantyDefaults } from "@/lib/warranty-settings";
 
 export async function GET() {
@@ -795,7 +795,20 @@ export async function POST(request: Request) {
       else emailFailedTo = customerEmail;
     }
     // The receipt shows each phone sold on its line, with its GadgetHub barcode.
-    const soldUnits = await prisma.deviceUnit.findMany({ where: { saleId: created.id }, select: { saleItemId: true, imei: true, serial: true, unitCode: true } });
+    const soldUnits = await prisma.deviceUnit.findMany({ where: { saleId: created.id }, select: { id: true, saleItemId: true, imei: true, serial: true, unitCode: true } });
+    for (const unit of soldUnits) {
+      const line = created.saleItems.find((item) => item.id === unit.saleItemId);
+      await recordDeviceActivity(unit.id, session.user, "SALE_CREATED", [
+        `Sold on ${created.invoiceNumber}`,
+        created.customer ? `to ${created.customer.name}` : "to a walk-in customer",
+        line ? `KES ${Math.round(line.total / Math.max(1, line.quantity)).toLocaleString("en-KE")}` : null,
+        line ? warrantyLabel(created.createdAt, line.warrantyMonths) : null,
+      ].filter(Boolean).join(" · "));
+    }
+    if (sale.tradeInUnitCode) {
+      const traded = await prisma.deviceUnit.findUnique({ where: { unitCode: sale.tradeInUnitCode }, select: { id: true } });
+      if (traded) await recordDeviceActivity(traded.id, session.user, "TRADE_IN_ACCEPTED", `Taken in as a trade-in on ${created.invoiceNumber} · KES ${created.tradeInValue.toLocaleString("en-KE")} · barcode ${sale.tradeInUnitCode}`);
+    }
     const saleItems = created.saleItems.map((item) => {
       const units = soldUnits.filter((unit) => unit.saleItemId === item.id);
       return { ...item, units: units.map((unit) => unit.imei || unit.serial || "").filter(Boolean), unitCodes: units.map((unit) => unit.unitCode || "").filter(Boolean) };

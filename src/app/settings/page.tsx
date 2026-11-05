@@ -105,7 +105,7 @@ export default function SettingsPage() {
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error ?? "Approval email could not be saved.");
                 setApprovalEmail(result.email ?? "");
-                setNotice(result.email ? "Approval codes will be sent to that inbox." : "Approval codes will go to the super admin email.");
+                setNotice(`Owner mail will go to ${result.email}.`);
               } catch (saveError) {
                 setError(saveError instanceof Error ? saveError.message : "Approval email could not be saved.");
               } finally {
@@ -115,14 +115,14 @@ export default function SettingsPage() {
             className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white shadow-[0_4px_18px_rgba(0,0,0,.03)]"
           >
             <div className="border-b border-[#e5e5e5] bg-[#f5f5f5] px-5 py-4 sm:px-6">
-              <h3 className="text-sm font-semibold text-[#1a1a1a]">Approval code inbox</h3>
-              <p className="mt-1 text-xs text-[#77847a]">When staff need inventory or finance access on condition, the 5-minute code is emailed here. Leave blank to use the super admin account email.</p>
+              <h3 className="text-sm font-semibold text-[#1a1a1a]">Owner inboxes</h3>
+              <p className="mt-1 text-xs text-[#77847a]">Approval codes, Lipa alerts and owner reports go to these addresses, with info@gadgethubke.com copied. Separate several with commas.</p>
             </div>
             <div className="flex flex-wrap items-end gap-3 p-5 sm:p-6">
-              <label className="min-w-64 flex-1 text-xs font-medium text-[#526057]">Email for approval codes
-                <input type="email" value={approvalEmail} onChange={(event) => setApprovalEmail(event.target.value)} placeholder="you@example.com" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
+              <label className="min-w-64 flex-1 text-xs font-medium text-[#526057]">Owner inbox emails
+                <input type="text" inputMode="email" value={approvalEmail} onChange={(event) => setApprovalEmail(event.target.value)} placeholder="gadgethubke64@gmail.com, gadgethub90@gmail.com" className="mt-1 w-full border border-[#c4c4c4] px-3 py-2.5 text-sm" />
               </label>
-              <button disabled={savingApproval} className="rounded-xl bg-[#1a1a1a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{savingApproval ? "Saving…" : "Save inbox"}</button>
+              <button disabled={savingApproval} className="rounded-xl bg-[#1a1a1a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{savingApproval ? "Saving…" : "Save inboxes"}</button>
             </div>
           </form>
         ) : null}

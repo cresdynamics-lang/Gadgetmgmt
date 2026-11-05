@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
+import { recordDeviceActivity } from "@/lib/activity";
 
 const MAX_PHOTOS = 4;
 const MAX_BYTES = 6 * 1024 * 1024;
@@ -56,5 +57,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }));
   }
   if (!saved.length) return NextResponse.json({ error: "Those photos could not be saved." }, { status: 400 });
+  await recordDeviceActivity(id, session.user, "DEVICE_PHOTOS_ADDED", `Added ${saved.length} photo${saved.length === 1 ? "" : "s"}`);
   return NextResponse.json({ photos: saved }, { status: 201 });
 }

@@ -32,6 +32,7 @@ export type DeviceDetails = {
   fmi?: string | null;
   sim?: string | null;
   version?: string | null;
+  supplierCode?: string | null;
 };
 
 export type StockSourceInput = {
@@ -138,6 +139,11 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
     const active = await findActiveUnit(transaction, identifiers);
     if (active) throw new ReceiveError(`${identifiers.imei || identifiers.serial} is already in stock as ${active.product.name}.`);
   }
+  const supplierCode = input.device?.supplierCode?.trim().toUpperCase() || null;
+  if (supplierCode) {
+    const stuck = await transaction.deviceUnit.findFirst({ where: { supplierCode, status: { in: ["IN_STOCK", "RESERVED"] } }, select: { product: { select: { name: true } } } });
+    if (stuck) throw new ReceiveError(`Supplier sticker ${supplierCode} is already on ${stuck.product.name} in stock.`);
+  }
   const barcodes = barcodesFromScan(input);
   const productPatch: { imei?: string; gtin?: string; mpn?: string; colour?: string; sellingPrice?: number } = {};
   // A New product is a model with many phones, so its IMEIs live on the device records instead.
@@ -187,6 +193,7 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
         branchId: input.branchId,
         productId: existing.product.id,
         unitCode: await allocateUnitCode(transaction),
+        supplierCode,
         imei: identifiers.imei,
         serial: identifiers.serial,
         condition: existing.product.condition,
@@ -276,6 +283,7 @@ type IdentifiedReceiveInput = {
   fmi?: string | null;
   sim?: string | null;
   version?: string | null;
+  supplierCode?: string | null;
   productGroup?: string | null;
   scannedCode?: string | null;
   vendorName?: string | null;
@@ -296,6 +304,7 @@ function deviceDetails(input: IdentifiedReceiveInput): DeviceDetails {
     fmi: input.fmi,
     sim: input.sim,
     version: input.version,
+    supplierCode: input.supplierCode,
   };
 }
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { canUseCapability, hasPermission } from "@/lib/access";
-import { recordActivity } from "@/lib/activity";
+import { recordActivity, recordDeviceActivity } from "@/lib/activity";
 import { appleCatalogHint, lookupAppleIdentity, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
 import { denied } from "@/lib/authz";
 import { productCategories } from "@/lib/catalog";
@@ -68,16 +68,18 @@ async function productsForBranch(branchId: string) {
 }
 
 /** A phone this shop has handled before, found by the IMEI or serial on its barcode. */
-async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: ReturnType<typeof parseScanPayload>) {
+async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: ReturnType<typeof parseScanPayload>, raw = "") {
   const codes = deviceIdentifiers({ imei: scanned.imei || (parsed.kind === "imei" ? parsed.code : ""), serial: scanned.serial });
   const lookups = [codes.imei, codes.serial].filter((code): code is string => Boolean(code));
   const unitCode = scanned.unitCode || "";
-  if (!lookups.length && !unitCode) return null;
+  // An Ex-UK supplier's sticker is matched exactly as scanned.
+  const sticker = scanned.supplierCode || (/^[A-Z0-9-]{4,40}$/i.test(raw.trim()) ? raw.trim().toUpperCase() : "");
+  if (!lookups.length && !unitCode && !sticker) return null;
   const unit = await prisma.deviceUnit.findFirst({
-    where: { branchId, OR: [...lookups.flatMap((code) => [{ imei: code }, { serial: code }]), ...(unitCode ? [{ unitCode }] : [])] },
+    where: { branchId, OR: [...lookups.flatMap((code) => [{ imei: code }, { serial: code }]), ...(unitCode ? [{ unitCode }] : []), ...(sticker ? [{ supplierCode: sticker }] : [])] },
     orderBy: { receivedAt: "desc" },
     select: {
-      imei: true, serial: true, unitCode: true, status: true, colour: true, storage: true, mpn: true, modelNumber: true, batteryHealth: true, fmi: true, sim: true, osVersion: true,
+      imei: true, serial: true, unitCode: true, supplierCode: true, status: true, colour: true, storage: true, mpn: true, modelNumber: true, batteryHealth: true, fmi: true, sim: true, osVersion: true,
       vendorName: true, sourceName: true, receivedAt: true, soldAt: true,
       product: { select: { id: true, name: true, category: true, condition: true, productGroup: true, sellingPrice: true } },
       sale: { select: { invoiceNumber: true } },
@@ -90,6 +92,7 @@ async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: Ret
     batteryHealth: unit.batteryHealth ? String(unit.batteryHealth) : "", fmi: unit.fmi ?? "", sim: unit.sim ?? "", version: unit.osVersion ?? "",
     name: unit.product.name.replace(/\s*\((?:Ex-UK|trade-in)\)\s*$/i, ""), category: unit.product.category, group: unit.product.productGroup ?? "",
     unitCode: unit.unitCode ?? "",
+    supplierCode: unit.supplierCode ?? "",
   });
   return {
     device: overlayDevice(saved, scanned),
@@ -109,7 +112,7 @@ async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: Ret
 
 async function lookup(branchId: string, raw: string, condition?: string | null) {
   const parsed = parseScanPayload(raw);
-  const known = await knownDevice(branchId, parseDeviceScan(raw), parsed);
+  const known = await knownDevice(branchId, parseDeviceScan(raw), parsed, raw);
   let device = known?.device ?? parseDeviceScan(raw);
   const identity = lookupAppleIdentity(raw) || (device.modelNumber ? lookupAppleIdentity(device.modelNumber) : null);
   if (!parsed.code && !deviceHasIdentity(device)) {
@@ -170,6 +173,7 @@ const receiveSchema = z.object({
   fmi: z.string().trim().max(10).optional(),
   sim: z.string().trim().max(20).optional(),
   version: z.string().trim().max(20).optional(),
+  supplierCode: z.string().trim().toUpperCase().max(40).optional(),
   reorderLevel: z.coerce.number().int().nonnegative().max(100000).optional(),
   reference: z.string().trim().max(100).optional(),
   note: z.string().trim().max(300).optional(),
@@ -187,6 +191,7 @@ function deviceFromBody(raw: string, body: z.infer<typeof receiveSchema>): Scann
     fmi: body.fmi,
     sim: body.sim,
     version: body.version,
+    supplierCode: body.supplierCode,
     name: body.deviceName,
   });
 }
@@ -209,6 +214,7 @@ function identifiedFields(device: ScannedDevice, identity: ReturnType<typeof loo
     fmi: device.fmi || null,
     sim: device.sim || null,
     version: device.version || null,
+    supplierCode: device.supplierCode || null,
     productGroup: device.group || identity?.group || named?.group || name.replace(/\s+\d+\s*(GB|TB).*/i, "").trim() || null,
   };
 }
@@ -268,6 +274,14 @@ export async function POST(request: Request) {
       note: parsed.data.note,
     });
     if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+    if (inventory.unit?.id) {
+      await recordDeviceActivity(inventory.unit.id, session.user, "STOCK_RECEIVED", [
+        `Received into stock as ${inventory.product.name}`,
+        inventory.vendorName ? `from ${inventory.vendorName}` : null,
+        `barcode ${inventory.unit.unitCode}`,
+        device.supplierCode ? `supplier sticker ${device.supplierCode}` : null,
+      ].filter(Boolean).join(" · "));
+    }
     await recordActivity({
       userId: session.user.id,
       sessionId: session.user.sessionId,
@@ -303,6 +317,14 @@ export async function POST(request: Request) {
         note: parsed.data.note,
       });
       if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+      if (inventory.unit?.id) {
+        await recordDeviceActivity(inventory.unit.id, session.user, "STOCK_RECEIVED", [
+          `Received into stock as ${inventory.product.name}`,
+          inventory.vendorName ? `from ${inventory.vendorName}` : null,
+          `barcode ${inventory.unit.unitCode}`,
+          device.supplierCode ? `supplier sticker ${device.supplierCode}` : null,
+        ].filter(Boolean).join(" · "));
+      }
       await recordActivity({
         userId: session.user.id,
         sessionId: session.user.sessionId,
@@ -375,6 +397,7 @@ export async function POST(request: Request) {
       fmi: device.fmi || null,
       sim: device.sim || null,
       version: device.version || null,
+      supplierCode: device.supplierCode || null,
     },
     scannedCode: parsed.data.code,
     mpn: device.mpn || null,
@@ -388,6 +411,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });
   }
   if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+  if (inventory.unit?.id) {
+    await recordDeviceActivity(inventory.unit.id, session.user, "STOCK_RECEIVED", [
+      `Received into stock as ${inventory.product.name}`,
+      inventory.vendorName ? `from ${inventory.vendorName}` : null,
+      `barcode ${inventory.unit.unitCode}`,
+      device.supplierCode ? `supplier sticker ${device.supplierCode}` : null,
+    ].filter(Boolean).join(" · "));
+  }
 
   await recordActivity({
     userId: session.user.id,

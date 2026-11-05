@@ -81,6 +81,7 @@ const detailFields = [
   ["fmi", "FMI", "Off"],
   ["version", "Version", "26.4"],
   ["mpn", "Part number", "MPUA3LL/A"],
+  ["supplierCode", "Supplier sticker", "Barcode on the back (Ex-UK)"],
 ] as const;
 
 const fieldClass = "mt-1 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm text-[#111111] outline-none focus:border-[#111111] focus:ring-2 focus:ring-[#e5e5e5]";
@@ -243,6 +244,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           fmi: device.fmi,
           sim: device.sim,
           version: device.version,
+          supplierCode: device.supplierCode,
           vendorName: vendorName.trim(),
           ...(sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
         }),
@@ -320,7 +322,9 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       const payload = parseScanPayload(scanned);
       // Any code that is not a product goes in as this device's serial, so it can still be received and labelled.
       const unlisted = !found.matches.length && !found.device.imei && !found.device.serial && !found.device.unitCode && /^(?=.*\d)[A-Z0-9]{8,20}$/i.test(scanned) && payload.kind === "sku";
-      const read = overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "", serial: unlisted ? scanned.toUpperCase() : "" });
+      // On an Ex-UK phone an unknown code is the supplier's sticker on the back, not the phone's own serial.
+      const sticker = unlisted && current === "EX_UK";
+      const read = overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "", serial: unlisted && !sticker ? scanned.toUpperCase() : "", supplierCode: sticker ? scanned.toUpperCase() : "" });
       const rescan = scanned === pendingCode;
       // A box has several barcodes: part number, serial, UPC. A further scan adds to the open device unless it is a second device.
       const adding = sheetOpen && !rescan && !found.known && !((device.imei || device.serial) && (read.imei || read.serial));

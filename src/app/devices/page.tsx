@@ -22,6 +22,8 @@ type Life = {
   details: { colour: string | null; storage: string | null; mpn: string | null; modelNumber: string | null; batteryHealth: number | null; fmi: string | null; sim: string | null; osVersion: string | null };
   received: { at: string; by: string | null; sourceKind: string | null; vendorName: string | null; source: Person | null; reference: string | null; cost: number | null };
   tradeIn: { grade: string; ownershipProof: string; receiptReference: string | null; hasBox: boolean; hasCharger: boolean; value: number | null; seller: Person; assessedBy: string } | null;
+  supplierCode: string | null;
+  activity: { action: string; summary: string; at: string; by: string | null }[];
   sale: { id: string; invoiceNumber: string; at: string; by: string | null; status: string; paymentMethod: string; customer: Person | null; price: number | null; warranty: { months: number; until: string | null; active: boolean } } | null;
   credit: { planReference: string; status: string; balance: number; totalAmount: number } | null;
 };
@@ -80,7 +82,7 @@ function LifeCard({ life, showPhotos }: { life: Life; showPhotos: boolean }) {
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#eeece4] px-5 py-4">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[#111111]">{life.product.name}</h3>
-          <p className="mt-1 font-mono text-[11px] text-[#69746c]">{[life.unitCode, life.imei && `IMEI ${life.imei}`, life.serial && `Sr# ${life.serial}`].filter(Boolean).join(" · ") || life.product.sku}</p>
+          <p className="mt-1 font-mono text-[11px] text-[#69746c]">{[life.unitCode, life.supplierCode && `Supplier ${life.supplierCode}`, life.imei && `IMEI ${life.imei}`, life.serial && `Sr# ${life.serial}`].filter(Boolean).join(" · ") || life.product.sku}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="rounded-full bg-[#f5f5f5] px-2.5 py-1 text-[10px] font-semibold text-[#2d2d2d]">{conditionLabels[life.product.condition] ?? life.product.condition}</span>
@@ -125,6 +127,10 @@ function LifeCard({ life, showPhotos }: { life: Life; showPhotos: boolean }) {
           </div>
         </li> : null}
       </ol>
+      {life.activity.length ? <div className="border-t border-[#eeece4] px-5 py-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[.1em] text-[#848b81]">Activity on this device</p>
+        <ol className="mt-2 space-y-1.5">{life.activity.map((event, index) => <li key={`${event.at}-${index}`} className="text-xs leading-5"><span className="text-[#848b81]">{kenyaDateTime(event.at)}{event.by ? ` · ${event.by}` : ""}</span><br /><span className="text-[#1a1a1a]">{event.summary}</span></li>)}</ol>
+      </div> : null}
       {showPhotos && life.tracked ? <ArrivalPhotos unitId={life.id} /> : null}
       {!life.tracked ? <p className="border-t border-[#eeece4] bg-[#fafafa] px-5 py-2.5 text-[10px] text-[#848b81]">Recorded before per-device tracking, so some details are missing.</p> : null}
     </article>
@@ -183,9 +189,9 @@ export default function DevicesPage() {
         </div>
         <form onSubmit={search} className="flex gap-2">
           <label className="relative min-w-0 flex-1">
-            <span className="sr-only">IMEI or serial</span>
+            <span className="sr-only">Search gadgets</span>
             <ScanLine aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" />
-            <input ref={input} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Barcode, or a name such as iPhone 11 128GB black" className="w-full rounded-xl border border-[#c4c4c4] bg-white py-3 pl-9 pr-3 font-mono text-sm outline-none focus:border-[#111111]" />
+            <input ref={input} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Barcode, sticker, IMEI, serial, name, client email or phone" className="w-full rounded-xl border border-[#c4c4c4] bg-white py-3 pl-9 pr-3 font-mono text-sm outline-none focus:border-[#111111]" />
           </label>
           <button type="submit" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#111111] px-4 text-sm font-semibold text-white"><Search className="h-4 w-4" />Find</button>
         </form>

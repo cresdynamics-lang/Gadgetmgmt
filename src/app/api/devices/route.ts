@@ -42,28 +42,61 @@ export async function GET(request: Request) {
 
   const raw = (new URL(request.url).searchParams.get("q") || "").trim().slice(0, 800);
   const parsed = parseDeviceScan(raw);
-  const tokens = raw.split(/\s+/).filter(Boolean);
-  const codeToken = tokens.find((token) => /^GH[A-Z0-9]{8}$/i.test(token) || /^\d{15}$/.test(token)) || "";
-  const nameQuery = tokens.filter((token) => token !== codeToken).join(" ").trim();
-  const term = (codeToken || parsed.unitCode || parsed.imei || parsed.serial || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  if (raw && !term && nameQuery.length < 2) return NextResponse.json({ error: "Enter a barcode, or at least two letters of the name." }, { status: 400 });
-
-  const codeFilter = term
-    ? (/^GH[A-Z0-9]{8}$/.test(term)
-      ? { unitCode: term }
-      : { OR: [{ imei: { contains: term } }, { serial: { contains: term } }, { unitCode: term }] })
-    : {};
-  const nameFilter = nameQuery ? { product: { name: { contains: nameQuery, mode: "insensitive" as const } } } : {};
+  // Anything on or about the phone finds it: GadgetHub label, supplier sticker, IMEI, serial,
+  // model or part number, its name, the vendor, or the client's email, phone or name.
+  const term = (parsed.unitCode || parsed.imei || parsed.serial || raw.replace(/[^A-Z0-9]/gi, "")).toUpperCase();
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (raw && term.length < 2 && text.length < 2) return NextResponse.json({ error: "Enter a barcode, IMEI, serial, name, email or phone." }, { status: 400 });
+  const digits = text.replace(/\D/g, "");
+  const phoneTail = digits.length >= 7 && /^[\d\s+()-]+$/.test(text) ? digits.slice(-9) : "";
+  const insensitive = "insensitive" as const;
+  const searchFilter: Prisma.DeviceUnitWhereInput = raw ? {
+    OR: [
+      ...(term.length >= 4 ? [
+        { unitCode: term },
+        { supplierCode: text.toUpperCase() },
+        { supplierCode: term },
+        { imei: { contains: term } },
+        { serial: { contains: term } },
+        { modelNumber: term },
+        { mpn: { contains: text.toUpperCase() } },
+      ] : []),
+      ...(text.length >= 2 ? [
+        { product: { name: { contains: text, mode: insensitive } } },
+        { product: { sku: { contains: text, mode: insensitive } } },
+        { vendorName: { contains: text, mode: insensitive } },
+      ] : []),
+      ...(show.people && text.length >= 3 ? [
+        { sourceName: { contains: text, mode: insensitive } },
+        { sale: { customer: { name: { contains: text, mode: insensitive } } } },
+        { sale: { customer: { email: { contains: text, mode: insensitive } } } },
+        { tradeIn: { sellerName: { contains: text, mode: insensitive } } },
+        { tradeIn: { sellerEmail: { contains: text, mode: insensitive } } },
+      ] : []),
+      ...(show.people && phoneTail ? [
+        { sourcePhone: { contains: phoneTail } },
+        { sale: { customer: { phone: { contains: phoneTail } } } },
+        { tradeIn: { sellerPhone: { contains: phoneTail } } },
+      ] : []),
+    ],
+  } : {};
 
   const units = await prisma.deviceUnit.findMany({
-    where: { ...branchScope, ...codeFilter, ...nameFilter },
+    where: { ...branchScope, ...searchFilter },
     include: unitInclude,
     orderBy: { receivedAt: "desc" },
-    take: term ? 60 : 30,
+    take: raw ? 60 : 30,
   });
 
+  // Each phone's own timeline: every action taken on it, when and by whom.
+  const events = units.length ? await prisma.activityEvent.findMany({
+    where: { entityType: "DeviceUnit", entityId: { in: units.map((unit) => unit.id) } },
+    orderBy: { createdAt: "asc" },
+    select: { entityId: true, action: true, summary: true, createdAt: true, user: { select: { name: true } } },
+  }) : [];
+
   // Phones sold before per-phone records existed are found through their stock item instead.
-  const legacyProducts = term ? await prisma.product.findMany({
+  const legacyProducts = term.length >= 4 ? await prisma.product.findMany({
     where: { ...branchScope, imei: { contains: term }, deviceUnits: { none: {} } },
     select: {
       id: true, imei: true, name: true, sku: true, condition: true, configuration: true, productGroup: true, colour: true, costPrice: true, createdAt: true,
@@ -112,6 +145,8 @@ export async function GET(request: Request) {
         cost: show.cost ? unit.costPrice : null,
       },
       tradeIn: tradeInView(unit.tradeIn),
+      supplierCode: unit.supplierCode,
+      activity: events.filter((event) => event.entityId === unit.id).map((event) => ({ action: event.action, summary: event.summary, at: event.createdAt, by: event.user?.name ?? null })),
       sale: unit.sale ? {
         id: unit.sale.id,
         invoiceNumber: unit.sale.invoiceNumber,
@@ -147,6 +182,8 @@ export async function GET(request: Request) {
           cost: show.cost ? product.costPrice : null,
         },
         tradeIn: tradeInView(product.tradeInRecord),
+        supplierCode: null,
+        activity: [],
         sale: sold && onHand === 0 ? {
           id: sold.sale.id,
           invoiceNumber: sold.sale.invoiceNumber,
@@ -162,5 +199,5 @@ export async function GET(request: Request) {
     }),
   ].map((life) => ({ ...life, credit: plans.find((plan) => plan.imei && (plan.imei === life.imei || plan.imei === life.serial)) ?? null }));
 
-  return NextResponse.json({ query: term, lives, show }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ query: text, lives, show }, { headers: { "Cache-Control": "no-store" } });
 }

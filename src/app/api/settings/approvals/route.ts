@@ -3,18 +3,18 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { hasPermission } from "@/lib/access";
-import { getApprovalCodeEmail, setApprovalCodeEmail } from "@/lib/app-settings";
+import { getOwnerInboxes, OWNER_CC, setOwnerInboxes } from "@/lib/app-settings";
 import { denied } from "@/lib/authz";
 
 const updateSchema = z.object({
-  email: z.string().trim().max(254),
+  email: z.string().trim().max(1000),
 });
 
 export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!hasPermission(session.user, "permissions.manage")) return denied(session.user, "permissions.manage", "Only the super admin can change approval settings.");
-  return NextResponse.json({ email: await getApprovalCodeEmail() });
+  return NextResponse.json({ email: (await getOwnerInboxes()).join(", "), cc: OWNER_CC });
 }
 
 export async function PUT(request: Request) {
@@ -22,11 +22,11 @@ export async function PUT(request: Request) {
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!hasPermission(session.user, "permissions.manage")) return denied(session.user, "permissions.manage", "Only the super admin can change approval settings.");
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Enter the email that should receive approval codes." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Enter the owner inbox emails, separated by commas." }, { status: 400 });
   try {
-    const email = await setApprovalCodeEmail(parsed.data.email);
-    return NextResponse.json({ email });
+    const inboxes = await setOwnerInboxes(parsed.data.email);
+    return NextResponse.json({ email: inboxes.join(", "), cc: OWNER_CC });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The approval email could not be saved." }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The owner inboxes could not be saved." }, { status: 400 });
   }
 }

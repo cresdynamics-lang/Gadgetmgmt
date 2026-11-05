@@ -19,22 +19,34 @@ export async function setSetting(key: string, value: string) {
   });
 }
 
-export async function getApprovalCodeEmail() {
-  return (await getSetting(APPROVAL_EMAIL_KEY)) || process.env.APPROVAL_CODE_EMAIL?.trim() || "";
+const OWNER_INBOXES_KEY = "owner_inboxes";
+/** Where approval codes, alerts and owner reports go unless Settings says otherwise. */
+export const DEFAULT_OWNER_INBOXES = ["gadgethubke64@gmail.com", "gadgethub90@gmail.com"];
+/** Copied on owner mail so the shop's own mailbox keeps a record. */
+export const OWNER_CC = "info@gadgethubke.com";
+
+function emailList(value: string) {
+  return [...new Set(value.split(/[\s,;]+/).map((item) => item.trim().toLowerCase()).filter(Boolean))];
 }
 
-export async function setApprovalCodeEmail(email: string) {
-  const next = email.trim().toLowerCase();
-  if (next && !isEmail(next)) throw new Error("Enter a valid email for approval codes.");
-  await setSetting(APPROVAL_EMAIL_KEY, next);
-  return next;
+export async function getOwnerInboxes() {
+  const stored = emailList(await getSetting(OWNER_INBOXES_KEY) || await getSetting(APPROVAL_EMAIL_KEY)).filter(isEmail);
+  return stored.length ? stored : DEFAULT_OWNER_INBOXES;
+}
+
+export async function setOwnerInboxes(value: string) {
+  const emails = emailList(value);
+  const invalid = emails.find((email) => !isEmail(email));
+  if (invalid) throw new Error(`${invalid} is not a valid email.`);
+  await setSetting(OWNER_INBOXES_KEY, emails.join(", "));
+  return getOwnerInboxes();
+}
+
+/** Owner mail goes to the owner inboxes; managers keep their own address. The shop mailbox is copied once. */
+export function ownerMailRecipients(staff: { email: string; role?: string | null }[], inboxes: string[]) {
+  return [...new Set([...staff.filter((user) => user.role !== "OWNER").map((user) => user.email.trim().toLowerCase()), ...inboxes, OWNER_CC])];
 }
 
 export async function approvalCodeRecipients() {
-  const configured = await getApprovalCodeEmail();
-  const owners = await prisma.user.findMany({
-    where: { role: "OWNER", status: "ACTIVE" },
-    select: { email: true },
-  });
-  return [...new Set([configured, ...owners.map((owner) => owner.email.trim().toLowerCase())].filter(isEmail))];
+  return getOwnerInboxes();
 }

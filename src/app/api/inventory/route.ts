@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { canSeeAllBranches, canUseCapability, hasPermission } from "@/lib/access";
 import { denied } from "@/lib/authz";
-import { recordActivity } from "@/lib/activity";
+import { recordActivity, recordDeviceActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import { receiveProductStock } from "@/lib/receive-stock";
 
@@ -162,6 +162,13 @@ export async function POST(request: Request) {
 
   if (!inventory) return NextResponse.json({ error: "This product is not set up for your branch." }, { status: 404 });
   if ("error" in inventory) return NextResponse.json({ error: inventory.error }, { status: 409 });
+  if (inventory.unit?.id) {
+    await recordDeviceActivity(inventory.unit.id, session.user, "STOCK_RECEIVED", [
+      `Received into stock as ${inventory.product.name}`,
+      inventory.vendorName ? `from ${inventory.vendorName}` : null,
+      `barcode ${inventory.unit.unitCode}`,
+    ].filter(Boolean).join(" · "));
+  }
   await recordActivity({
     userId: session.user.id,
     sessionId: session.user.sessionId,

@@ -6,7 +6,7 @@ import { auth } from "@/auth";
 import { isPermission, permissionLabels, type Permission } from "@/lib/access";
 import { recordActivity } from "@/lib/activity";
 import { APPROVAL_WINDOW_MS, hashApprovalCode } from "@/lib/authz";
-import { approvalCodeRecipients } from "@/lib/app-settings";
+import { approvalCodeRecipients, OWNER_CC } from "@/lib/app-settings";
 import { emailConfigured, sendEmail } from "@/lib/mail";
 import { prisma } from "@/lib/prisma";
 
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     </div></body></html>`;
 
   if (mailReady) {
-    const results = await Promise.allSettled(recipients.map((to) => sendEmail({ to, subject, text, html, category: "accounts" })));
+    const results = await Promise.allSettled(recipients.map((to, index) => sendEmail({ to, ...(index === 0 ? { cc: [OWNER_CC] } : {}), subject, text, html, category: "accounts" })));
     if (results.every((result) => result.status === "rejected")) {
       await prisma.permissionApproval.delete({ where: { id: approval.id } });
       console.error("Approval code email failed", results.map((result) => result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "unknown"));

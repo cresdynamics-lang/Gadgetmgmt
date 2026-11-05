@@ -19,14 +19,17 @@ export async function GET(request: Request) {
   const parsed = parseDeviceScan(raw);
   const codes = deviceIdentifiers({ imei: parsed.imei || normalizeDeviceCode(raw), serial: parsed.serial });
   const lookups = [codes.imei, codes.serial].filter((code): code is string => Boolean(code));
-  if (!lookups.length) return NextResponse.json({ error: "Scan the IMEI barcode, serial or the phone's QR label." }, { status: 400 });
+  // The GadgetHub label or an Ex-UK supplier's sticker finds the phone as well.
+  const label = parsed.unitCode || "";
+  const sticker = /^[A-Z0-9-]{4,40}$/i.test(raw.trim()) ? raw.trim().toUpperCase() : "";
+  if (!lookups.length && !label && !sticker) return NextResponse.json({ error: "Scan the IMEI barcode, serial, GadgetHub label or the phone's QR label." }, { status: 400 });
 
   const unit = await prisma.deviceUnit.findFirst({
-    where: { branchId, OR: lookups.flatMap((code) => [{ imei: code }, { serial: code }]) },
+    where: { branchId, OR: [...lookups.flatMap((code) => [{ imei: code }, { serial: code }]), ...(label ? [{ unitCode: label }] : []), ...(sticker ? [{ supplierCode: sticker }] : [])] },
     orderBy: { receivedAt: "desc" },
     select: { id: true, imei: true, serial: true, status: true, productId: true, product: { select: { name: true } } },
   });
-  if (!unit) return NextResponse.json({ error: `${lookups[0]} is not on file. Receive the phone into stock first.` }, { status: 404 });
+  if (!unit) return NextResponse.json({ error: `${lookups[0] || label || sticker} is not on file. Receive the phone into stock first.` }, { status: 404 });
   if (unit.status !== "IN_STOCK") {
     return NextResponse.json({ error: `${unit.product.name} (${unit.imei || unit.serial}) is ${unit.status === "SOLD" ? "already sold" : "held for a sale awaiting payment"}.` }, { status: 409 });
   }

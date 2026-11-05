@@ -19,7 +19,8 @@ export type ActivityAction =
   | "PRICE_UPDATED"
   | "WEBSITE_VISIBILITY"
   | "AI_QUESTION"
-  | "RECEIPT_EMAILED";
+  | "RECEIPT_EMAILED"
+  | "DEVICE_PHOTOS_ADDED";
 
 export async function startUserSession(userId: string) {
   const session = await prisma.userSession.create({ data: { userId }, select: { id: true } });
@@ -102,4 +103,9 @@ export function formatDuration(durationMs: number) {
   if (hours === 0) return `${minutes} min`;
   if (minutes === 0) return `${hours}h`;
   return `${hours}h ${minutes}m`;
+}
+
+/** One entry on a single phone's own timeline: what happened to it, when and by whom. */
+export function recordDeviceActivity(unitId: string, user: { id: string; sessionId?: string | null }, action: ActivityAction, summary: string) {
+  return recordActivity({ userId: user.id, sessionId: user.sessionId, action, summary, entityType: "DeviceUnit", entityId: unitId });
 }

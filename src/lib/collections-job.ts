@@ -7,6 +7,7 @@ import { assistantConfigured, openRouterChat } from "@/lib/assistant/agent";
 import { deliverNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { releaseSaleUnits } from "@/lib/device-units";
+import { getOwnerInboxes, ownerMailRecipients } from "@/lib/app-settings";
 
 function nairobiDate(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -61,9 +62,9 @@ async function refreshPlanStates(now: Date) {
     const escalation = overdueDays >= (policy?.ownerEscalationDays ?? 7) ? "OWNER" : null;
     if (!escalation) continue;
     const date = nairobiDate(now);
-    const recipients = await prisma.user.findMany({ where: { status: "ACTIVE", ...(escalation === "OWNER" ? { role: "OWNER" } : { role: "BRANCH_MANAGER", branchId: plan.branchId }) }, select: { email: true } });
+    const recipients = await prisma.user.findMany({ where: { status: "ACTIVE", ...(escalation === "OWNER" ? { role: "OWNER" } : { role: "BRANCH_MANAGER", branchId: plan.branchId }) }, select: { email: true, role: true } });
     await prisma.customerNotification.createMany({
-      data: [...new Set(recipients.map((user) => user.email.toLowerCase()))].map((recipient) => ({
+      data: ownerMailRecipients(recipients, await getOwnerInboxes()).map((recipient) => ({
         branchId: plan.branchId, channel: "EMAIL" as const, kind: `CREDIT_ESCALATION_${escalation}`, recipient,
         subject: `Lipa account needs follow-up · ${plan.branch.name}`,
         body: `${plan.customer.name}'s Lipa account is ${overdueDays} days past its due date (${status.replaceAll("_", " ")}). Review the account and contact history in GadgetHub.`,
@@ -97,9 +98,9 @@ async function flagAccount(plan: { id: string; branchId: string; customerId: str
     })),
     skipDuplicates: true,
   });
-  const staff = await prisma.user.findMany({ where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId: plan.branchId }] }, select: { email: true } });
+  const staff = await prisma.user.findMany({ where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId: plan.branchId }] }, select: { email: true, role: true } });
   await prisma.customerNotification.createMany({
-    data: [...new Set(staff.map((user) => user.email.toLowerCase()))].map((recipient) => ({
+    data: ownerMailRecipients(staff, await getOwnerInboxes()).map((recipient) => ({
       branchId: plan.branchId,
       channel: "EMAIL" as const,
       kind: "CREDIT_FLAGGED_ALERT",
@@ -155,6 +156,7 @@ async function queueReminders(now: Date) {
     const amount = Math.min(installment.amount - installment.paidAmount, plan.balance);
     if (amount <= 0) continue;
     const dedupeKey = `reminder:${installment.id}:${milestone}`;
+    const ownerInboxes = await getOwnerInboxes();
     try {
       await prisma.$transaction(async (transaction) => {
         if (await transaction.paymentRequest.findUnique({ where: { dedupeKey }, select: { id: true } })) return;
@@ -199,10 +201,10 @@ async function queueReminders(now: Date) {
         });
         const staff = await transaction.user.findMany({
           where: { status: "ACTIVE", OR: [{ role: "OWNER" }, { role: "BRANCH_MANAGER", branchId: plan.branch.id }] },
-          select: { email: true },
+          select: { email: true, role: true },
         });
         await transaction.customerNotification.createMany({
-          data: [...new Set(staff.map((user) => user.email.toLowerCase()))].map((recipient) => ({
+          data: ownerMailRecipients(staff, ownerInboxes).map((recipient) => ({
             branchId: plan.branch.id,
             channel: "EMAIL" as const,
             kind: "BUSINESS_COLLECTION_ALERT",

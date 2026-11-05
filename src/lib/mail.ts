@@ -81,7 +81,7 @@ export function customerEmailHtml(input: { heading: string; intro: string; amoun
 
 export type MailAttachment = { filename: string; content: Buffer };
 
-export async function sendEmail(input: { to: string; subject: string; text: string; html?: string; category?: MailCategory; attachments?: MailAttachment[] }) {
+export async function sendEmail(input: { to: string; cc?: string[]; subject: string; text: string; html?: string; category?: MailCategory; attachments?: MailAttachment[] }) {
   const category = input.category ?? "notifications";
   const from = mailFrom(category);
   if (!from) throw new Error(`Email delivery needs MAIL_FROM_${categoryEnv[category]} or MAIL_FROM.`);
@@ -100,7 +100,7 @@ export async function sendEmail(input: { to: string; subject: string; text: stri
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
-        from, to: [input.to], reply_to: replyTo, subject: input.subject, text: input.text, html,
+        from, to: [input.to], ...(input.cc?.length ? { cc: input.cc } : {}), reply_to: replyTo, subject: input.subject, text: input.text, html,
         ...(input.attachments?.length ? { attachments: input.attachments.map((file) => ({ filename: file.filename, content: file.content.toString("base64") })) } : {}),
       }),
     });
@@ -112,5 +112,5 @@ export async function sendEmail(input: { to: string; subject: string; text: stri
   }
   const smtp = smtpTransport();
   if (!smtp) throw new Error("Email delivery needs a Resend API key or SMTP settings.");
-  await smtp.sendMail({ from, to: input.to, replyTo, subject: input.subject, text: input.text, html, attachments: input.attachments });
+  await smtp.sendMail({ from, to: input.to, cc: input.cc, replyTo, subject: input.subject, text: input.text, html, attachments: input.attachments });
 }

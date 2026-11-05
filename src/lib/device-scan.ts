@@ -16,11 +16,13 @@ export type ScannedDevice = {
   group: string;
   /** Printed barcode for this physical unit. Empty until the shop receives it. */
   unitCode?: string;
+  /** The barcode on an Ex-UK supplier's sticker, kept as well as the GadgetHub code. */
+  supplierCode?: string;
 };
 
 const emptyDevice: ScannedDevice = {
   imei: "", serial: "", mpn: "", modelNumber: "", storage: "", colour: "",
-  batteryHealth: "", fmi: "", sim: "", version: "", name: "", category: "", group: "", unitCode: "",
+  batteryHealth: "", fmi: "", sim: "", version: "", name: "", category: "", group: "", unitCode: "", supplierCode: "",
 };
 
 /** Map a photo or About dump onto a catalog section without asking the staff to pick one. */
