@@ -295,11 +295,23 @@ export function lookupAppleIdentity(raw: string): AppleDeviceIdentity | null {
   return null;
 }
 
-/** "M1", "M2 Pro", "M3 Max" as written on a sticker or the About screen. */
+/**
+ * The chip written on About or a box: "M2", "M2 Pro", "Core i5", "A16".
+ * A four-digit model number such as A2337 is not a chip.
+ */
 function readChip(text: string) {
-  const found = text.match(/(?<![A-Z0-9])M([1-9])(?:[\s-]*(Pro|Max|Ultra))?(?![A-Z0-9])/i);
-  if (!found) return "";
-  return `M${found[1]}${found[2] ? ` ${found[2][0].toUpperCase()}${found[2].slice(1).toLowerCase()}` : ""}`;
+  const apple = text.match(/(?<![A-Z0-9])M([1-9])(?:[\s-]*(Pro|Max|Ultra))?(?![A-Z0-9])/i);
+  if (apple) return `M${apple[1]}${apple[2] ? ` ${apple[2][0].toUpperCase()}${apple[2].slice(1).toLowerCase()}` : ""}`;
+  const intel = text.match(/\bcore\s*i\s*([3579])\b/i);
+  if (intel) return `Core i${intel[1]}`;
+  const series = text.match(/(?<![A-Z0-9])A(1\d)(?:\s*(Pro))?(?!\d)/i);
+  if (series) return `A${series[1]}${series[2] ? " Pro" : ""}`;
+  return "";
+}
+
+/** Chip name for a Mac or iPad label, or "" when the text does not say one. */
+export function readDeviceChip(text: string) {
+  return readChip(text);
 }
 
 function readSize(text: string) {
@@ -329,13 +341,12 @@ export function appleModelTraits(label: string): ModelTraits | null {
   const text = String(label || "");
   const family = FAMILIES.find(([pattern]) => pattern.test(text));
   if (!family) return null;
-  const aChip = text.match(/(?<![A-Z0-9])A(1[4-9])(\s*Pro)?(?![A-Z0-9])/i);
   const generation = text.match(/(\d{1,2})(?:st|nd|rd|th)\s*gen/i)?.[0].replace(/\s+/g, " ").toLowerCase() ?? "";
   return {
     family: family[1],
     category: family[2],
     size: readSize(text),
-    chip: readChip(text) || (aChip ? `A${aChip[1]}${aChip[2] ? " Pro" : ""}` : ""),
+    chip: readChip(text),
     generation,
   };
 }

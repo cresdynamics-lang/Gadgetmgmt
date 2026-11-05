@@ -9,11 +9,13 @@ import { denied } from "@/lib/authz";
 import { recordActivity } from "@/lib/activity";
 import { queueAndSendNotice } from "@/lib/customer-notice";
 import { sendSaleReceiptEmail } from "@/lib/sale-receipt-email";
+import { lipaFromDeposit, splitInstallments } from "@/lib/lipa";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
 import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit, SaleUnitError } from "@/lib/device-units";
+import { allocateUnitCode } from "@/lib/unit-code";
 import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, tradeInReceiptLines, type TradeInCheckId } from "@/lib/trade-in";
 import { paymentLabel } from "@/lib/payment-labels";
 
@@ -87,7 +89,7 @@ const checkoutSchema = z.object({
   // Where to email the receipt when the customer has no email on file (walk-ins included).
   receiptEmail: z.string().trim().toLowerCase().email().max(254).optional(),
   mpesaPhone: z.string().trim().min(9).max(20).optional(),
-  creditTermMonths: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
+  creditTermMonths: z.number().int().min(1).max(6).optional(),
   creditDepositAmount: z.number().int().positive().max(2_000_000_000).optional(),
   creditDepositMethod: z.enum(["CASH", "MPESA", "CARD"]).optional(),
   creditDepositReference: z.string().trim().toUpperCase().min(6).max(32).optional(),
@@ -109,6 +111,8 @@ const checkoutSchema = z.object({
     checks: z.record(z.string(), z.boolean()),
     sellerName: z.string().trim().min(2).max(120),
     sellerPhone: z.string().trim().min(9).max(20),
+    sellerIdNumber: z.string().trim().min(5).max(40),
+    sellerEmail: z.string().trim().toLowerCase().email().max(254),
     notes: z.string().trim().max(300).optional(),
     // The cashier's sign-off that they inspected the device and documents themselves.
     staffConfirmed: z.boolean().default(false),
@@ -298,6 +302,7 @@ export async function POST(request: Request) {
       const awaitsPayment = parsed.data.paymentMethod === "PAY_LINK" || parsed.data.paymentMethod === "MPESA_STK";
       const paidAmount = parsed.data.paymentMethod === "CREDIT" ? parsed.data.creditDepositAmount! : awaitsPayment ? 0 : total;
       if (paidAmount > total) throw new Error("DEPOSIT_EXCEEDS_TOTAL");
+      const lipa = parsed.data.paymentMethod === "CREDIT" ? lipaFromDeposit(total, paidAmount, parsed.data.creditTermMonths!) : null;
       if (parsed.data.paymentMethod === "CREDIT" && customerId) {
         const customer = await transaction.customer.findFirst({ where: { id: customerId, branchId }, select: { creditLimit: true, status: true } });
         if (customer?.status === "CREDIT_HOLD") throw new Error("CUSTOMER_CREDIT_HOLD");
@@ -308,7 +313,7 @@ export async function POST(request: Request) {
         const depositPercent = policy?.minimumDepositPercent ?? 40;
         if (paidAmount * 100 < total * depositPercent) throw new Error("DEPOSIT_BELOW_POLICY");
         const creditLimit = customer?.creditLimit || policy?.defaultCreditLimit || 0;
-        if (creditLimit > 0 && (exposure._sum.balance ?? 0) + total - paidAmount > creditLimit) throw new Error("CREDIT_LIMIT_EXCEEDED");
+        if (creditLimit > 0 && (exposure._sum.balance ?? 0) + (lipa?.repayKes ?? 0) > creditLimit) throw new Error("CREDIT_LIMIT_EXCEEDED");
       }
       const splitTotal = parsed.data.paymentBreakdown?.reduce((sum, payment) => sum + payment.amount, 0);
       const splitMethods = new Set(parsed.data.paymentBreakdown?.map((payment) => payment.method));
@@ -337,6 +342,7 @@ export async function POST(request: Request) {
 
       // The traded-in phone joins stock as its own item, priced for resale.
       let tradeInProduct: { id: string; name: string; sku: string } | null = null;
+      let tradeInUnitCode: string | null = null;
       if (parsed.data.tradeIn) {
         const tradeIn = parsed.data.tradeIn;
         const onLipa = await transaction.creditPlan.findFirst({ where: { imei: tradeIn.imei, balance: { gt: 0 } }, select: { id: true } });
@@ -513,6 +519,8 @@ export async function POST(request: Request) {
             checks: Object.fromEntries(tradeInChecks.map((check) => [check.id, tradeIn.checks[check.id] === true])),
             sellerName: tradeIn.sellerName,
             sellerPhone: tradeIn.sellerPhone,
+            sellerIdNumber: tradeIn.sellerIdNumber,
+            sellerEmail: tradeIn.sellerEmail,
             value: tradeIn.value,
             resalePrice: tradeIn.resalePrice,
             notes: tradeIn.notes || null,
@@ -523,10 +531,11 @@ export async function POST(request: Request) {
           select: { id: true },
         });
         const tradeInCodes = deviceIdentifiers({ imei: tradeIn.imei });
-        await transaction.deviceUnit.create({
+        const tradedUnit = await transaction.deviceUnit.create({
           data: {
             branchId,
             productId: tradeInProduct.id,
+            unitCode: await allocateUnitCode(transaction),
             ...tradeInCodes,
             condition: "TRADE_IN",
             colour: tradeIn.color || null,
@@ -540,7 +549,9 @@ export async function POST(request: Request) {
             receivedById: session.user.id,
             tradeInId: tradeInRecord.id,
           },
+          select: { unitCode: true },
         });
+        tradeInUnitCode = tradedUnit.unitCode;
         await transaction.inventoryMovement.create({
           data: {
             branchId, productId: tradeInProduct.id, userId: session.user.id, saleId: createdSale.id,
@@ -565,13 +576,17 @@ export async function POST(request: Request) {
         }
         if (parsed.data.imei && await transaction.creditPlan.findUnique({ where: { imei: parsed.data.imei }, select: { id: true } })) throw new Error("IMEI_ALREADY_REGISTERED");
         let depositRemaining = paidAmount;
+        let repayRemaining = lipa?.repayKes ?? 0;
         for (let index = 0; index < saleLines.length; index += 1) {
           const line = saleLines[index];
           const allocatedDeposit = index === saleLines.length - 1
             ? depositRemaining
             : proportionalIntegerShare(paidAmount, line.total, total);
           depositRemaining -= allocatedDeposit;
-          const lineBalance = line.total - allocatedDeposit;
+          const lineBalance = index === saleLines.length - 1
+            ? repayRemaining
+            : proportionalIntegerShare(lipa?.repayKes ?? 0, line.total, total);
+          repayRemaining -= lineBalance;
           const token = randomBytes(32).toString("hex");
           const dueDates = Array.from({ length: parsed.data.creditTermMonths! }, (_, installmentIndex) => {
             const monthStart = new Date(receiptDate.getFullYear(), receiptDate.getMonth() + installmentIndex + 1, 1);
@@ -579,13 +594,12 @@ export async function POST(request: Request) {
             monthStart.setDate(Math.min(receiptDate.getDate(), lastDay));
             return monthStart;
           });
-          const baseInstallment = Math.floor(lineBalance / parsed.data.creditTermMonths!);
-          let remainder = lineBalance % parsed.data.creditTermMonths!;
-          const installments = dueDates.map((dueDate, installmentIndex) => {
-            const amount = baseInstallment + (remainder > 0 ? 1 : 0);
-            remainder = Math.max(0, remainder - 1);
-            return { sequence: installmentIndex + 1, dueDate, amount };
-          });
+          const installmentAmounts = splitInstallments(lineBalance, parsed.data.creditTermMonths!);
+          const installments = dueDates.map((dueDate, installmentIndex) => ({
+            sequence: installmentIndex + 1,
+            dueDate,
+            amount: installmentAmounts[installmentIndex] ?? 0,
+          }));
           const planReference = `GH${randomBytes(5).toString("hex").toUpperCase()}`;
           const plan = await transaction.creditPlan.create({
             data: {
@@ -595,7 +609,7 @@ export async function POST(request: Request) {
               customerId: customerId!,
               productId: line.product.id,
               ...(parsed.data.imei ? { imei: parsed.data.imei } : {}),
-              totalAmount: line.total,
+              totalAmount: allocatedDeposit + lineBalance,
               depositAmount: allocatedDeposit,
               balance: lineBalance,
               installmentCount: parsed.data.creditTermMonths!,
@@ -645,7 +659,7 @@ export async function POST(request: Request) {
       createdSale.saleItems = createdSale.saleItems.map((item) => ({ ...item, units: soldUnits.filter((unit) => unit.saleItemId === item.id).map((unit) => unit.imei || unit.serial || "").filter(Boolean) }));
 
       const priceChanges = lineItems.filter(({ product, unitPrice }) => unitPrice !== product.sellingPrice);
-      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId, stkRequest, tradeInProduct, priceChanges };
+      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId, stkRequest, tradeInProduct, tradeInUnitCode, priceChanges };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     let payerMessage: { recipient: string; status: "SENT" | "FAILED" | "QUEUED" } | null = null;
@@ -738,7 +752,7 @@ export async function POST(request: Request) {
     if (receiptEmail && created.customerId && !created.customer?.email) {
       await prisma.customer.update({ where: { id: created.customerId }, data: { email: receiptEmail } }).catch(() => null);
     }
-    const customerEmail = created.customer?.email || receiptEmail;
+    const customerEmail = created.customer?.email || receiptEmail || parsed.data.tradeIn?.sellerEmail;
     let emailedTo: string | null = null;
     let emailFailedTo: string | null = null;
     const paymentBase = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
@@ -766,7 +780,7 @@ export async function POST(request: Request) {
       if (await sendSaleReceiptEmail(created.id, customerEmail)) emailedTo = customerEmail;
       else emailFailedTo = customerEmail;
     }
-    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo, emailFailedTo, tradeIn: tradeInDetails && { storage: tradeInDetails.storage, color: tradeInDetails.color, serial: tradeInDetails.serial, grade: tradeInDetails.grade, batteryHealth: tradeInDetails.batteryHealth, hasBox: tradeInDetails.hasBox, hasCharger: tradeInDetails.hasCharger, sellerName: tradeInDetails.sellerName } }, { status: 201 });
+    return NextResponse.json({ ...created, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage, stkPrompt, emailedTo, emailFailedTo, tradeInUnitCode: sale.tradeInUnitCode, tradeIn: tradeInDetails && { storage: tradeInDetails.storage, color: tradeInDetails.color, serial: tradeInDetails.serial, grade: tradeInDetails.grade, batteryHealth: tradeInDetails.batteryHealth, hasBox: tradeInDetails.hasBox, hasCharger: tradeInDetails.hasCharger, sellerName: tradeInDetails.sellerName, sellerPhone: tradeInDetails.sellerPhone, sellerEmail: tradeInDetails.sellerEmail, sellerIdNumber: tradeInDetails.sellerIdNumber } }, { status: 201 });
   } catch (error) {
     if (error instanceof SaleUnitError) return NextResponse.json({ error: error.userMessage }, { status: 409 });
     if (error instanceof Error && error.message === "DEVICE_UNIT_CHANGED") return NextResponse.json({ error: "One of the scanned phones was just sold or moved. Scan again." }, { status: 409 });

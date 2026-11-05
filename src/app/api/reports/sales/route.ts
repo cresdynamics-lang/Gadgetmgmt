@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     }),
     prisma.salesTarget.findMany({
       where: { isActive: true, ...(canSeeAllBranches(session.user) ? {} : { OR: [{ branchId: session.user.branchId ?? "" }, { branchId: null }] }) },
+      include: { assignee: { select: { id: true, name: true } } },
       orderBy: [{ period: "asc" }, { createdAt: "desc" }],
     }),
   ]);
@@ -77,13 +78,14 @@ export async function GET(request: Request) {
   };
   const goals = await Promise.all(targets.map(async (target) => {
     const window = goalWindow(target);
+    const person = target.assigneeId ? { cashierId: target.assigneeId } : {};
     const [totals, lines] = await Promise.all([
-      prisma.sale.aggregate({ where: { ...branchScope, status: completed, createdAt: { gte: window.from, lt: window.to } }, _sum: { total: true, tradeInValue: true }, _count: true }),
-      prisma.saleItem.aggregate({ where: { sale: { ...branchScope, status: completed, createdAt: { gte: window.from, lt: window.to } } }, _sum: { quantity: true } }),
+      prisma.sale.aggregate({ where: { ...branchScope, ...person, status: completed, createdAt: { gte: window.from, lt: window.to } }, _sum: { total: true, tradeInValue: true }, _count: true }),
+      prisma.saleItem.aggregate({ where: { sale: { ...branchScope, ...person, status: completed, createdAt: { gte: window.from, lt: window.to } } }, _sum: { quantity: true } }),
     ]);
     const achieved = (totals._sum.total ?? 0) + (totals._sum.tradeInValue ?? 0);
     return {
-      id: target.id, period: target.period, label: target.label, amount: target.amount, unitsTarget: target.unitsTarget,
+      id: target.id, period: target.period, label: target.label, assigneeName: target.assignee?.name ?? null, amount: target.amount, unitsTarget: target.unitsTarget,
       from: window.from, to: window.to, achieved, unitsSold: lines._sum.quantity ?? 0, salesCount: totals._count,
       percent: target.amount ? Math.min(999, Math.round((achieved / target.amount) * 100)) : 0,
     };

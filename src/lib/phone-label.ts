@@ -70,7 +70,7 @@ function barcodeSvg(value: string, widthMm = 72, heightMm = 7.5) {
 
 export function phoneLabelInnerHtml(device: PhoneLabelData) {
   const title = phoneLabelTitle(device) || device.name || "Apple device";
-  const barcodeValue = device.imei || device.serial;
+  const barcodeValue = device.unitCode || device.imei || device.serial;
   const battery = (device.batteryHealth || "").replace(/[^\d]/g, "").slice(0, 3);
   return `<article class="gh-phone-label" aria-label="Phone label">
     <header class="gh-phone-label__brand">
@@ -212,7 +212,7 @@ export function createPhoneLabelPdf(device: PhoneLabelData, logo?: string | null
   const height = PHONE_LABEL.heightMm;
   const doc = new jsPDF({ unit: "mm", format: [width, height], orientation: "landscape" });
   const title = phoneLabelTitle(device) || device.name || "Apple device";
-  const barcodeValue = device.imei || device.serial;
+  const barcodeValue = device.unitCode || device.imei || device.serial;
   const battery = (device.batteryHealth || "").replace(/[^\d]/g, "").slice(0, 3);
 
   doc.setFillColor(255, 255, 255);

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { lookupAppleIdentity } from "../src/lib/apple-barcodes";
 import { encodeCode128 } from "../src/lib/code128";
-import { parseDeviceScan, phoneLabelTitle, scanLookupCode } from "../src/lib/device-scan";
+import { inferArrivalCondition, parseDeviceScan, phoneLabelTitle, scanLookupCode } from "../src/lib/device-scan";
 import { matchScanProducts, parseScanPayload } from "../src/lib/inventory-scan";
 import { createPhoneLabelPdf, PHONE_LABEL, phoneLabelInnerHtml, phoneLabelPrintDocument } from "../src/lib/phone-label";
 import { applyDeviceScanToTradeIn, blankTradeInForm } from "../src/components/trade-in-panel";
@@ -152,11 +152,41 @@ test("a MacBook sticker fills model, chip, storage, colour and serial", () => {
   assert.equal(device.batteryHealth, "91");
 });
 
+test("a printed unit barcode is its own code, and a case is an accessory", () => {
+  const unit = parseDeviceScan("GH7K2M9QAB");
+  assert.equal(unit.unitCode, "GH7K2M9QAB");
+  assert.equal(scanLookupCode("GH7K2M9QAB").kind, "unit");
+  const accessory = parseDeviceScan("Accessory Case for iPhone 17e Color Black Qty 4 Category Apple accessories");
+  assert.equal(accessory.category, "Apple accessories");
+  assert.equal(accessory.name, "Case for iPhone 17e");
+  assert.equal(accessory.colour, "BLACK");
+});
+
 test("an iPad About screen is told apart from an iPhone", () => {
   const device = parseDeviceScan("iPad Air 11-inch (M2)\nModel Number A2902\nSerial Number HXY12ABC34\nCapacity 256 GB");
   assert.equal(device.category, "iPad");
   assert.equal(device.group, 'iPad Air 11" M2');
   assert.equal(device.serial, "HXY12ABC34");
+});
+
+test("a Mac or iPad scan names the chip and a box QR is new while a barcode is Ex-UK", () => {
+  const mac = parseDeviceScan("MacBook Air 13-inch M2 256GB Space Gray");
+  assert.equal(mac.category, "Mac");
+  assert.equal(mac.group, 'MacBook Air 13" M2');
+  const intel = parseDeviceScan("MacBook Pro 13-inch Core i5 256GB");
+  assert.equal(intel.category, "Mac");
+  assert.match(intel.group, /Core i5/);
+  const ipad = parseDeviceScan("iPad A16 128GB");
+  assert.equal(ipad.category, "iPad");
+  assert.match(ipad.group, /A16/);
+  assert.equal(inferArrivalCondition("MLPF3LL/A A2633 iPhone 13 128GB"), "NEW");
+  assert.equal(inferArrivalCondition("IMEI 358250492399182 Battery 91% Color Midnight"), "EX_UK");
+  assert.equal(inferArrivalCondition("Arrival trade-in iPhone 13"), "TRADE_IN");
+  const opened = applyDeviceScanToTradeIn("MacBook Air 13-inch 256GB", { ...blankTradeInForm, active: true });
+  const filled = applyDeviceScanToTradeIn("Chip M2 Battery 90%", { ...blankTradeInForm, active: true, ...opened }, "fill");
+  assert.match(filled.model ?? "", /M2/);
+  assert.equal(filled.batteryHealth, "90");
+  assert.equal(filled.storage, "256GB");
 });
 
 test("a MacBook scanned at checkout is taken in as a MacBook, not an iPhone", () => {

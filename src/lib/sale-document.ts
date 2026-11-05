@@ -11,10 +11,10 @@ export async function loadSaleDocument(saleId: string, branchId?: string | null)
     select: {
       invoiceNumber: true, total: true, discountAmount: true, taxAmount: true, paidAmount: true, paymentMethod: true,
       tradeInBrand: true, tradeInModel: true, tradeInValue: true, createdAt: true,
-      tradeIn: { select: { storage: true, color: true, serial: true, grade: true, batteryHealth: true, hasBox: true, hasCharger: true, sellerName: true } },
+      tradeIn: { select: { storage: true, color: true, serial: true, grade: true, batteryHealth: true, hasBox: true, hasCharger: true, sellerName: true, sellerPhone: true, sellerEmail: true, sellerIdNumber: true } },
       branch: { select: { name: true, address: true, phone: true, email: true } },
       cashier: { select: { name: true } },
-      customer: { select: { name: true, phone: true } },
+      customer: { select: { name: true, phone: true, email: true } },
       saleItems: { select: { quantity: true, unitPrice: true, total: true, product: { select: { name: true, sku: true } }, deviceUnits: { select: { imei: true, serial: true } } } },
       payments: { select: { amount: true, method: true } },
     },

@@ -55,6 +55,7 @@ export function normalizeScanCode(raw: string) {
 
 export function parseScanPayload(raw: string): ScanPayload {
   const extracted = scanLookupCode(raw);
+  if (extracted.kind === "unit") return { code: extracted.code, kind: "sku" };
   if (extracted.kind !== "unknown") return { code: extracted.code, kind: extracted.kind };
 
   let code = normalizeScanCode(raw);
@@ -157,7 +158,7 @@ export function matchScanProducts<T extends ScanableProduct>(
     }
   }
 
-  if (identity) {
+  if (identity && device.category !== "Apple accessories") {
     for (const product of products) {
       if (productMatchesAppleIdentity(product, identity, options.condition || undefined)) {
         push(product, "catalog");
@@ -178,9 +179,14 @@ export function matchScanProducts<T extends ScanableProduct>(
       contains.push({ product, reason: "skuContains" });
       continue;
     }
-    if (nameCompact.includes(needle)) {
+    if (nameCompact.includes(needle) || (device.category === "Apple accessories" && needle.includes(nameCompact) && nameCompact.length >= 4)) {
       contains.push({ product, reason: "nameContains" });
     }
+  }
+  if (device.category === "Apple accessories" && device.colour) {
+    const colour = compactScanText(device.colour);
+    const coloured = contains.filter((hit) => compactScanText(`${hit.product.name} ${hit.product.colour || ""}`).includes(colour));
+    if (coloured.length) return preferStorageHits(sortHits(coloured), device.storage);
   }
   return preferStorageHits(sortHits(contains), device.storage);
 }

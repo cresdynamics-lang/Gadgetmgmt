@@ -6,7 +6,7 @@ import { Printer, ScanLine, X } from "lucide-react";
 
 import { conditionLabels } from "@/lib/catalog";
 import { appleModelsFor, lookupAppleIdentity, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
-import { emptyScannedDevice, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
+import { emptyScannedDevice, inferArrivalCondition, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
 import { matchScanProducts, parseScanPayload, type ScanableProduct } from "@/lib/inventory-scan";
 import { BatteryHealthField, PhoneLabelPreview } from "@/components/phone-label-preview";
 import { DeviceCamera } from "@/components/device-camera";
@@ -96,9 +96,12 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   const [code, setCode] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState<ReceiveCondition>("NEW");
+  const [conditionMarked, setConditionMarked] = useState(false);
   const [vendorName, setVendorName] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [category, setCategory] = useState("");
+  const [changeType, setChangeType] = useState(false);
+  const [arrivalPhotos, setArrivalPhotos] = useState<Blob[]>([]);
   const [sellingPrice, setSellingPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const [looking, setLooking] = useState(false);
@@ -181,7 +184,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
 
   function printLabel(current?: ScannedDevice) {
     const label = current ?? labelDevice();
-    if (!label.imei && !label.serial) {
+    if (!label.unitCode && !label.imei && !label.serial) {
       setProblem("Enter the IMEI or serial so the barcode on the label has something to encode.");
       return false;
     }
@@ -193,6 +196,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   function closeSheet() {
     setSheetOpen(false);
     setProblem("");
+    setConditionMarked(false);
   }
 
   function resetScan() {
@@ -204,9 +208,12 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     setQuantity(1);
     setDeviceName("");
     setCategory("");
+    setChangeType(false);
+    setArrivalPhotos([]);
     setSellingPrice("");
     setDevice(emptyScannedDevice());
     setKnown(null);
+    setConditionMarked(false);
     setHint("");
   }
 
@@ -237,7 +244,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           sim: device.sim,
           version: device.version,
           vendorName: vendorName.trim(),
-          ...(condition === "EX_UK" && sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
+          ...(sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
         }),
       });
       const result = await response.json();
@@ -250,8 +257,13 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       }
       if (!response.ok) throw new Error(result.error ?? "Stock receipt failed.");
       const product = items.find((item) => item.product.id === (match?.productId || result.product.id))?.product;
-      const label = overlayDevice(labelDevice(), result.device || {});
-      const printed = Boolean(label.imei || label.serial) && printLabel(label);
+      const label = overlayDevice(labelDevice(), { ...(result.device || {}), unitCode: result.unit?.unitCode || "" });
+      if (result.unit?.id && arrivalPhotos.length) {
+        const photos = new FormData();
+        arrivalPhotos.forEach((blob) => photos.append("photo", blob, "device.jpg"));
+        await fetch(`/api/devices/${result.unit.id}/photos`, { method: "POST", body: photos });
+      }
+      const printed = Boolean(label.unitCode || label.imei || label.serial) && printLabel(label);
       await onReceived({
         id: result.movement.id,
         createdAt: result.movement.createdAt,
@@ -288,7 +300,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     }
   }
 
-  async function handleScan(raw: string, nextCondition: ReceiveCondition = condition) {
+  async function handleScan(raw: string, nextCondition: ReceiveCondition = condition, mode: "replace" | "fill" = "replace") {
     const scanned = raw.trim();
     if (scanned.length < 2 || saving) return;
     setCode(scanned);
@@ -298,15 +310,22 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
     setHint("");
     onError("");
     try {
-      const found = await resolveMatches(scanned, nextCondition);
+      const inferred = conditionMarked ? null : inferArrivalCondition(scanned);
+      const current: ReceiveCondition = inferred === "NEW" || inferred === "EX_UK" ? inferred : nextCondition;
+      if (inferred === "NEW" || inferred === "EX_UK") {
+        setCondition(current);
+        setConditionMarked(true);
+      }
+      const found = await resolveMatches(scanned, current);
       const payload = parseScanPayload(scanned);
       // Any code that is not a product goes in as this device's serial, so it can still be received and labelled.
-      const unlisted = !found.matches.length && !found.device.imei && !found.device.serial && /^(?=.*\d)[A-Z0-9]{8,20}$/i.test(scanned) && payload.kind === "sku";
+      const unlisted = !found.matches.length && !found.device.imei && !found.device.serial && !found.device.unitCode && /^(?=.*\d)[A-Z0-9]{8,20}$/i.test(scanned) && payload.kind === "sku";
       const read = overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "", serial: unlisted ? scanned.toUpperCase() : "" });
       const rescan = scanned === pendingCode;
       // A box has several barcodes: part number, serial, UPC. A further scan adds to the open device unless it is a second device.
       const adding = sheetOpen && !rescan && !found.known && !((device.imei || device.serial) && (read.imei || read.serial));
-      const scannedDevice = adding ? overlayDevice(device, read) : read;
+      const blanks = overlayDevice(emptyScannedDevice(), Object.fromEntries((Object.keys(read) as (keyof typeof read)[]).filter((key) => !device[key] && read[key]).map((key) => [key, read[key]])));
+      const scannedDevice = mode === "fill" ? overlayDevice(device, blanks) : adding ? overlayDevice(device, read) : read;
       if (!adding || found.matches.length) setPendingCode(scanned);
       setCatalog(found.catalog || (adding ? catalog : null));
       setDevice(scannedDevice);
@@ -315,14 +334,21 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
         setMatches(found.known && found.known.status !== "SOLD" ? [] : found.matches);
         setChosen(found.matches.length === 1 ? found.matches[0].productId : "");
       }
-      setDeviceName(found.device.name || found.catalog?.name || found.matches[0]?.name || (rescan || adding ? deviceName : ""));
-      setCategory(found.device.category || found.catalog?.category || found.matches[0]?.category || (rescan || adding ? category : ""));
-      setQuantity(1);
+      const quantityRead = scanned.match(/\bQty\s+(\d{1,4})\b/i)?.[1];
+      if (quantityRead && (mode !== "fill" || quantity === 1)) setQuantity(Number(quantityRead));
+      const keepName = mode === "fill" && deviceName.trim();
+      const keepCategory = mode === "fill" && category;
+      setDeviceName(keepName ? deviceName : found.device.name || found.catalog?.name || found.matches[0]?.name || (rescan || adding ? deviceName : ""));
+      setCategory(keepCategory ? category : found.device.category || found.catalog?.category || found.matches[0]?.category || (rescan || adding ? category : ""));
       const suggested = payload.kind === "mpn" ? suggestedConditionFromMpn(payload.code) : null;
       setHint(
         found.known?.status === "SOLD"
           ? `Sold before${found.known.invoiceNumber ? ` on ${found.known.invoiceNumber}` : ""}. Its saved details are filled in; receiving it starts a new record.`
-          : suggested && suggested !== nextCondition
+          : inferred === "TRADE_IN"
+            ? "This looks like a phone being handed in. Trade-in starts on Sales: choose the phone going out, then Add a trade-in."
+            : inferred === "NEW" || inferred === "EX_UK"
+            ? `Marked as ${inferred === "NEW" ? "New" : "Ex-UK"} from this ${inferred === "NEW" ? "box QR" : "barcode"}. Fill anything it missed, including the vendor${inferred === "EX_UK" ? " and battery health" : ""}.`
+            : suggested && suggested !== current
             ? `This Apple part number looks ${suggested === "NEW" ? "new retail" : "refurbished"}. Check New or Ex-UK.`
             : !found.matches.length && !found.catalog && !found.device.name && !found.known && !(adding && (deviceName || category))
               ? `${scannedDevice.imei || scannedDevice.serial ? "Code read." : "New code."} It does not say the model, so choose what this is and its model once. Submit then adds it to the system${scannedDevice.imei || scannedDevice.serial ? " and prints its barcode label" : ""}.`
@@ -337,6 +363,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   }
 
   function changeCondition(next: ReceiveCondition) {
+    setConditionMarked(true);
     setCondition(next);
     if (sheetOpen && pendingCode) void handleScan(pendingCode, next);
   }
@@ -370,7 +397,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#111111] text-white"><ScanLine className="h-4 w-4" /></span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[#1a1a1a]">Scan arrivals</h3>
-          <p className="mt-1 text-xs leading-5 text-[#7e897f]">Scan with the USB scanner at any time, no need to click first, or open the camera. It works for every Apple product: iPhone, iPad, MacBook, Watch and AirPods. Each scan opens the device’s details: fill in what is missing, like battery health, then Submit to receive it and print the 90 × 50 mm label.</p>
+          <p className="mt-1 text-xs leading-5 text-[#7e897f]">Open the camera and take the first photo. A box QR is marked New. A barcode with the IMEI or battery is marked Ex-UK. Tap + for colour, storage, the chip or battery health if the first photo missed them. The selling price updates inventory.</p>
         </div>
       </div>
 
@@ -383,7 +410,13 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       <p className="mb-3 text-[11px] leading-4 text-[#6b6b6b]">Taking a trade-in? It starts with the sale of the new phone: use Add a trade-in on the <a href="/sales" className="font-semibold underline">Sales</a> page.</p>
 
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <DeviceCamera onCode={(text) => void handleScan(text)} />
+        <DeviceCamera onRead={(text, mode) => void handleScan(text, condition, mode)} onShots={setArrivalPhotos} askFor={sheetOpen ? [
+          !device.colour ? "the colour" : "",
+          deviceType === "Apple accessories" && matches.length !== 1 && !name ? "which accessory this is" : "",
+          !device.storage && deviceType !== "Apple accessories" && deviceType !== "AirPods" ? "the storage" : "",
+          needsBattery && !device.batteryHealth ? "battery health" : "",
+          condition !== "NEW" && !(device.imei || device.serial) ? "the IMEI or serial" : "",
+        ].filter(Boolean)[0] || "" : ""} />
         <div className="flex gap-2">
           <input
             ref={inputRef}
@@ -416,7 +449,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
             <header className="flex items-start justify-between gap-3 border-b border-[#e5e5e5] px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#6b6b6b]">
-                  {onShelf ? (known?.status === "RESERVED" ? "Held for a sale" : "Already in stock") : known?.status === "SOLD" ? "Sold before" : "New arrival"}
+                  {onShelf ? (known?.status === "RESERVED" ? "Held for a sale" : "Already in stock") : known?.status === "SOLD" ? "Sold before" : condition === "EX_UK" ? "Ex-UK arrival" : "New arrival"}
                   {catalog?.modelNumber || device.modelNumber ? ` · ${device.modelNumber || catalog?.modelNumber}` : ""}
                 </p>
                 <h4 className="mt-0.5 truncate text-base font-semibold text-[#111111]">{name || "Scanned device"}</h4>
@@ -428,7 +461,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
             <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
               {onShelf && known ? (
                 <p className="rounded-xl border border-[#cfe3d5] bg-[#f1f8f3] px-3 py-2 text-xs leading-5 text-[#2d2d2d]">
-                  Received {new Date(known.receivedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}{known.source ? ` from ${known.source}` : ""} as {conditionLabels[known.condition] ?? known.condition}. Details come from its saved record. Check them, then print the label. <a href={`/devices?q=${encodeURIComponent(device.imei || device.serial)}`} className="font-semibold underline">Phone history</a>
+                  Received {new Date(known.receivedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}{known.source ? ` from ${known.source}` : ""} as {conditionLabels[known.condition] ?? known.condition}. Details come from its saved record. Check them, then print the label. <a href={`/devices?q=${encodeURIComponent(device.unitCode || device.imei || device.serial)}`} className="font-semibold underline">Gadgets history</a>
                 </p>
               ) : (
                 <div className="grid grid-cols-2 gap-2" role="group" aria-label="Condition">
@@ -443,7 +476,10 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
                 <BatteryHealthField value={device.batteryHealth} onChange={(batteryHealth) => setDevice((current) => ({ ...current, batteryHealth }))} />
               ) : null}
 
-              {!onShelf ? (
+              {!onShelf && category && !changeType ? (
+                <p className="text-xs text-[#526057]">Mapped as {category}. <button type="button" onClick={() => setChangeType(true)} className="font-semibold underline">Change</button></p>
+              ) : null}
+              {!onShelf && (!category || changeType) ? (
                 <div role="group" aria-label="What this device is">
                   <p className={`mb-1 text-xs font-medium ${needsType ? "text-[#a15d3d]" : "text-[#526057]"}`}>What is it?</p>
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -498,7 +534,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
               {!onShelf ? (
                 <div className="grid grid-cols-2 gap-3">
                   {!hasCode ? <label className="text-xs font-medium text-[#526057]">Quantity<input type="number" min={1} max={10000} value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.trunc(Number(event.target.value) || 1)))} className={fieldClass} /></label> : null}
-                  {condition !== "NEW" ? <label className="text-xs font-medium text-[#526057]">Selling price (KES) <span className="font-normal">optional</span><input type="number" min={1} value={sellingPrice} onChange={(event) => setSellingPrice(event.target.value)} className={fieldClass} /></label> : null}
+                  <label className="text-xs font-medium text-[#526057]">Selling price (KES) <span className="font-normal">updates inventory</span><input type="number" min={1} value={sellingPrice} onChange={(event) => setSellingPrice(event.target.value)} className={fieldClass} /></label>
                 </div>
               ) : null}
 

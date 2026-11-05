@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowUpRight, KeyRound, Plus, Search, ShieldCheck, UsersRound } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
@@ -292,7 +293,7 @@ export default function StaffPage() {
                   <Fragment key={member.id}>
                   <tr>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#e5e5e5] text-xs font-bold tracking-wide text-[#2d2d2d] ring-1 ring-[#e5e5e5]">{member.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><div className="min-w-0"><p className="truncate font-semibold text-[#111111]">{member.name}</p><p className="mt-1 truncate text-[11px] text-[#87948c]">{member.email}</p></div></div>
+                      <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#e5e5e5] text-xs font-bold tracking-wide text-[#2d2d2d] ring-1 ring-[#e5e5e5]">{member.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><div className="min-w-0"><Link href={`/staff/${member.id}`} className="truncate font-semibold text-[#111111] underline-offset-2 hover:underline">{member.name}</Link><p className="mt-1 truncate text-[11px] text-[#87948c]">{member.email}</p></div></div>
                     </td>
                     <td className="px-4 py-3">
                       {canManageAccess && member.id !== session?.user.id ? (

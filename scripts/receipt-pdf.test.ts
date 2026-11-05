@@ -46,6 +46,25 @@ test("creates a downloadable POS sale PDF", () => {
   assertPdf(createSaleReceiptPdf(sale).output("arraybuffer"));
 });
 
+test("a trade-in receipt is one page and carries the GadgetHub signature", () => {
+  const pdf = createSaleReceiptPdf({
+    ...sale,
+    total: 80000,
+    paidAmount: 80000,
+    tradeInValue: 40000,
+    tradeInModel: "iPhone 13 128GB",
+    tradeIn: {
+      storage: "128GB", color: "Midnight", serial: "356789012345678", grade: "GOOD", batteryHealth: 88,
+      hasBox: true, hasCharger: false, sellerName: "Jane Wanjiku", sellerPhone: "0712345678", sellerEmail: "jane@example.com", sellerIdNumber: "12345678",
+    },
+    saleItems: [{ quantity: 1, unitPrice: 120000, total: 120000, product: { name: "iPhone 15 128GB", sku: "IP15" }, units: ["358250492399182"] }],
+    payments: [{ amount: 80000, method: "CASH" }],
+  });
+  assert.equal(pdf.getNumberOfPages(), 1);
+  const bytes = new TextDecoder().decode(pdf.output("arraybuffer"));
+  assert.match(bytes, /GadgetHub/);
+});
+
 test("creates a downloadable layaway installment PDF", () => {
   assertPdf(createLayawayPaymentReceiptPdf(order, payment, 0).output("arraybuffer"));
 });

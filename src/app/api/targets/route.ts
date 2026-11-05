@@ -15,6 +15,7 @@ const targetSchema = z.object({
   label: z.string().trim().max(80).optional(),
   from: z.string().refine(isDateKey).optional(),
   to: z.string().refine(isDateKey).optional(),
+  userId: z.string().min(8).max(40).optional(),
 }).strict().superRefine((data, context) => {
   if (data.period === "CUSTOM" && (!data.from || !data.to || data.from > data.to)) {
     context.addIssue({ code: "custom", path: ["from"], message: "Choose a start and end date for a custom goal." });
@@ -32,9 +33,16 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Enter a valid goal amount and period." }, { status: 400 });
   const branchId = session.user.branchId;
 
+  if (parsed.data.userId) {
+    const member = await prisma.user.findFirst({ where: { id: parsed.data.userId, ...(branchId ? { branchId } : {}) }, select: { id: true, name: true } });
+    if (!member) return NextResponse.json({ error: "Choose a team member who has an account at this branch." }, { status: 400 });
+  }
   const target = await prisma.$transaction(async (transaction) => {
     if (parsed.data.period !== "CUSTOM") {
-      await transaction.salesTarget.updateMany({ where: { period: parsed.data.period, branchId, isActive: true }, data: { isActive: false } });
+      await transaction.salesTarget.updateMany({
+        where: { period: parsed.data.period, branchId, isActive: true, assigneeId: parsed.data.userId ?? null },
+        data: { isActive: false },
+      });
     }
     return transaction.salesTarget.create({
       data: {
@@ -46,14 +54,16 @@ export async function POST(request: Request) {
         startsAt: parsed.data.period === "CUSTOM" ? nairobiMidnight(parsed.data.from!) : null,
         endsAt: parsed.data.period === "CUSTOM" ? nairobiMidnight(parsed.data.to!) : null,
         createdById: session.user.id,
+        assigneeId: parsed.data.userId ?? null,
       },
+      include: { assignee: { select: { name: true } } },
     });
   });
   await recordActivity({
     userId: session.user.id,
     sessionId: session.user.sessionId,
     action: "SALES_GOAL_UPDATED",
-    summary: `Set a ${periodName[target.period]} sales goal of KES ${target.amount.toLocaleString("en-KE")}${target.label ? ` · ${target.label}` : ""}`,
+    summary: `Set a ${periodName[target.period]} sales goal of KES ${target.amount.toLocaleString("en-KE")}${target.assignee ? ` for ${target.assignee.name}` : ""}${target.label ? ` · ${target.label}` : ""}`,
     entityType: "SalesTarget",
     entityId: target.id,
   });

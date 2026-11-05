@@ -23,7 +23,7 @@ type UnitRow = Prisma.DeviceUnitGetPayload<{ include: typeof unitInclude }>;
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!hasPermission(session.user, "inventory.view")) return denied(session.user, "inventory.view", "Your permissions cannot view phone history.");
+  if (!hasPermission(session.user, "inventory.view")) return denied(session.user, "inventory.view", "Your permissions cannot view gadget history.");
   if (!session.user.branchId && !canSeeAllBranches(session.user)) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   const branchScope = canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" };
   const show = {
@@ -35,11 +35,21 @@ export async function GET(request: Request) {
 
   const raw = (new URL(request.url).searchParams.get("q") || "").trim().slice(0, 800);
   const parsed = parseDeviceScan(raw);
-  const term = (parsed.imei || parsed.serial || raw).replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  if (raw && term.length < 4) return NextResponse.json({ error: "Enter at least 4 characters of the IMEI or serial." }, { status: 400 });
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const codeToken = tokens.find((token) => /^GH[A-Z0-9]{8}$/i.test(token) || /^\d{15}$/.test(token)) || "";
+  const nameQuery = tokens.filter((token) => token !== codeToken).join(" ").trim();
+  const term = (codeToken || parsed.unitCode || parsed.imei || parsed.serial || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  if (raw && !term && nameQuery.length < 2) return NextResponse.json({ error: "Enter a barcode, or at least two letters of the name." }, { status: 400 });
+
+  const codeFilter = term
+    ? (/^GH[A-Z0-9]{8}$/.test(term)
+      ? { unitCode: term }
+      : { OR: [{ imei: { contains: term } }, { serial: { contains: term } }, { unitCode: term }] })
+    : {};
+  const nameFilter = nameQuery ? { product: { name: { contains: nameQuery, mode: "insensitive" as const } } } : {};
 
   const units = await prisma.deviceUnit.findMany({
-    where: { ...branchScope, ...(term ? { OR: [{ imei: { contains: term } }, { serial: { contains: term } }] } : {}) },
+    where: { ...branchScope, ...codeFilter, ...nameFilter },
     include: unitInclude,
     orderBy: { receivedAt: "desc" },
     take: term ? 60 : 30,
@@ -81,6 +91,7 @@ export async function GET(request: Request) {
       tracked: true,
       imei: unit.imei,
       serial: unit.serial,
+      unitCode: unit.unitCode,
       status: unit.status,
       product: unit.product,
       details: { colour: unit.colour, storage: unit.storage, mpn: unit.mpn, modelNumber: unit.modelNumber, batteryHealth: unit.batteryHealth, fmi: unit.fmi, sim: unit.sim, osVersion: unit.osVersion },
@@ -114,6 +125,7 @@ export async function GET(request: Request) {
         tracked: false,
         imei: product.imei,
         serial: null,
+        unitCode: null,
         status: onHand > 0 ? "IN_STOCK" as const : sold ? "SOLD" as const : "UNKNOWN" as const,
         product: { name: product.name, sku: product.sku, condition: product.condition, configuration: product.configuration, productGroup: product.productGroup },
         details: { colour: product.colour, storage: null, mpn: null, modelNumber: null, batteryHealth: null, fmi: null, sim: null, osVersion: null },

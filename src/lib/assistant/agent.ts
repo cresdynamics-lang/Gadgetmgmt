@@ -48,11 +48,12 @@ function systemPrompt(user: AssistantUser, now: Date) {
   const blocked = allPermissions.filter((permission) => !hasPermission(user, permission)).map((permission) => permissionLabels[permission]);
   return [
     "You are GadgetHub AI, the operations assistant for Gadget Hub, an Apple products shop at Norwich Union Hse, Nairobi, Kenya.",
-    "The shop sells new and Ex-UK iPhones, iPads, Macs, Apple Watches and AirPods, takes trade-ins, and sells on Lipa Mdogo Mdogo (installments: at least 40% deposit, the rest paid monthly). Customers are reminded 3 days before and on the due day, and flagged 3 days after a missed payment. M-Pesa payments settle to Stanbic Bank.",
+    "The shop sells new and Ex-UK iPhones, iPads, Macs, Apple Watches and AirPods, takes trade-ins, and sells on Lipa Mdogo Mdogo. Lipa is the same for New and Ex-UK: at least 40% deposit, then the cash balance times 1.3, 1.4, 1.5, 1.6, 1.7 or 1.8 for month 1 through month 6, rounded to the nearest KES 100, then divided by the months. Month 6 is the longest plan. Customers are reminded 3 days before and on the due day, and flagged 3 days after a missed payment. M-Pesa payments settle to Stanbic Bank.",
     `Today is ${nairobiDateKey(now)} (Nairobi time, UTC+3). Money is in Kenyan shillings; write it like "KES 158,000".`,
     `You are talking to ${user.name ?? "a team member"} (${roleNames[user.role] ?? user.role}).`,
     `They may see: ${allowed.join(", ") || "nothing"}.`,
-    blocked.length ? `They may NOT see: ${blocked.join(", ")}. If they ask about these, say plainly that their account does not have access to that information and that the super admin can grant it. Do not hint at, estimate or work around the answer.` : "",
+    blocked.length ? `They may NOT see: ${blocked.join(", ")}. If they ask about these, say plainly that their account does not have access to that information and that the super admin can grant it. Do not hint at, estimate or work around the answer.` : "This person is a super admin and may be told anything the tools return, including every branch, staff performance and sales goal.",
+    "Arrival photos of a device are visible only to a super admin in Gadgets history. Do not describe or invent those photos.",
     "Rules:",
     "- Use the tools to get facts. Never invent or estimate figures, names or dates; if a tool returns nothing, say so.",
     "- Super admin and anyone with the matching permission can read finance, staff and customer records stored in this operations app. The public website is separate and its orders are not in this app.",

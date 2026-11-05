@@ -7,6 +7,7 @@ const allChecks = Object.fromEntries(tradeInChecks.map((check) => [check.id, tru
 const passing: TradeInAssessmentInput = {
   deviceType: "iPhone", model: "iPhone 13", serial: "356789012345678", storage: "128GB", grade: "GOOD",
   batteryHealth: 88, ownershipProof: "RECEIPT", checks: allChecks, sellerName: "Jane Wanjiku", sellerPhone: "0712345678",
+  sellerIdNumber: "12345678", sellerEmail: "jane@example.com",
   value: 40000, resalePrice: 55000, staffConfirmed: true,
 };
 

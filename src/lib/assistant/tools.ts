@@ -284,7 +284,7 @@ const goals: AssistantTool = {
   permissions: ["reports.view"],
   parameters: { type: "object", properties: {}, additionalProperties: false },
   async run(_args, user, now) {
-    const targets = await prisma.salesTarget.findMany({ where: { isActive: true } });
+    const targets = await prisma.salesTarget.findMany({ where: { isActive: true }, include: { assignee: { select: { name: true } } } });
     const windowFor = (target: (typeof targets)[number]) => target.period === "DAILY" ? [startOfNairobiDay(now), addDays(startOfNairobiDay(now), 1)]
       : target.period === "WEEKLY" ? [startOfNairobiWeek(now), addDays(startOfNairobiWeek(now), 7)]
         : target.period === "MONTHLY" ? [startOfNairobiMonth(now), startOfNextNairobiMonth(now)]
@@ -293,9 +293,10 @@ const goals: AssistantTool = {
       currency: "KES",
       goals: await Promise.all(targets.map(async (target) => {
         const [from, to] = windowFor(target);
-        const total = await prisma.sale.aggregate({ where: { ...branchScope(user), status: completed, createdAt: { gte: from, lt: to } }, _sum: { total: true, tradeInValue: true } });
+        const person = target.assigneeId ? { cashierId: target.assigneeId } : {};
+        const total = await prisma.sale.aggregate({ where: { ...branchScope(user), ...person, status: completed, createdAt: { gte: from, lt: to } }, _sum: { total: true, tradeInValue: true } });
         const achieved = (total._sum.total ?? 0) + (total._sum.tradeInValue ?? 0);
-        return { period: target.period, label: target.label, goal: target.amount, achieved, percent: target.amount ? Math.round((achieved / target.amount) * 100) : 0, from: day(from), to: day(addDays(to, -1)) };
+        return { period: target.period, label: target.label, forPerson: target.assignee?.name ?? "Whole shop", goal: target.amount, achieved, percent: target.amount ? Math.round((achieved / target.amount) * 100) : 0, from: day(from), to: day(addDays(to, -1)) };
       })),
     };
   },

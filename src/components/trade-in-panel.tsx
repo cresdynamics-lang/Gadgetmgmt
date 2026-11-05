@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
-import { Check, ChevronLeft, ChevronRight, Printer, Repeat2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Repeat2, X } from "lucide-react";
 
+import { readDeviceChip } from "@/lib/apple-barcodes";
 import { parseDeviceScan } from "@/lib/device-scan";
 import { BatteryHealthField, PhoneLabelPreview } from "@/components/phone-label-preview";
-import { PHONE_LABEL, printPhoneLabel, type PhoneLabelData } from "@/lib/phone-label";
+import { type PhoneLabelData } from "@/lib/phone-label";
 import { DeviceCamera } from "@/components/device-camera";
 import { useScanHandler } from "@/lib/scanner";
 
@@ -49,7 +50,10 @@ export type TradeInForm = {
   version: string;
   sellerName: string;
   sellerPhone: string;
+  sellerIdNumber: string;
+  sellerEmail: string;
   value: string;
+  topUp: string;
   resalePrice: string;
   staffConfirmed: boolean;
 };
@@ -57,7 +61,7 @@ export type TradeInForm = {
 export const blankTradeInForm: TradeInForm = {
   active: false, brand: "", deviceType: "", model: "", serial: "", storage: "", grade: "", batteryHealth: "", hasCharger: false,
   colour: "", deviceSerial: "", mpn: "", modelNumber: "", fmi: "", sim: "", version: "",
-  receiptSeen: false, boxSeen: false, receiptReference: "", checks: {}, sellerName: "", sellerPhone: "", value: "", resalePrice: "", staffConfirmed: false,
+  receiptSeen: false, boxSeen: false, receiptReference: "", checks: {}, sellerName: "", sellerPhone: "", sellerIdNumber: "", sellerEmail: "", value: "", topUp: "", resalePrice: "", staffConfirmed: false,
 };
 
 export function tradeInValue(form: TradeInForm, subtotal: number) {
@@ -76,6 +80,8 @@ export function assessTradeInForm(form: TradeInForm, subtotal: number) {
     checks: form.checks,
     sellerName: form.sellerName,
     sellerPhone: form.sellerPhone,
+    sellerIdNumber: form.sellerIdNumber,
+    sellerEmail: form.sellerEmail,
     value: tradeInValue(form, subtotal),
     resalePrice: Number(form.resalePrice) || 0,
     staffConfirmed: form.staffConfirmed,
@@ -100,6 +106,8 @@ export function tradeInPayload(form: TradeInForm, subtotal: number) {
     checks: form.checks,
     sellerName: form.sellerName.trim(),
     sellerPhone: form.sellerPhone.trim(),
+    sellerIdNumber: form.sellerIdNumber.trim(),
+    sellerEmail: form.sellerEmail.trim(),
     value: tradeInValue(form, subtotal),
     resalePrice: Math.trunc(Number(form.resalePrice)),
     staffConfirmed: form.staffConfirmed,
@@ -124,20 +132,30 @@ export function tradeInLabelData(form: TradeInForm): PhoneLabelData {
   };
 }
 
-export function applyDeviceScanToTradeIn(raw: string, current: TradeInForm): Partial<TradeInForm> {
+function withChip(model: string, chip: string) {
+  if (!chip || readDeviceChip(model)) return model;
+  return `${model} ${chip.startsWith("A") ? `(${chip})` : chip}`.replace(/\s+/g, " ").trim();
+}
+
+export function applyDeviceScanToTradeIn(raw: string, current: TradeInForm, mode: "replace" | "fill" = "replace"): Partial<TradeInForm> {
   const device = parseDeviceScan(raw);
   const group = (device.group || device.name).replace(/\s+\d+\s*(GB|TB).*/i, "").trim();
+  const chip = readDeviceChip(`${group} ${device.name} ${raw}`);
   // The scan decides what the device is; a bare serial leaves the choice with staff.
   const scannedType = ({ iPhone: "iPhone", iPad: "iPad", Mac: "MacBook", "Apple Watch": "Apple Watch", AirPods: "AirPods" } as Record<string, string>)[device.category] ?? "";
   const appleModels = current.brand === "SAMSUNG" && !scannedType
     ? tradeInDevices.SAMSUNG[current.deviceType || "Phone"]?.models ?? []
     : tradeInDevices.APPLE[scannedType || current.deviceType || "iPhone"]?.models ?? [];
   const listed = appleModels.find((model) => model.toLowerCase() === group.toLowerCase());
-  const storage = tradeInStorageSizes.find((size) => size === device.storage) || current.storage;
-  return {
+  const storage = tradeInStorageSizes.find((size) => size === device.storage) || (mode === "fill" ? current.storage : "") || current.storage;
+  const named = listed || group;
+  const model = mode === "fill"
+    ? (current.model ? withChip(current.model, chip) : named)
+    : (named || current.model);
+  const next: Partial<TradeInForm> = {
     brand: scannedType ? "APPLE" : current.brand || "APPLE",
     deviceType: scannedType || current.deviceType,
-    model: listed || group || current.model,
+    model,
     serial: device.imei || device.serial || current.serial,
     storage,
     batteryHealth: device.batteryHealth || current.batteryHealth,
@@ -149,13 +167,29 @@ export function applyDeviceScanToTradeIn(raw: string, current: TradeInForm): Par
     sim: device.sim || current.sim,
     version: device.version || current.version,
   };
+  if (mode !== "fill") return next;
+  return {
+    brand: current.brand || next.brand,
+    deviceType: current.deviceType || next.deviceType,
+    model: next.model,
+    serial: current.serial || next.serial,
+    storage: current.storage || next.storage,
+    batteryHealth: current.batteryHealth || next.batteryHealth,
+    colour: current.colour || next.colour,
+    deviceSerial: current.deviceSerial || next.deviceSerial,
+    mpn: current.mpn || next.mpn,
+    modelNumber: current.modelNumber || next.modelNumber,
+    fmi: current.fmi || next.fmi,
+    sim: current.sim || next.sim,
+    version: current.version || next.version,
+  };
 }
 
 const steps = ["Owner", "Device", "Condition", "Checks & price"] as const;
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
 function stepDone(form: TradeInForm, step: number, subtotal: number) {
-  if (step === 0) return form.sellerName.trim().length >= 2 && form.sellerPhone.replace(/\D/g, "").length >= 9;
+  if (step === 0) return form.sellerName.trim().length >= 2 && form.sellerPhone.replace(/\D/g, "").length >= 9 && form.sellerIdNumber.replace(/[^A-Za-z0-9]/g, "").length >= 5 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.sellerEmail.trim());
   if (step === 1) return Boolean(form.brand && form.deviceType && form.model.trim().length >= 2 && /^[A-Z0-9]{8,20}$/.test(form.serial) && (!tradeInStorageDevices.includes(form.deviceType) || form.storage));
   if (step === 2) {
     const battery = Number(form.batteryHealth);
@@ -186,7 +220,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
   onChange: Dispatch<SetStateAction<TradeInForm>>;
   subtotal: number;
   staffName: string;
-  customer?: { name: string; phone: string } | null;
+  customer?: { name: string; phone: string; email?: string | null } | null;
 }) {
   const [step, setStep] = useState(0);
   const [otherModel, setOtherModel] = useState(false);
@@ -195,17 +229,18 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
   // Build on the latest form so quick taps never overwrite each other.
   const update = (changes: Partial<TradeInForm>) => onChange((current) => ({ ...current, ...changes }));
 
-  function applyScan(raw: string) {
+  function applyScan(raw: string, mode: "replace" | "fill" = "replace") {
     const scanned = raw.trim();
     if (scanned.length < 2) return;
     const now = Date.now();
-    if (lastScanRef.current.code === scanned && now - lastScanRef.current.at < 1200) return;
+    if (mode === "replace" && lastScanRef.current.code === scanned && now - lastScanRef.current.at < 1200) return;
     lastScanRef.current = { code: scanned, at: now };
     setScanCode(scanned);
     onChange((current) => {
-      const next = applyDeviceScanToTradeIn(scanned, current);
+      const next = applyDeviceScanToTradeIn(scanned, current, mode);
       const models = next.brand && next.deviceType ? tradeInDevices[next.brand as TradeInBrand]?.[next.deviceType]?.models ?? [] : [];
-      setOtherModel(Boolean(next.model && !models.includes(next.model)));
+      const unlisted = Boolean(next.model && !models.includes(next.model));
+      queueMicrotask(() => setOtherModel(unlisted));
       return { ...current, ...next };
     });
   }
@@ -226,7 +261,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
   if (!form.active) {
     return <button type="button" disabled={subtotal < 1} onClick={() => { setStep(0); onChange({ ...blankTradeInForm, active: true }); }} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-dashed border-[#c4c4c4] bg-[#fafafa] px-3.5 py-3 text-left transition hover:border-[#111111] disabled:opacity-50">
       <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-[#2d2d2d] ring-1 ring-[#e5e5e5]"><Repeat2 className="h-4 w-4"/></span>
-      <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#1a1a1a]">Add a trade-in</span><span className="block text-[11px] text-[#6b6b6b]">{subtotal < 1 ? "Add an item to the sale first" : "Owner details first, then scan and print the phone label"}</span></span>
+      <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#1a1a1a]">Add a trade-in</span><span className="block text-[11px] text-[#6b6b6b]">{subtotal < 1 ? "Add an item to the sale first" : "Customer first, then the phone coming in. Submit emails the receipt and prints the sticker."}</span></span>
       <ChevronRight className="h-4 w-4 text-[#9a9a9a]"/>
     </button>;
   }
@@ -249,18 +284,27 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
 
     <div className="space-y-4 p-3.5">
       {step === 0 ? <>
-        {customer && customer.name ? <button type="button" onClick={() => update({ sellerName: customer.name, sellerPhone: customer.phone })} className="min-h-11 w-full rounded-xl border border-[#d4d4d4] bg-white px-3 text-[13px] font-semibold text-[#2d2d2d] hover:border-[#111111]">Owner is the customer · {customer.name}</button> : null}
-        <p className="text-[11px] text-[#6b6b6b]">Take the owner’s name and phone before you scan the device. The 90 × 50 mm phone label prints after the IMEI is in.</p>
+        {customer && customer.name ? <button type="button" onClick={() => update({ sellerName: customer.name, sellerPhone: customer.phone, sellerEmail: customer.email || form.sellerEmail })} className="min-h-11 w-full rounded-xl border border-[#d4d4d4] bg-white px-3 text-[13px] font-semibold text-[#2d2d2d] hover:border-[#111111]">Owner is the customer · {customer.name}</button> : null}
+        <p className="text-[11px] text-[#6b6b6b]">This is part of the sale. Take the owner’s name, phone, ID and email before the phone coming in is photographed. Submit sends the receipt and prints the sticker together.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={labelClass}>Owner’s name (as on ID)<input value={form.sellerName} maxLength={120} autoComplete="off" onChange={(event) => update({ sellerName: event.target.value })} className={fieldClass}/></label>
           <label className={labelClass}>Owner’s phone<input type="tel" inputMode="tel" value={form.sellerPhone} maxLength={20} onChange={(event) => update({ sellerPhone: event.target.value })} placeholder="07xx xxx xxx" className={fieldClass}/></label>
+          <label className={labelClass}>National ID or passport<input value={form.sellerIdNumber} maxLength={20} autoCapitalize="characters" onChange={(event) => update({ sellerIdNumber: event.target.value.toUpperCase() })} placeholder="ID number" className={fieldClass}/></label>
+          <label className={labelClass}>Email for the receipt<input type="email" value={form.sellerEmail} maxLength={254} autoComplete="off" onChange={(event) => update({ sellerEmail: event.target.value })} placeholder="name@example.com" className={fieldClass}/></label>
         </div>
       </> : null}
 
       {step === 1 ? <>
         <div>
-          <p className={labelClass}>Scan the device, or use the camera</p>
-          <div className="mt-1.5"><DeviceCamera onCode={applyScan}/></div>
+          <p className={labelClass}>Photograph the device, or scan it</p>
+          <div className="mt-1.5"><DeviceCamera onRead={(text, mode) => applyScan(text, mode)} askFor={[
+            !form.colour ? "the colour" : "",
+            form.deviceType === "MacBook" && form.model && !readDeviceChip(form.model) ? "the chip, such as M1, M2 or Core i5" : "",
+            form.deviceType === "iPad" && form.model && !readDeviceChip(form.model) ? "the chip, such as A16" : "",
+            tradeInStorageDevices.includes(form.deviceType) && !form.storage ? "the storage" : "",
+            tradeInBatteryDevices.includes(form.deviceType) && !form.batteryHealth ? "battery health" : "",
+            !form.serial ? "the IMEI or serial" : "",
+          ].filter(Boolean)[0] || ""}/></div>
           <textarea
             value={scanCode}
             onChange={(event) => setScanCode(event.target.value)}
@@ -272,7 +316,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
             placeholder="Scanned or pasted About / IMEI / QR shows here"
             className={`${fieldClass} h-auto min-h-12 py-2 font-mono tracking-wide`}
           />
-          <p className="mt-1 text-[11px] text-[#6b6b6b]">The USB scanner works without clicking here. The camera reads codes by itself, and Read screen fills the details from Settings → General → About. Enter anything it could not show below. Print sends a 90 × 50 mm phone label to the label printer.</p>
+          <p className="mt-1 text-[11px] text-[#6b6b6b]">The first photo is read straight away and names the chip, such as M2 or A16, when it is visible. Tap + for whatever is still blank. Retake fills only the gaps. The sticker prints when the sale is submitted.</p>
         </div>
         <div><p className={labelClass}>Brand</p><div className="mt-1.5 grid grid-cols-2 gap-2">{tradeInBrands.map((brand) => <Choice key={brand} selected={form.brand === brand} onClick={() => { setOtherModel(false); update({ brand, deviceType: "", model: "", storage: "" }); }}>{tradeInBrandLabel(brand)}</Choice>)}</div></div>
         {form.brand ? <div><p className={labelClass}>Device</p><div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.keys(tradeInDevices[form.brand]).map((device) => <Choice key={device} selected={form.deviceType === device} onClick={() => { setOtherModel(false); update({ deviceType: device, model: "", storage: "" }); }}>{device}</Choice>)}</div></div> : null}
@@ -290,10 +334,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
           <label className={labelClass}>Hardware serial<input value={form.deviceSerial} maxLength={20} autoCapitalize="characters" onChange={(event) => update({ deviceSerial: event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() })} placeholder="From About" className={`${fieldClass} font-mono`}/></label>
         </div> : null}
         {tradeInBatteryDevices.includes(form.deviceType) ? <BatteryHealthField value={form.batteryHealth} onChange={(batteryHealth) => update({ batteryHealth })} /> : null}
-        {form.serial ? <>
-          <PhoneLabelPreview device={tradeInLabelData(form)} />
-          <button type="button" onClick={() => printPhoneLabel(tradeInLabelData(form))} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#111111] bg-white px-3 text-sm font-semibold text-[#111111] hover:bg-[#f5f5f5]"><Printer className="h-4 w-4"/>Print {PHONE_LABEL.widthMm}×{PHONE_LABEL.heightMm} mm label</button>
-        </> : null}
+        {form.serial ? <PhoneLabelPreview device={tradeInLabelData(form)} /> : null}
       </> : null}
 
       {step === 2 ? <>
@@ -314,9 +355,10 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
           {tradeInChecks.map((check) => <TickRow key={check.id} checked={form.checks[check.id] === true} onToggle={() => onChange((current) => ({ ...current, checks: { ...current.checks, [check.id]: !current.checks[check.id] } }))} title={check.label} detail={check.detail}/>)}
         </div></div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className={labelClass}>We pay (trade-in value)<input type="number" inputMode="numeric" min={1} max={Math.max(1, subtotal - 1)} value={form.value} onChange={(event) => update({ value: event.target.value })} placeholder="KES" className={fieldClass}/></label>
-          <label className={labelClass}>We resell for<input type="number" inputMode="numeric" min={1} value={form.resalePrice} onChange={(event) => update({ resalePrice: event.target.value })} placeholder="KES" className={fieldClass}/></label>
+          <label className={labelClass}>We pay (trade-in value)<input type="number" inputMode="numeric" min={1} max={Math.max(1, subtotal - 1)} value={form.value} onChange={(event) => { const value = event.target.value; const top = Math.trunc(Number(form.topUp) || 0); update({ value, resalePrice: top > 0 ? String(Math.trunc(Number(value) || 0) + top) : form.resalePrice }); }} placeholder="KES" className={fieldClass}/></label>
+          <label className={labelClass}>Price added on top<input type="number" inputMode="numeric" min={1} value={form.topUp} onChange={(event) => { const topUp = event.target.value; const top = Math.trunc(Number(topUp) || 0); update({ topUp, resalePrice: String(Math.trunc(Number(form.value) || 0) + top) }); }} placeholder="KES" className={fieldClass}/></label>
         </div>
+        {Number(form.value) > 0 && Number(form.topUp) > 0 ? <p className="text-[11px] text-[#6b6b6b]">This phone goes back into stock at {money(Math.trunc(Number(form.value) || 0) + Math.trunc(Number(form.topUp) || 0))}.</p> : null}
         {value > 0 && Number(form.resalePrice) > 0 ? <p className={`rounded-lg px-3 py-2 text-xs font-semibold ${Number(form.resalePrice) > value ? "bg-[#eef6f0] text-[#2f7d4f]" : "bg-[#fff6f1] text-[#8a4b2f]"}`}>{Number(form.resalePrice) > value ? `Margin on resale: ${money(Number(form.resalePrice) - value)}` : "The resale price must be higher than what we pay."}</p> : null}
         <TickRow checked={form.staffConfirmed} onToggle={() => update({ staffConfirmed: !form.staffConfirmed })} title="I confirm these checks" detail={tradeInDeclaration(staffName)}/>
       </> : null}

@@ -8,7 +8,7 @@ import { MetricCard } from "@/components/metric-card";
 import { paymentLabel } from "@/lib/payment-labels";
 
 type Range = "today" | "week" | "month" | "custom";
-type Goal = { id: string; period: "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM"; label: string | null; amount: number; unitsTarget: number | null; from: string; to: string; achieved: number; unitsSold: number; salesCount: number; percent: number };
+type Goal = { id: string; period: "DAILY" | "WEEKLY" | "MONTHLY" | "CUSTOM"; label: string | null; assigneeName: string | null; amount: number; unitsTarget: number | null; from: string; to: string; achieved: number; unitsSold: number; salesCount: number; percent: number };
 type Report = {
   range: Range;
   from: string;
@@ -40,6 +40,8 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [goalPeriod, setGoalPeriod] = useState<Goal["period"]>("DAILY");
+  const [goalUser, setGoalUser] = useState("");
+  const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
   const [savingGoal, setSavingGoal] = useState(false);
 
   const load = useCallback(async () => {
@@ -57,6 +59,14 @@ export default function ReportsPage() {
       setLoading(false);
     }
   }, [range, from, to]);
+
+  useEffect(() => {
+    if (!report?.canManageGoals || team.length) return;
+    void fetch("/api/staff", { cache: "no-store" }).then(async (response) => {
+      const body = await response.json();
+      if (response.ok && Array.isArray(body)) setTeam(body.map((member: { id: string; name: string }) => ({ id: member.id, name: member.name })));
+    }).catch(() => undefined);
+  }, [report?.canManageGoals, team.length]);
 
   useEffect(() => {
     const frame = window.setTimeout(() => void load(), 0);
@@ -83,6 +93,7 @@ export default function ReportsPage() {
           ...(units > 0 ? { unitsTarget: units } : {}),
           ...(String(data.get("label") || "").trim() ? { label: String(data.get("label")).trim() } : {}),
           ...(goalPeriod === "CUSTOM" ? { from: data.get("goalFrom"), to: data.get("goalTo") } : {}),
+          ...(goalUser ? { userId: goalUser } : {}),
         }),
       });
       const result = await response.json();
@@ -142,7 +153,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="flex items-center gap-2 text-sm font-semibold"><Target className="h-4 w-4"/>Sales goals</h3><span className="text-xs text-[#69746c]">Progress over each goal’s own period</span></div>
           <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
             {report?.goals.map((goal) => <div key={goal.id} className="rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-3.5">
-              <div className="flex items-start justify-between gap-2"><div><p className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#6b6b6b]">{periodLabels[goal.period]}</p><p className="mt-1 text-xs font-semibold text-[#111111]">{goal.label ?? (goal.period === "CUSTOM" ? `${dateLabel(goal.from)} – ${dateLabel(new Date(new Date(goal.to).getTime() - 1).toISOString())}` : `Goal ${money(goal.amount)}`)}</p></div>{report.canManageGoals ? <button type="button" onClick={() => void removeGoal(goal.id)} aria-label="Remove goal" className="rounded-md p-1 text-[#9a9a9a] hover:bg-white hover:text-[#a15d3d]"><Trash2 className="h-3.5 w-3.5"/></button> : null}</div>
+              <div className="flex items-start justify-between gap-2"><div><p className="text-[10px] font-semibold uppercase tracking-[.12em] text-[#6b6b6b]">{periodLabels[goal.period]}</p><p className="mt-1 text-xs font-semibold text-[#111111]">{goal.assigneeName ? `${goal.assigneeName} · ` : "Whole shop · "}{goal.label ?? (goal.period === "CUSTOM" ? `${dateLabel(goal.from)} – ${dateLabel(new Date(new Date(goal.to).getTime() - 1).toISOString())}` : `Goal ${money(goal.amount)}`)}</p></div>{report.canManageGoals ? <button type="button" onClick={() => void removeGoal(goal.id)} aria-label="Remove goal" className="rounded-md p-1 text-[#9a9a9a] hover:bg-white hover:text-[#a15d3d]"><Trash2 className="h-3.5 w-3.5"/></button> : null}</div>
               <p className="mt-3 text-lg font-semibold tabular-nums tracking-[-.03em]">{money(goal.achieved)} <span className="text-xs font-medium text-[#6b6b6b]">of {money(goal.amount)}</span></p>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e5e5e5]"><div className={`h-full rounded-full ${goal.percent >= 100 ? "bg-[#2f7d4f]" : "bg-[#111111]"}`} style={{ width: `${Math.min(100, goal.percent)}%` }}/></div>
               <p className="mt-1.5 text-[11px] text-[#6b6b6b]">{goal.percent}% reached · {goal.unitsSold}{goal.unitsTarget ? ` / ${goal.unitsTarget}` : ""} units · {goal.salesCount} sales</p>
@@ -151,6 +162,7 @@ export default function ReportsPage() {
           </div>
           {report?.canManageGoals ? <form onSubmit={saveGoal} className="flex flex-wrap items-end gap-2 border-t border-[#e8ebe8] px-4 py-3.5 text-[10px] font-semibold uppercase tracking-[.1em] text-[#6b6b6b]">
             <label>Goal type<select value={goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as Goal["period"])} className="mt-1 block rounded-lg border border-[#d4d4d4] bg-white px-2 py-2 text-xs font-normal normal-case tracking-normal text-[#111111]">{(Object.keys(periodLabels) as Goal["period"][]).map((period) => <option key={period} value={period}>{periodLabels[period]}</option>)}</select></label>
+            <label>Team member<select value={goalUser} onChange={(event) => setGoalUser(event.target.value)} className="mt-1 block rounded-lg border border-[#d4d4d4] bg-white px-2 py-2 text-xs font-normal normal-case tracking-normal text-[#111111]"><option value="">Whole shop</option>{team.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
             <label>Sales goal (KES)<input name="amount" type="number" required min={1} step={1} placeholder="500000" className="mt-1 block w-36 rounded-lg border border-[#d4d4d4] bg-white px-2 py-2 text-xs font-normal normal-case tracking-normal text-[#111111]"/></label>
             <label>Units <span className="normal-case tracking-normal">(optional)</span><input name="unitsTarget" type="number" min={1} step={1} placeholder="10" className="mt-1 block w-24 rounded-lg border border-[#d4d4d4] bg-white px-2 py-2 text-xs font-normal normal-case tracking-normal text-[#111111]"/></label>
             {goalPeriod === "CUSTOM" ? <>
@@ -159,7 +171,7 @@ export default function ReportsPage() {
             </> : null}
             <label>Name <span className="normal-case tracking-normal">(optional)</span><input name="label" maxLength={80} placeholder="December push" className="mt-1 block w-40 rounded-lg border border-[#d4d4d4] bg-white px-2 py-2 text-xs font-normal normal-case tracking-normal text-[#111111]"/></label>
             <button disabled={savingGoal} className="rounded-lg bg-[#111111] px-3.5 py-2 text-xs font-semibold normal-case tracking-normal text-white disabled:opacity-60">{savingGoal ? "Saving…" : "Save goal"}</button>
-            <p className="w-full text-[10px] font-normal normal-case tracking-normal text-[#8a8a8a]">A new daily, weekly or monthly goal replaces the previous one of that type.</p>
+            <p className="w-full text-[10px] font-normal normal-case tracking-normal text-[#8a8a8a]">A new daily, weekly or monthly goal replaces the previous one of that type for the same person. Progress counts only that person’s sales. At 100% the goal is achieved.</p>
           </form> : null}
         </section>
 

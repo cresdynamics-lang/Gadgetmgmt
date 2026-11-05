@@ -71,12 +71,13 @@ async function productsForBranch(branchId: string) {
 async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: ReturnType<typeof parseScanPayload>) {
   const codes = deviceIdentifiers({ imei: scanned.imei || (parsed.kind === "imei" ? parsed.code : ""), serial: scanned.serial });
   const lookups = [codes.imei, codes.serial].filter((code): code is string => Boolean(code));
-  if (!lookups.length) return null;
+  const unitCode = scanned.unitCode || "";
+  if (!lookups.length && !unitCode) return null;
   const unit = await prisma.deviceUnit.findFirst({
-    where: { branchId, OR: lookups.flatMap((code) => [{ imei: code }, { serial: code }]) },
+    where: { branchId, OR: [...lookups.flatMap((code) => [{ imei: code }, { serial: code }]), ...(unitCode ? [{ unitCode }] : [])] },
     orderBy: { receivedAt: "desc" },
     select: {
-      imei: true, serial: true, status: true, colour: true, storage: true, mpn: true, modelNumber: true, batteryHealth: true, fmi: true, sim: true, osVersion: true,
+      imei: true, serial: true, unitCode: true, status: true, colour: true, storage: true, mpn: true, modelNumber: true, batteryHealth: true, fmi: true, sim: true, osVersion: true,
       vendorName: true, sourceName: true, receivedAt: true, soldAt: true,
       product: { select: { id: true, name: true, category: true, condition: true, productGroup: true, sellingPrice: true } },
       sale: { select: { invoiceNumber: true } },
@@ -88,6 +89,7 @@ async function knownDevice(branchId: string, scanned: ScannedDevice, parsed: Ret
     imei: unit.imei ?? "", serial: unit.serial ?? "", colour: unit.colour ?? "", storage: unit.storage ?? "", mpn: unit.mpn ?? "", modelNumber: unit.modelNumber ?? "",
     batteryHealth: unit.batteryHealth ? String(unit.batteryHealth) : "", fmi: unit.fmi ?? "", sim: unit.sim ?? "", version: unit.osVersion ?? "",
     name: unit.product.name.replace(/\s*\((?:Ex-UK|trade-in)\)\s*$/i, ""), category: unit.product.category, group: unit.product.productGroup ?? "",
+    unitCode: unit.unitCode ?? "",
   });
   return {
     device: overlayDevice(saved, scanned),
@@ -296,6 +298,7 @@ export async function POST(request: Request) {
         ...identified,
         scannedCode: parsed.data.code,
         vendorName: parsed.data.vendorName?.trim(),
+        sellingPrice: parsed.data.sellingPrice,
         reference: parsed.data.reference,
         note: parsed.data.note,
       });
@@ -376,6 +379,7 @@ export async function POST(request: Request) {
     scannedCode: parsed.data.code,
     mpn: device.mpn || null,
     colour: device.colour || null,
+    sellingPrice: parsed.data.sellingPrice,
     vendorName: parsed.data.vendorName,
     sourceKind: "VENDOR",
   });

@@ -60,7 +60,19 @@ export const tradeInGrades = {
 export type TradeInGrade = keyof typeof tradeInGrades;
 
 /** What the customer's receipt records about the device they handed in. Leaves out the shop's resale price and checks. */
-export type TradeInReceiptDetails = { storage?: string | null; color?: string | null; serial: string; grade: string; batteryHealth?: number | null; hasBox: boolean; hasCharger: boolean; sellerName: string };
+export type TradeInReceiptDetails = {
+  storage?: string | null;
+  color?: string | null;
+  serial: string;
+  grade: string;
+  batteryHealth?: number | null;
+  hasBox: boolean;
+  hasCharger: boolean;
+  sellerName: string;
+  sellerPhone?: string | null;
+  sellerEmail?: string | null;
+  sellerIdNumber?: string | null;
+};
 
 export function tradeInReceiptLines(tradeIn: TradeInReceiptDetails) {
   const grade = tradeInGrades[tradeIn.grade as TradeInGrade]?.label ?? tradeIn.grade;
@@ -119,6 +131,8 @@ export type TradeInAssessmentInput = {
   checks: Partial<Record<TradeInCheckId, boolean>>;
   sellerName: string;
   sellerPhone: string;
+  sellerIdNumber?: string;
+  sellerEmail?: string;
   value: number;
   resalePrice: number;
   staffConfirmed: boolean;
@@ -145,6 +159,8 @@ export function assessTradeIn(input: TradeInAssessmentInput) {
   }
   if (input.sellerName.trim().length < 2) blockers.push("Enter the seller’s full name as on their ID.");
   if (input.sellerPhone.replace(/\D/g, "").length < 9) blockers.push("Enter the seller’s phone number.");
+  if ((input.sellerIdNumber ?? "").replace(/[^A-Za-z0-9]/g, "").length < 5) blockers.push("Enter the seller’s national ID or passport number.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((input.sellerEmail ?? "").trim())) blockers.push("Enter the seller’s email so the receipt can be sent.");
   if (!(input.value > 0)) blockers.push("Enter the trade-in value.");
   if (!(input.resalePrice > 0)) blockers.push("Enter the resale price.");
   else if (input.value >= input.resalePrice) blockers.push("The trade-in value must be lower than the resale price, or the shop loses money on it.");

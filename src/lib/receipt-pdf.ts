@@ -18,7 +18,7 @@ export type SaleReceiptData = {
   createdAt: string;
   branch: { name: string; address: string; phone: string; email?: string | null };
   cashier: { name: string };
-  customer: { name: string; phone: string } | null;
+  customer: { name: string; phone: string; email?: string | null } | null;
   /** `units` are the IMEIs / serials of the phones sold on that line. */
   saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string }; units?: string[] }[];
   payments: { amount: number; method: string }[];
@@ -184,7 +184,148 @@ export function isSaleInvoice(receipt: Pick<SaleReceiptData, "total" | "paidAmou
   return receipt.paidAmount < receipt.total;
 }
 
+/** A trade-in receipt stays on one page: phone sold, money, the phone taken in, and the GadgetHub signature. */
+function createTradeInReceiptPdf(receipt: SaleReceiptData) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 16;
+  const right = pageWidth - margin;
+  const ink: [number, number, number] = [17, 17, 17];
+  const muted: [number, number, number] = [107, 107, 107];
+  const date = new Date(receipt.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Nairobi" });
+  const tradeIn = receipt.tradeIn!;
+  let y = 16;
+
+  doc.addImage(brandMarkDataUrl, "PNG", margin, y, 12, 12);
+  doc.setTextColor(...ink);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("GadgetHub", margin + 16, y + 5);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...muted);
+  doc.text(isSaleInvoice(receipt) ? "INVOICE" : "SALES RECEIPT", margin + 16, y + 10);
+  const shop = [receipt.branch.name, receipt.branch.address, receipt.branch.phone, receipt.branch.email].filter(Boolean).join("\n");
+  const shopLines = doc.splitTextToSize(shop, 78) as string[];
+  doc.text(shopLines, right, y + 4, { align: "right" });
+  drawShopLinks(doc, right, y + 4 + shopLines.length * 3.4);
+  y = Math.max(32, y + 6 + shopLines.length * 3.4 + 8);
+  doc.setDrawColor(17, 17, 17);
+  doc.setLineWidth(0.4);
+  doc.line(margin, y, right, y);
+  y += 8;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...muted);
+  doc.text("INVOICE", margin, y);
+  doc.text("CUSTOMER", right, y, { align: "right" });
+  y += 5;
+  doc.setTextColor(...ink);
+  doc.setFontSize(12);
+  doc.text(receipt.invoiceNumber, margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const customerLines = [
+    receipt.customer?.name ?? tradeIn.sellerName,
+    receipt.customer?.phone ?? tradeIn.sellerPhone ?? "",
+    receipt.customer?.email ?? tradeIn.sellerEmail ?? "",
+    tradeIn.sellerIdNumber ? `ID ${tradeIn.sellerIdNumber}` : "",
+  ].filter(Boolean);
+  doc.text(customerLines, right, y, { align: "right" });
+  doc.setTextColor(...muted);
+  doc.setFontSize(8);
+  doc.text(`${date} · ${receipt.cashier.name}`, margin, y + 6);
+  y += Math.max(14, customerLines.length * 4.2) + 6;
+
+  doc.setTextColor(...ink);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("PHONE BOUGHT", margin, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  for (const item of receipt.saleItems.slice(0, 4)) {
+    const title = doc.splitTextToSize(`${item.quantity} × ${item.product.name}`, 120) as string[];
+    doc.setTextColor(...ink);
+    doc.text(title, margin, y);
+    doc.setFont("helvetica", "bold");
+    doc.text(money(item.total), right, y, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    y += title.length * 4;
+    const codes = (item.units ?? []).slice(0, 2).map((code) => (/^\d{15}$/.test(code) ? `IMEI ${code}` : `Serial ${code}`)).join(" · ");
+    if (codes) {
+      doc.setTextColor(...muted);
+      doc.setFontSize(8);
+      doc.text(codes, margin, y);
+      y += 4;
+      doc.setFontSize(9);
+    }
+    y += 1;
+  }
+
+  y += 2;
+  const subtotal = receipt.saleItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  const rows: [string, string][] = [
+    ["Subtotal", money(subtotal)],
+    ...((receipt.tradeInValue ?? 0) > 0 ? [["Trade-in", `− ${money(receipt.tradeInValue ?? 0)}`] as [string, string]] : []),
+    ["Total", money(receipt.total)],
+    ["Paid", money(receipt.paidAmount)],
+    ["Balance", money(Math.max(receipt.total - receipt.paidAmount, 0))],
+  ];
+  doc.setDrawColor(229, 229, 229);
+  for (const [label, value] of rows) {
+    doc.setTextColor(...muted);
+    doc.text(label, right - 62, y);
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", label === "Total" || label === "Balance" ? "bold" : "normal");
+    doc.text(value, right, y, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    y += 5;
+  }
+  if (receipt.payments.length) {
+    doc.setTextColor(...muted);
+    doc.setFontSize(8);
+    doc.text(receipt.payments.map((payment) => `${paymentLabel(payment.method)} ${money(payment.amount)}`).join(" · "), right, y, { align: "right" });
+    y += 6;
+  }
+
+  y += 2;
+  doc.setTextColor(...ink);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("PHONE TRADED IN", margin, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  const traded = [
+    [receipt.tradeInModel, tradeIn.storage, tradeIn.color].filter(Boolean).join(" · "),
+    ...tradeInReceiptLines(tradeIn),
+  ].filter(Boolean);
+  doc.setTextColor(...muted);
+  for (const line of traded.slice(0, 7)) {
+    const wrapped = doc.splitTextToSize(line, right - margin) as string[];
+    doc.text(wrapped, margin, y);
+    y += wrapped.length * 4.2;
+  }
+
+  const signY = 272;
+  doc.setTextColor(...ink);
+  doc.setFont("times", "italic");
+  doc.setFontSize(18);
+  doc.text("GadgetHub", margin, signY);
+  doc.setDrawColor(...ink);
+  doc.setLineWidth(0.3);
+  doc.line(margin, signY + 2, margin + 52, signY + 2);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...muted);
+  doc.text("GadgetHub signature", margin, signY + 7);
+  doc.text(`${brandWebsite} · Instagram: @${brandInstagram}`, right, signY + 7, { align: "right" });
+  return doc;
+}
+
 export function createSaleReceiptPdf(receipt: SaleReceiptData) {
+  if (receipt.tradeIn) return createTradeInReceiptPdf(receipt);
   const documentLabel = isSaleInvoice(receipt) ? "GADGETHUB  /  INVOICE" : "GADGETHUB  /  SALES RECEIPT";
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();

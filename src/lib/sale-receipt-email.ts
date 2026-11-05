@@ -18,7 +18,7 @@ export async function sendSaleReceiptEmail(saleId: string, recipient?: string | 
       where: { id: saleId },
       select: {
         id: true, invoiceNumber: true, branchId: true, customerId: true, status: true, total: true, paidAmount: true, tradeInValue: true, tradeInModel: true, createdAt: true,
-        tradeIn: { select: { storage: true, color: true, serial: true, grade: true, batteryHealth: true, hasBox: true, hasCharger: true, sellerName: true } },
+        tradeIn: { select: { storage: true, color: true, serial: true, grade: true, batteryHealth: true, hasBox: true, hasCharger: true, sellerName: true, sellerPhone: true, sellerEmail: true, sellerIdNumber: true } },
         customer: { select: { name: true, email: true } },
         branch: { select: { name: true, phone: true } },
         saleItems: { select: { quantity: true, total: true, product: { select: { name: true } }, deviceUnits: { select: { imei: true, serial: true } } } },

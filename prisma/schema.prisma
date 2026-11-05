@@ -181,7 +181,8 @@ model User {
   permissionGrants          UserPermission[]          @relation("PermissionGrantee")
   permissionsGranted        UserPermission[]          @relation("PermissionGrantor")
   permissionApprovals       PermissionApproval[]
-  salesTargets              SalesTarget[]
+  salesTargets              SalesTarget[]             @relation("SalesTargetCreator")
+  assignedSalesTargets      SalesTarget[]             @relation("SalesTargetAssignee")
   tradeInsAssessed          TradeIn[]
   assistantChats            AssistantChat[]
   devicesReceived           DeviceUnit[]              @relation("DeviceUnitReceivedBy")
@@ -721,7 +722,9 @@ model SalesTarget {
   endsAt      DateTime?
   isActive    Boolean           @default(true)
   createdById String
-  createdBy   User              @relation(fields: [createdById], references: [id])
+  createdBy   User              @relation("SalesTargetCreator", fields: [createdById], references: [id])
+  assigneeId  String?
+  assignee    User?             @relation("SalesTargetAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -749,6 +752,8 @@ model TradeIn {
   checks           Json
   sellerName       String
   sellerPhone      String
+  sellerIdNumber   String?
+  sellerEmail      String?
   value            Int
   resalePrice      Int
   notes            String?
@@ -814,6 +819,9 @@ model DeviceUnit {
   soldAt        DateTime?
   soldById      String?
   soldBy        User?                @relation("DeviceUnitSoldBy", fields: [soldById], references: [id], onDelete: SetNull)
+  /// Barcode printed for this physical unit. The same model can share a product; this code does not.
+  unitCode      String?              @unique
+  photos        DevicePhoto[]
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 
@@ -822,4 +830,17 @@ model DeviceUnit {
   @@index([productId, status])
   @@index([saleId])
   @@index([receivedAt])
+}
+
+/// Arrival photos. Not served publicly; only a super admin can open them from gadget history.
+model DevicePhoto {
+  id           String     @id @default(cuid())
+  deviceUnitId String
+  deviceUnit   DeviceUnit @relation(fields: [deviceUnitId], references: [id], onDelete: Cascade)
+  slot         String
+  mimeType     String
+  bytes        Bytes
+  createdAt    DateTime   @default(now())
+
+  @@index([deviceUnitId])
 }

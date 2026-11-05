@@ -4,6 +4,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { isAppleMpn, normalizeGtin } from "@/lib/apple-barcodes";
 import { deviceNotes, type ScannedDevice } from "@/lib/device-scan";
 import { batteryPercent, deviceIdentifiers, findActiveUnit } from "@/lib/device-units";
+import { allocateUnitCode } from "@/lib/unit-code";
 import { parseScanPayload } from "@/lib/inventory-scan";
 
 function identifiedNotes(kind: string, input: { serial?: string | null; batteryHealth?: string | null; fmi?: string | null; sim?: string | null; version?: string | null }) {
@@ -44,6 +45,7 @@ export type StockSourceInput = {
   mpn?: string | null;
   colour?: string | null;
   scannedCode?: string | null;
+  sellingPrice?: number | null;
 };
 
 type ReceiveInput = {
@@ -137,7 +139,7 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
     if (active) throw new ReceiveError(`${identifiers.imei || identifiers.serial} is already in stock as ${active.product.name}.`);
   }
   const barcodes = barcodesFromScan(input);
-  const productPatch: { imei?: string; gtin?: string; mpn?: string; colour?: string } = {};
+  const productPatch: { imei?: string; gtin?: string; mpn?: string; colour?: string; sellingPrice?: number } = {};
   // A New product is a model with many phones, so its IMEIs live on the device records instead.
   if (imei.length === 15 && !existing.product.imei && existing.product.condition !== "NEW") {
     const taken = await transaction.product.findFirst({ where: { imei }, select: { id: true } });
@@ -146,6 +148,7 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
   if (barcodes.gtin && !existing.product.gtin) productPatch.gtin = barcodes.gtin;
   if (barcodes.mpn && !existing.product.mpn) productPatch.mpn = barcodes.mpn;
   if (input.colour && !existing.product.colour && existing.product.condition !== "NEW") productPatch.colour = input.colour;
+  if (input.sellingPrice && input.sellingPrice > 0) productPatch.sellingPrice = input.sellingPrice;
   if (Object.keys(productPatch).length) {
     await transaction.product.update({ where: { id: existing.product.id }, data: productPatch });
   }
@@ -177,11 +180,13 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
     },
     select: { id: true, createdAt: true },
   });
+  let unit: { id: string; unitCode: string } | null = null;
   if (identifiers.imei || identifiers.serial) {
-    await transaction.deviceUnit.create({
+    const created = await transaction.deviceUnit.create({
       data: {
         branchId: input.branchId,
         productId: existing.product.id,
+        unitCode: await allocateUnitCode(transaction),
         imei: identifiers.imei,
         serial: identifiers.serial,
         condition: existing.product.condition,
@@ -203,7 +208,9 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
         receivedAt: movement.createdAt,
         tradeInId: input.tradeInId || null,
       },
+      select: { id: true, unitCode: true },
     });
+    unit = { id: created.id, unitCode: created.unitCode || "" };
   }
   return {
     ...updated,
@@ -225,6 +232,7 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
     hasReceipt: input.hasReceipt ?? null,
     hasBox: input.hasBox ?? null,
     movement,
+    unit,
   };
 }
 
@@ -328,6 +336,7 @@ export async function receiveNewStock(prisma: PrismaClient, input: IdentifiedRec
       mpn: input.mpn,
       colour: input.colour,
       vendorName: input.vendorName,
+      sellingPrice: input.sellingPrice,
       sourceKind: "VENDOR",
     });
     if (!received) throw new ReceiveError("New stock could not be added to this branch.");
@@ -388,6 +397,7 @@ export async function receiveExUkStock(prisma: PrismaClient, input: IdentifiedRe
       mpn: input.mpn,
       colour: input.colour,
       vendorName: input.vendorName,
+      sellingPrice: input.sellingPrice,
       sourceKind: "VENDOR",
     });
     if (!received) return { error: "Ex-UK stock could not be added to this branch." as const };

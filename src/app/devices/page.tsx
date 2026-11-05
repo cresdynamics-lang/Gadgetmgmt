@@ -3,6 +3,8 @@
 import { ArrowDownToLine, ArrowUpFromLine, CreditCard, Download, History, Repeat, ScanLine, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
+import { useSession } from "next-auth/react";
+
 import { AppShell } from "@/components/app-shell";
 import { conditionLabels } from "@/lib/catalog";
 import { kenyaDateTime } from "@/lib/kenya-time";
@@ -14,6 +16,7 @@ type Life = {
   tracked: boolean;
   imei: string | null;
   serial: string | null;
+  unitCode: string | null;
   status: "IN_STOCK" | "RESERVED" | "SOLD" | "UNKNOWN";
   product: { name: string; sku: string; condition: string; configuration: string | null; productGroup: string | null };
   details: { colour: string | null; storage: string | null; mpn: string | null; modelNumber: string | null; batteryHealth: number | null; fmi: string | null; sim: string | null; osVersion: string | null };
@@ -42,7 +45,32 @@ function personLine(person: Person | null | undefined) {
   return person ? [person.name, person.phone].filter(Boolean).join(" · ") : "";
 }
 
-function LifeCard({ life }: { life: Life }) {
+function ArrivalPhotos({ unitId }: { unitId: string }) {
+  const [photos, setPhotos] = useState<{ id: string; slot: string }[]>([]);
+  useEffect(() => {
+    void fetch(`/api/devices/${unitId}/photos`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : { photos: [] })
+      .then((data) => setPhotos(data.photos ?? []))
+      .catch(() => setPhotos([]));
+  }, [unitId]);
+  if (!photos.length) return null;
+  const labels: Record<string, string> = { "about-1": "About, top", "about-2": "About, scrolled", battery: "Battery health", side: "Side" };
+  return (
+    <div className="border-t border-[#eeece4] px-5 py-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[.1em] text-[#848b81]">Arrival photos · super admin</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {photos.map((photo) => (
+          <a key={photo.id} href={`/api/devices/${unitId}/photos?photo=${photo.id}`} target="_blank" rel="noreferrer" className="block">
+            <img src={`/api/devices/${unitId}/photos?photo=${photo.id}`} alt={labels[photo.slot] ?? "Arrival photo"} className="h-28 w-20 rounded-lg object-cover" />
+            <span className="mt-1 block text-[10px] text-[#69746c]">{labels[photo.slot] ?? photo.slot}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LifeCard({ life, showPhotos }: { life: Life; showPhotos: boolean }) {
   const details = life.details;
   const source = life.received.sourceKind === "TRADE_IN" || life.tradeIn
     ? `Trade-in${personLine(life.tradeIn?.seller ?? life.received.source) ? ` from ${personLine(life.tradeIn?.seller ?? life.received.source)}` : ""}`
@@ -52,7 +80,7 @@ function LifeCard({ life }: { life: Life }) {
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#eeece4] px-5 py-4">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[#111111]">{life.product.name}</h3>
-          <p className="mt-1 font-mono text-[11px] text-[#69746c]">{[life.imei && `IMEI ${life.imei}`, life.serial && `Sr# ${life.serial}`].filter(Boolean).join(" · ") || life.product.sku}</p>
+          <p className="mt-1 font-mono text-[11px] text-[#69746c]">{[life.unitCode, life.imei && `IMEI ${life.imei}`, life.serial && `Sr# ${life.serial}`].filter(Boolean).join(" · ") || life.product.sku}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="rounded-full bg-[#f5f5f5] px-2.5 py-1 text-[10px] font-semibold text-[#2d2d2d]">{conditionLabels[life.product.condition] ?? life.product.condition}</span>
@@ -96,12 +124,15 @@ function LifeCard({ life }: { life: Life }) {
           </div>
         </li> : null}
       </ol>
-      {!life.tracked ? <p className="border-t border-[#eeece4] bg-[#fafafa] px-5 py-2.5 text-[10px] text-[#848b81]">Recorded before per-phone tracking, so some details are missing.</p> : null}
+      {showPhotos && life.tracked ? <ArrivalPhotos unitId={life.id} /> : null}
+      {!life.tracked ? <p className="border-t border-[#eeece4] bg-[#fafafa] px-5 py-2.5 text-[10px] text-[#848b81]">Recorded before per-device tracking, so some details are missing.</p> : null}
     </article>
   );
 }
 
 export default function DevicesPage() {
+  const { data: session } = useSession();
+  const showPhotos = session?.user.role === "OWNER";
   const [query, setQuery] = useState("");
   const [lives, setLives] = useState<Life[]>([]);
   const [searched, setSearched] = useState("");
@@ -115,11 +146,11 @@ export default function DevicesPage() {
     try {
       const response = await fetch(`/api/devices?q=${encodeURIComponent(term)}`, { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Phone history could not be loaded.");
+      if (!response.ok) throw new Error(data.error ?? "Gadget history could not be loaded.");
       setLives(data.lives);
       setSearched(data.query);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Phone history could not be loaded.");
+      setError(loadError instanceof Error ? loadError.message : "Gadget history could not be loaded.");
     } finally {
       setLoading(false);
     }
@@ -146,21 +177,21 @@ export default function DevicesPage() {
       <div className="space-y-5">
         <div className="border-b border-[#e2e6e2] pb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4a4a4a]">Inventory</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Phone history</h2>
-          <p className="mt-1 max-w-2xl text-sm text-[#69746c]">Scan or type an IMEI or serial to see where a phone came from, who sold it, who bought it, when and for how much.</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Gadgets history</h2>
+          <p className="mt-1 max-w-2xl text-sm text-[#69746c]">A barcode opens that exact device. A name lists every iPhone, Mac, iPad, Watch or accessory that matches. The same model shares a product; each physical unit has its own barcode, serial and photos.</p>
         </div>
         <form onSubmit={search} className="flex gap-2">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">IMEI or serial</span>
             <ScanLine aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" />
-            <input ref={input} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Scan the IMEI barcode or QR label, or type part of it" className="w-full rounded-xl border border-[#c4c4c4] bg-white py-3 pl-9 pr-3 font-mono text-sm outline-none focus:border-[#111111]" />
+            <input ref={input} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Barcode, or a name such as iPhone 11 128GB black" className="w-full rounded-xl border border-[#c4c4c4] bg-white py-3 pl-9 pr-3 font-mono text-sm outline-none focus:border-[#111111]" />
           </label>
           <button type="submit" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#111111] px-4 text-sm font-semibold text-white"><Search className="h-4 w-4" />Find</button>
         </form>
         {error ? <p role="alert" className="rounded-xl border border-[#f0d4cc] bg-[#fff6f3] px-4 py-3 text-sm text-[#9b4a3d]">{error}</p> : null}
-        <p className="flex items-center gap-2 text-xs text-[#69746c]"><History className="h-3.5 w-3.5" />{loading ? "Searching…" : searched ? `${lives.length} ${lives.length === 1 ? "record" : "records"} for “${searched}”` : "Most recently received phones"}</p>
-        {!loading && !lives.length ? <div className="rounded-2xl border border-dashed border-[#d4d4d4] bg-white px-5 py-10 text-center text-sm text-[#69746c]">{searched ? "No phone with that IMEI or serial has passed through the shop." : "No phones have been scanned in yet. Phones are recorded here from the next stock receipt."}</div> : null}
-        <div className="grid gap-4 xl:grid-cols-2">{lives.map((life) => <LifeCard key={life.id} life={life} />)}</div>
+        <p className="flex items-center gap-2 text-xs text-[#69746c]"><History className="h-3.5 w-3.5" />{loading ? "Searching…" : searched ? `${lives.length} ${lives.length === 1 ? "record" : "records"} for “${searched}”` : "Most recently received gadgets"}</p>
+        {!loading && !lives.length ? <div className="rounded-2xl border border-dashed border-[#d4d4d4] bg-white px-5 py-10 text-center text-sm text-[#69746c]">{searched ? "No gadget with that barcode or name has passed through the shop." : "Nothing has been scanned in yet. Devices are recorded here from the next stock receipt."}</div> : null}
+        <div className="grid gap-4 xl:grid-cols-2">{lives.map((life) => <LifeCard key={life.id} life={life} showPhotos={showPhotos} />)}</div>
       </div>
     </AppShell>
   );
