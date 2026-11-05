@@ -26,6 +26,7 @@ export default function StaffPage() {
   const { data: session } = useSession();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [detailsDraft, setDetailsDraft] = useState<{ id: string; name: string; email: string; branchId: string; password: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const addForm = useRef<HTMLFormElement>(null);
   // The form opens under the button; bring it into view and ready to type, on phones too.
@@ -112,6 +113,50 @@ export default function StaffPage() {
       setError(saveError instanceof Error ? saveError.message : "Staff account could not be created.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveDetails(member: StaffMember) {
+    if (!detailsDraft) return;
+    const changes = {
+      ...(detailsDraft.name.trim() !== member.name ? { name: detailsDraft.name.trim() } : {}),
+      ...(detailsDraft.email.trim().toLowerCase() !== member.email ? { email: detailsDraft.email.trim().toLowerCase() } : {}),
+      ...(detailsDraft.branchId !== (member.branch?.id ?? "") ? { branchId: detailsDraft.branchId || null } : {}),
+      ...(detailsDraft.password ? { password: detailsDraft.password } : {}),
+    };
+    if (!Object.keys(changes).length) { setDetailsDraft(null); return; }
+    setSavingMemberId(member.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/staff/${member.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Staff details could not be saved.");
+      setStaff((current) => current.map((row) => row.id === member.id ? { ...row, name: result.name, email: result.email, branch: result.branch ? { ...result.branch, code: branches.find((branch) => branch.id === result.branch.id)?.code ?? "" } : null } : row));
+      setDetailsDraft(null);
+      setNotice(detailsDraft.password ? `Saved. Share ${result.name}'s new password with them securely.` : `Saved ${result.name}'s details.`);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Staff details could not be saved.");
+    } finally {
+      setSavingMemberId("");
+    }
+  }
+
+  async function removeMember(member: StaffMember) {
+    if (!window.confirm(`Remove ${member.name}'s account? This cannot be undone. Anyone with sales or stock records is kept; suspend them instead.`)) return;
+    setSavingMemberId(member.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/staff/${member.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "The staff account could not be removed.");
+      setStaff((current) => current.filter((row) => row.id !== member.id));
+      setNotice(`Removed ${member.name}'s account.`);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "The staff account could not be removed.");
+    } finally {
+      setSavingMemberId("");
     }
   }
 
@@ -327,8 +372,24 @@ export default function StaffPage() {
                       {member.id === session?.user.id ? "Current account" : member.role === "OWNER" ? "Holds every permission" : canGrant ? <button type="button" onClick={() => openGrants(member)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4c4c4] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#2d2d2d] hover:bg-[#f5f5f5]"><KeyRound className="h-3.5 w-3.5"/>Permissions{member.permissionGrants.length ? ` · ${member.permissionGrants.length}` : ""}</button> : "Changes save immediately"}
                       {member.permissionGrants.length && member.role !== "OWNER" ? <div className="mt-1.5 flex max-w-64 flex-wrap gap-1">{member.permissionGrants.map((grant) => <span key={grant.permission} className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${grant.mode === "RESTRICTED" ? "bg-[#fff2e8] text-[#8a4b2f]" : "bg-[#f5f5f5] text-[#2d2d2d]"}`}>{permissionLabels[grant.permission as Permission] ?? grant.permission}{grant.mode === "RESTRICTED" ? ` · code · ${grant.sessionMinutes ?? 15}m` : ""}</span>)}</div> : null}
                     </td> : null}
-                    <td className="px-4 py-3 text-xs text-[#69746c]">{new Date(member.createdAt).toLocaleDateString("en-KE")}</td>
+                    <td className="px-4 py-3 text-xs text-[#69746c]">{new Date(member.createdAt).toLocaleDateString("en-KE")}{canManageAccess ? <div className="mt-1.5 flex gap-1.5"><button type="button" onClick={() => setDetailsDraft(detailsDraft?.id === member.id ? null : { id: member.id, name: member.name, email: member.email, branchId: member.branch?.id ?? "", password: "" })} className="rounded-lg border border-[#c4c4c4] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#2d2d2d]">Edit</button>{member.id !== session?.user.id ? <button type="button" disabled={savingMemberId === member.id} onClick={() => void removeMember(member)} className="rounded-lg border border-[#e6c3bb] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#a54f40] disabled:opacity-60">Remove</button> : null}</div> : null}</td>
                   </tr>
+                  {detailsDraft?.id === member.id ? (
+                    <tr className="bg-[#fafafa]">
+                      <td colSpan={canManageAccess ? 7 : 6} className="px-4 py-4">
+                        <form onSubmit={(event) => { event.preventDefault(); void saveDetails(member); }} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          <label className="text-xs font-medium text-[#526057]">Full name<input required minLength={2} maxLength={120} value={detailsDraft.name} onChange={(event) => setDetailsDraft({ ...detailsDraft, name: event.target.value })} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2 text-sm" /></label>
+                          <label className="text-xs font-medium text-[#526057]">Work email<input required type="email" maxLength={254} value={detailsDraft.email} onChange={(event) => setDetailsDraft({ ...detailsDraft, email: event.target.value })} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2 text-sm" /></label>
+                          <label className="text-xs font-medium text-[#526057]">Branch<select value={detailsDraft.branchId} onChange={(event) => setDetailsDraft({ ...detailsDraft, branchId: event.target.value })} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2 text-sm"><option value="">Unassigned</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+                          <label className="text-xs font-medium text-[#526057]">New password <span className="font-normal">(leave blank to keep)</span><input type="password" minLength={8} maxLength={72} autoComplete="new-password" value={detailsDraft.password} onChange={(event) => setDetailsDraft({ ...detailsDraft, password: event.target.value })} className="mt-1 w-full border border-[#c4c4c4] bg-white px-3 py-2 text-sm" /></label>
+                          <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-4">
+                            <button type="button" onClick={() => setDetailsDraft(null)} className="rounded-lg border border-[#c4c4c4] px-3 py-1.5 text-xs font-medium">Cancel</button>
+                            <button type="submit" disabled={savingMemberId === member.id} className="rounded-lg bg-[#111111] px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60">{savingMemberId === member.id ? "Saving…" : "Save details"}</button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  ) : null}
                   {grantingId === member.id ? (
                     <tr className="bg-[#fafafa]">
                       <td colSpan={canManageAccess ? 7 : 6} className="px-4 py-4">

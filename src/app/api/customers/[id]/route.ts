@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
 import { canUseCapability } from "@/lib/access";
+import { recordActivity } from "@/lib/activity";
 import { denied } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
@@ -91,4 +93,35 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     select: { id: true, name: true, phone: true, email: true, status: true, creditLimit: true, reliabilityScore: true, smsRemindersEnabled: true, emailRemindersEnabled: true, remindersConsentAt: true, whatsappRemindersEnabled: true, whatsappConsentAt: true },
   });
   return NextResponse.json(updated);
+}
+
+/** Remove a client added by mistake. Anyone who has bought, has a plan or an order stays on record. */
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (session.user.role !== "OWNER" && session.user.role !== "BRANCH_MANAGER") return NextResponse.json({ error: "Only an owner or branch manager can remove clients." }, { status: 403 });
+  const { id } = await params;
+  const customer = await prisma.customer.findFirst({
+    where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) },
+    select: { id: true, name: true, _count: { select: { sales: true, creditPlans: true } } },
+  });
+  if (!customer) return NextResponse.json({ error: "Customer was not found." }, { status: 404 });
+  if (customer._count.sales || customer._count.creditPlans) {
+    return NextResponse.json({ error: `${customer.name} has purchases or a Lipa plan, so the record stays. Set them to Inactive instead.` }, { status: 409 });
+  }
+  try {
+    await prisma.$transaction(async (transaction) => {
+      await transaction.customerNotification.deleteMany({ where: { customerId: id } });
+      await transaction.customerReliabilityEvent.deleteMany({ where: { customerId: id } });
+      await transaction.customer.delete({ where: { id } });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      return NextResponse.json({ error: `${customer.name} is linked to an order or follow-up, so the record stays. Set them to Inactive instead.` }, { status: 409 });
+    }
+    console.error("Customer removal failed", error);
+    return NextResponse.json({ error: "The customer could not be removed." }, { status: 500 });
+  }
+  await recordActivity({ userId: session.user.id, sessionId: session.user.sessionId, action: "CUSTOMER_REMOVED", summary: `Removed client ${customer.name}`, entityType: "Customer", entityId: id });
+  return NextResponse.json({ ok: true });
 }

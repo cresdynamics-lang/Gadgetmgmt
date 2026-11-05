@@ -20,7 +20,12 @@ export type ActivityAction =
   | "WEBSITE_VISIBILITY"
   | "AI_QUESTION"
   | "RECEIPT_EMAILED"
-  | "DEVICE_PHOTOS_ADDED";
+  | "DEVICE_PHOTOS_ADDED"
+  | "DEVICE_UPDATED"
+  | "STAFF_UPDATED"
+  | "STOCK_ADJUSTED"
+  | "PRODUCT_REMOVED"
+  | "CUSTOMER_REMOVED";
 
 export async function startUserSession(userId: string) {
   const session = await prisma.userSession.create({ data: { userId }, select: { id: true } });

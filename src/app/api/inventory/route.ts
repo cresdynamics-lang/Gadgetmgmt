@@ -186,7 +186,9 @@ const priceSchema = z.object({
   costPrice: z.number().int().nonnegative().max(2_000_000_000).optional(),
   colour: z.string().trim().max(40).optional(),
   configuration: z.string().trim().max(80).optional(),
-}).strict().refine((data) => data.sellingPrice !== undefined || data.costPrice !== undefined || data.colour !== undefined || data.configuration !== undefined);
+  name: z.string().trim().min(2).max(160).optional(),
+  reorderLevel: z.number().int().nonnegative().max(100000).optional(),
+}).strict().refine((data) => Object.keys(data).some((key) => key !== "productId"));
 
 /** Change a product's selling price, and its buying price for people who can see finances. */
 export async function PATCH(request: Request) {
@@ -203,9 +205,13 @@ export async function PATCH(request: Request) {
 
   const product = await prisma.product.findFirst({
     where: { id: parsed.data.productId, ...(canSeeAllBranches(session.user) ? {} : { branchId: session.user.branchId ?? "" }) },
-    select: { id: true, name: true, sellingPrice: true, costPrice: true, colour: true, configuration: true },
+    select: { id: true, name: true, sellingPrice: true, costPrice: true, colour: true, configuration: true, reorderLevel: true },
   });
   if (!product) return NextResponse.json({ error: "That product was not found." }, { status: 404 });
+  if (parsed.data.name !== undefined && parsed.data.name !== product.name) {
+    const taken = await prisma.product.findFirst({ where: { name: { equals: parsed.data.name, mode: "insensitive" }, id: { not: product.id }, branchId: session.user.branchId ?? undefined }, select: { id: true } });
+    if (taken) return NextResponse.json({ error: "Another product already has that name." }, { status: 409 });
+  }
 
   const colour = parsed.data.colour === undefined ? undefined : parsed.data.colour || null;
   const configuration = parsed.data.configuration === undefined ? undefined : parsed.data.configuration || null;
@@ -216,14 +222,18 @@ export async function PATCH(request: Request) {
       ...(parsed.data.costPrice !== undefined ? { costPrice: parsed.data.costPrice } : {}),
       ...(colour !== undefined ? { colour } : {}),
       ...(configuration !== undefined ? { configuration } : {}),
+      ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+      ...(parsed.data.reorderLevel !== undefined ? { reorderLevel: parsed.data.reorderLevel } : {}),
     },
-    select: { id: true, sellingPrice: true, costPrice: true, colour: true, configuration: true },
+    select: { id: true, name: true, sellingPrice: true, costPrice: true, colour: true, configuration: true, reorderLevel: true },
   });
   const changes = [
     parsed.data.sellingPrice !== undefined && parsed.data.sellingPrice !== product.sellingPrice ? `selling price KES ${product.sellingPrice.toLocaleString("en-KE")} → ${parsed.data.sellingPrice.toLocaleString("en-KE")}` : null,
     parsed.data.costPrice !== undefined && parsed.data.costPrice !== product.costPrice ? "buying price updated" : null,
     colour !== undefined && colour !== product.colour ? `colour ${product.colour || "not set"} → ${colour || "not set"}` : null,
     configuration !== undefined && configuration !== product.configuration ? `specs ${product.configuration || "not set"} → ${configuration || "not set"}` : null,
+    parsed.data.name !== undefined && parsed.data.name !== product.name ? `name → ${parsed.data.name}` : null,
+    parsed.data.reorderLevel !== undefined && parsed.data.reorderLevel !== product.reorderLevel ? `reorder level ${product.reorderLevel} → ${parsed.data.reorderLevel}` : null,
   ].filter(Boolean);
   if (changes.length) {
     await recordActivity({
