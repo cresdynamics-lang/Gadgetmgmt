@@ -67,6 +67,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         return token;
       }
       if (typeof token.userId === "string" && token.userId) {
+        // Leaving the phone ends the session. A leftover cookie cannot get back in without the password.
+        if (typeof token.sessionId !== "string" || !token.sessionId) return null;
+        const open = await prisma.userSession.findUnique({ where: { id: token.sessionId }, select: { endedAt: true } });
+        if (!open || open.endedAt) return null;
         const currentUser = await prisma.user.findUnique({
           where: { id: token.userId },
           select: { role: true, status: true, branchId: true, branch: { select: { name: true } } },
