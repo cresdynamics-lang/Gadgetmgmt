@@ -15,7 +15,7 @@ import { deliverNotification } from "@/lib/notifications";
 import { getDarajaConfig, normalizeKenyanPhone, requestMpesaStk } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
 import { allocateSaleUnits, attachUnitsToSale, deviceIdentifiers, findActiveUnit, SaleUnitError } from "@/lib/device-units";
-import { allocateUnitCode } from "@/lib/unit-code";
+import { claimUnitCode } from "@/lib/unit-code";
 import { assessTradeIn, tradeInBrandLabel, tradeInDeclaration, tradeInCategory, tradeInChecks, tradeInGrades, tradeInReceiptLines, type TradeInCheckId } from "@/lib/trade-in";
 import { paymentLabel } from "@/lib/payment-labels";
 import { MAX_WARRANTY_MONTHS, warrantyLabel } from "@/lib/warranty";
@@ -107,6 +107,7 @@ const checkoutSchema = z.object({
     model: z.string().trim().min(2).max(80),
     // IMEI for phones and cellular iPads/watches, serial number for Macs and others.
     imei: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{8,20}$/),
+    unitCode: z.string().trim().toUpperCase().regex(/^GH[A-Z0-9]{8}$/).optional(),
     storage: z.string().trim().max(10).optional(),
     color: z.string().trim().max(40).optional(),
     grade: z.enum(["EXCELLENT", "GOOD", "FAIR", "FAULTY"]),
@@ -559,7 +560,7 @@ export async function POST(request: Request) {
           data: {
             branchId,
             productId: tradeInProduct.id,
-            unitCode: await allocateUnitCode(transaction),
+            unitCode: await claimUnitCode(transaction, tradeIn.unitCode),
             ...tradeInCodes,
             condition: "TRADE_IN",
             colour: tradeIn.color || null,

@@ -4,7 +4,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { isAppleMpn, normalizeGtin } from "@/lib/apple-barcodes";
 import { deviceNotes, type ScannedDevice } from "@/lib/device-scan";
 import { batteryPercent, deviceIdentifiers, findActiveUnit } from "@/lib/device-units";
-import { allocateUnitCode } from "@/lib/unit-code";
+import { claimUnitCode } from "@/lib/unit-code";
 import { parseScanPayload } from "@/lib/inventory-scan";
 
 function identifiedNotes(kind: string, input: { serial?: string | null; batteryHealth?: string | null; fmi?: string | null; sim?: string | null; version?: string | null }) {
@@ -59,6 +59,8 @@ type ReceiveInput = {
   reference?: string | null;
   note?: string | null;
   imei?: string | null;
+  /** The barcode already shown on the arrival sheet, kept if it is still unused. */
+  unitCode?: string | null;
   device?: DeviceDetails;
   tradeInId?: string | null;
 } & StockSourceInput;
@@ -192,7 +194,7 @@ async function receiveInTx(transaction: Db, input: ReceiveInput) {
       data: {
         branchId: input.branchId,
         productId: existing.product.id,
-        unitCode: await allocateUnitCode(transaction),
+        unitCode: await claimUnitCode(transaction, input.unitCode),
         supplierCode,
         imei: identifiers.imei,
         serial: identifiers.serial,

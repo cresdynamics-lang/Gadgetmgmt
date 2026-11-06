@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
 import { Check, ChevronLeft, ChevronRight, Repeat2, X } from "lucide-react";
 
 import { readDeviceChip } from "@/lib/apple-barcodes";
@@ -48,6 +48,7 @@ export type TradeInForm = {
   fmi: string;
   sim: string;
   version: string;
+  unitCode: string;
   sellerName: string;
   sellerPhone: string;
   sellerIdNumber: string;
@@ -60,7 +61,7 @@ export type TradeInForm = {
 
 export const blankTradeInForm: TradeInForm = {
   active: false, brand: "", deviceType: "", model: "", serial: "", storage: "", grade: "", batteryHealth: "", hasCharger: false,
-  colour: "", deviceSerial: "", mpn: "", modelNumber: "", fmi: "", sim: "", version: "",
+  colour: "", deviceSerial: "", mpn: "", modelNumber: "", fmi: "", sim: "", version: "", unitCode: "",
   receiptSeen: false, boxSeen: false, receiptReference: "", checks: {}, sellerName: "", sellerPhone: "", sellerIdNumber: "", sellerEmail: "", value: "", topUp: "", resalePrice: "", staffConfirmed: false,
 };
 
@@ -111,6 +112,7 @@ export function tradeInPayload(form: TradeInForm, subtotal: number) {
     value: tradeInValue(form, subtotal),
     resalePrice: Math.trunc(Number(form.resalePrice)),
     staffConfirmed: form.staffConfirmed,
+    ...(form.unitCode ? { unitCode: form.unitCode } : {}),
   };
 }
 
@@ -126,6 +128,7 @@ export function tradeInLabelData(form: TradeInForm): PhoneLabelData {
     fmi: form.fmi,
     sim: form.sim,
     version: form.version,
+    unitCode: form.unitCode,
     name: [form.model, form.storage].filter(Boolean).join(" "),
     category: form.deviceType || "iPhone",
     group: form.model,
@@ -241,12 +244,24 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
       const models = next.brand && next.deviceType ? tradeInDevices[next.brand as TradeInBrand]?.[next.deviceType]?.models ?? [] : [];
       const unlisted = Boolean(next.model && !models.includes(next.model));
       queueMicrotask(() => setOtherModel(unlisted));
-      return { ...current, ...next };
+      const serialChanged = mode !== "fill" && Boolean(next.serial) && next.serial !== current.serial;
+      return { ...current, ...next, ...(serialChanged ? { unitCode: "" } : {}) };
     });
   }
 
   // The USB scanner fills the device step while it is open.
   useScanHandler((code) => applyScan(code), form.active && step === 1);
+
+  useEffect(() => {
+    if (!form.active || !form.serial || form.unitCode) return;
+    let cancelled = false;
+    void fetch("/api/devices/barcode", { method: "POST" }).then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (cancelled || !response.ok || typeof data.unitCode !== "string") return;
+      onChange((current) => current.unitCode || current.serial !== form.serial ? current : { ...current, unitCode: data.unitCode });
+    });
+    return () => { cancelled = true; };
+  }, [form.active, form.serial, form.unitCode, onChange]);
 
   function onScanKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" && event.key !== "Tab") return;
@@ -316,7 +331,7 @@ export function TradeInPanel({ form, onChange, subtotal, staffName, customer }: 
             placeholder="Scanned or pasted About / IMEI / QR shows here"
             className={`${fieldClass} h-auto min-h-12 py-2 font-mono tracking-wide`}
           />
-          <p className="mt-1 text-[11px] text-[#6b6b6b]">The first photo is read straight away and names the chip, such as M2 or A16, when it is visible. Tap + for whatever is still blank. Retake fills only the gaps. The sticker prints when the sale is submitted.</p>
+          <p className="mt-1 text-[11px] text-[#6b6b6b]">The first photo names the device and gives it a barcode. Take a 2nd, 3rd or 4th photo to fill storage, battery or anything still blank. Retake any photo. The sticker prints when the sale is submitted.</p>
         </div>
         <div><p className={labelClass}>Brand</p><div className="mt-1.5 grid grid-cols-2 gap-2">{tradeInBrands.map((brand) => <Choice key={brand} selected={form.brand === brand} onClick={() => { setOtherModel(false); update({ brand, deviceType: "", model: "", storage: "" }); }}>{tradeInBrandLabel(brand)}</Choice>)}</div></div>
         {form.brand ? <div><p className={labelClass}>Device</p><div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.keys(tradeInDevices[form.brand]).map((device) => <Choice key={device} selected={form.deviceType === device} onClick={() => { setOtherModel(false); update({ deviceType: device, model: "", storage: "" }); }}>{device}</Choice>)}</div></div> : null}

@@ -21,3 +21,13 @@ export async function allocateUnitCode(db: CodeLookup) {
   }
   throw new Error("Could not assign a device barcode.");
 }
+
+/** Keep the barcode already shown to staff when it is still free. Otherwise assign a new one. */
+export async function claimUnitCode(db: CodeLookup, preferred?: string | null) {
+  const wanted = (preferred || "").toUpperCase();
+  if (isUnitCode(wanted)) {
+    const taken = await db.deviceUnit.findFirst({ where: { unitCode: wanted }, select: { id: true } });
+    if (!taken) return wanted;
+  }
+  return allocateUnitCode(db);
+}

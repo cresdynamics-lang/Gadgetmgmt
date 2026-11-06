@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Printer, ScanLine, X } from "lucide-react";
 
 import { conditionLabels } from "@/lib/catalog";
-import { appleModelsFor, lookupAppleIdentity, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
+import { appleModelsFor, lookupAppleIdentity, readDeviceChip, suggestedConditionFromMpn } from "@/lib/apple-barcodes";
 import { emptyScannedDevice, inferArrivalCondition, overlayDevice, parseDeviceScan, type ScannedDevice } from "@/lib/device-scan";
 import { matchScanProducts, parseScanPayload, type ScanableProduct } from "@/lib/inventory-scan";
 import { BatteryHealthField, PhoneLabelPreview } from "@/components/phone-label-preview";
@@ -81,10 +81,10 @@ const detailFields = [
   ["fmi", "FMI", "Off"],
   ["version", "Version", "26.4"],
   ["mpn", "Part number", "MPUA3LL/A"],
-  ["supplierCode", "Supplier sticker", "Barcode on the back (Ex-UK)"],
+  ["supplierCode", "Vendor sticker", "Scan the vendor sticker"],
 ] as const;
 
-const fieldClass = "mt-1 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-sm text-[#111111] outline-none focus:border-[#111111] focus:ring-2 focus:ring-[#e5e5e5]";
+const fieldClass = "mt-1 w-full rounded-lg border border-[#c4c4c4] bg-white px-3 py-2.5 text-base text-[#111111] outline-none focus:border-[#111111] focus:ring-2 focus:ring-[#e5e5e5]";
 
 /**
  * Scan arrivals: the USB scanner works anywhere on the page, and the one camera reads codes or the About screen.
@@ -114,6 +114,8 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   const [lastLabel, setLastLabel] = useState<ScannedDevice | null>(null);
   const [known, setKnown] = useState<KnownUnit | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [cameraHome, setCameraHome] = useState<HTMLDivElement | null>(null);
+  const [cameraSheet, setCameraSheet] = useState<HTMLDivElement | null>(null);
   const [problem, setProblem] = useState("");
   const [hint, setHint] = useState("");
 
@@ -247,6 +249,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
           supplierCode: device.supplierCode,
           vendorName: vendorName.trim(),
           ...(sellingPrice ? { sellingPrice: Math.trunc(Number(sellingPrice)) } : {}),
+          ...(device.unitCode ? { unitCode: device.unitCode } : {}),
         }),
       });
       const result = await response.json();
@@ -305,6 +308,19 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   async function handleScan(raw: string, nextCondition: ReceiveCondition = condition, mode: "replace" | "fill" = "replace") {
     const scanned = raw.trim();
     if (scanned.length < 2 || saving) return;
+    const token = scanned.trim().toUpperCase();
+    const singleCode = /^[A-Z0-9-]{4,40}$/.test(token);
+    // A device already has its IMEI or serial. The next single barcode is the vendor sticker, not a second serial.
+    if (
+      sheetOpen && singleCode &&
+      !/^\d{15}$/.test(token) && !/^GH[A-Z0-9]{8}$/.test(token) && !/^A\d{4}$/.test(token) && !/\/A$/.test(token) &&
+      (device.imei || device.serial) && token !== device.imei && token !== device.serial && token !== (device.unitCode || "")
+    ) {
+      setDevice((current) => ({ ...current, supplierCode: token }));
+      setHint("Vendor sticker saved. It stays separate from the IMEI, the serial and the shop barcode.");
+      setProblem("");
+      return;
+    }
     setCode(scanned);
     setPendingCode(scanned);
     setLooking(true);
@@ -320,16 +336,19 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       }
       const found = await resolveMatches(scanned, current);
       const payload = parseScanPayload(scanned);
-      // Any code that is not a product goes in as this device's serial, so it can still be received and labelled.
-      const unlisted = !found.matches.length && !found.device.imei && !found.device.serial && !found.device.unitCode && /^(?=.*\d)[A-Z0-9]{8,20}$/i.test(scanned) && payload.kind === "sku";
-      // On an Ex-UK phone an unknown code is the supplier's sticker on the back, not the phone's own serial.
-      const sticker = unlisted && current === "EX_UK";
-      const read = overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "", serial: unlisted && !sticker ? scanned.toUpperCase() : "", supplierCode: sticker ? scanned.toUpperCase() : "" });
+      // A code that is not an IMEI, serial, part number or shop barcode is the vendor's own sticker.
+      const unlisted = !found.matches.length && !found.device.imei && !found.device.serial && !found.device.unitCode && /^[A-Z0-9-]{4,40}$/i.test(scanned.trim()) && payload.kind === "sku";
+      const read = overlayDevice(found.device, { colour: found.device.colour || found.matches[0]?.colour || "", supplierCode: unlisted ? scanned.trim().toUpperCase() : "" });
       const rescan = scanned === pendingCode;
       // A box has several barcodes: part number, serial, UPC. A further scan adds to the open device unless it is a second device.
       const adding = sheetOpen && !rescan && !found.known && !((device.imei || device.serial) && (read.imei || read.serial));
       const blanks = overlayDevice(emptyScannedDevice(), Object.fromEntries((Object.keys(read) as (keyof typeof read)[]).filter((key) => !device[key] && read[key]).map((key) => [key, read[key]])));
-      const scannedDevice = mode === "fill" ? overlayDevice(device, blanks) : adding ? overlayDevice(device, read) : read;
+      let scannedDevice = mode === "fill" ? overlayDevice(device, blanks) : adding ? overlayDevice(device, read) : read;
+      if ((scannedDevice.imei || scannedDevice.serial) && !scannedDevice.unitCode) {
+        const barcode = await fetch("/api/devices/barcode", { method: "POST" });
+        const issued = await barcode.json().catch(() => ({}));
+        if (barcode.ok && typeof issued.unitCode === "string") scannedDevice = { ...scannedDevice, unitCode: issued.unitCode };
+      }
       if (!adding || found.matches.length) setPendingCode(scanned);
       setCatalog(found.catalog || (adding ? catalog : null));
       setDevice(scannedDevice);
@@ -387,7 +406,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
   const missing = [
     needsType ? "what this device is" : "",
     !name ? "device name" : "",
-    condition !== "NEW" && !hasCode ? "IMEI or serial" : "",
+    condition !== "NEW" && !hasCode && deviceType !== "Apple accessories" ? "IMEI or serial" : "",
     needsBattery && !device.batteryHealth ? "battery health" : "",
     matches.length > 1 && !chosen ? "which product" : "",
     !onShelf && vendorName.trim().length < 2 ? "vendor" : "",
@@ -401,7 +420,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#111111] text-white"><ScanLine className="h-4 w-4" /></span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[#1a1a1a]">Scan arrivals</h3>
-          <p className="mt-1 text-xs leading-5 text-[#7e897f]">Open the camera and take the first photo. A box QR is marked New. A barcode with the IMEI or battery is marked Ex-UK. Tap + for colour, storage, the chip or battery health if the first photo missed them. The selling price updates inventory.</p>
+          <p className="mt-1 text-xs leading-5 text-[#7e897f]">Photograph an iPhone, iPad, Mac or an accessory. The reader names it and fills its details. Take a 2nd, 3rd or 4th photo for anything still blank. A phone, iPad or Mac gets its own barcode. Similar accessories share one item, and the quantity is what counts. A box is marked New.</p>
         </div>
       </div>
 
@@ -414,13 +433,23 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       <p className="mb-3 text-[11px] leading-4 text-[#6b6b6b]">Taking a trade-in? It starts with the sale of the new phone: use Add a trade-in on the <a href="/sales" className="font-semibold underline">Sales</a> page.</p>
 
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <DeviceCamera onRead={(text, mode) => void handleScan(text, condition, mode)} onShots={setArrivalPhotos} askFor={sheetOpen ? [
-          !device.colour ? "the colour" : "",
-          deviceType === "Apple accessories" && matches.length !== 1 && !name ? "which accessory this is" : "",
-          !device.storage && deviceType !== "Apple accessories" && deviceType !== "AirPods" ? "the storage" : "",
-          needsBattery && !device.batteryHealth ? "battery health" : "",
-          condition !== "NEW" && !(device.imei || device.serial) ? "the IMEI or serial" : "",
-        ].filter(Boolean)[0] || "" : ""} />
+        <div ref={setCameraHome} className={sheetOpen ? "hidden" : undefined} />
+        {(sheetOpen && cameraSheet ? cameraSheet : cameraHome) ? createPortal(
+          <DeviceCamera
+            onRead={(text, mode) => void handleScan(text, condition, mode)}
+            onShots={setArrivalPhotos}
+            fillBlanks={sheetOpen}
+            askFor={[
+              deviceType === "Apple accessories" && !name ? "the exact accessory, including what it fits" : "",
+              !device.colour ? "the colour" : "",
+              (deviceType === "Mac" || deviceType === "iPad") && name && !readDeviceChip(name) ? "the chip, such as M4 or A16" : "",
+              !device.storage && deviceType !== "Apple accessories" && deviceType !== "AirPods" ? "the storage" : "",
+              needsBattery && !device.batteryHealth ? "battery health" : "",
+              condition !== "NEW" && deviceType !== "Apple accessories" && !(device.imei || device.serial) ? "the IMEI or serial" : "",
+            ].filter(Boolean)[0] || ""}
+          />,
+          (sheetOpen && cameraSheet ? cameraSheet : cameraHome) as HTMLDivElement,
+        ) : null}
         <div className="flex gap-2">
           <input
             ref={inputRef}
@@ -449,7 +478,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
       {sheetOpen ? createPortal(
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-4">
           <button type="button" aria-label="Close" onClick={() => { if (!saving) closeSheet(); }} className="absolute inset-0 bg-[#111111]/55 backdrop-blur-[2px]" />
-          <section role="dialog" aria-modal="true" aria-label="Device details" className="relative flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+          <section role="dialog" aria-modal="true" aria-label="Device details" onFocusCapture={() => { const x = window.scrollX; const y = window.scrollY; requestAnimationFrame(() => window.scrollTo(x, y)); }} className="relative flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
             <header className="flex items-start justify-between gap-3 border-b border-[#e5e5e5] px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#6b6b6b]">
@@ -457,12 +486,13 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
                   {catalog?.modelNumber || device.modelNumber ? ` · ${device.modelNumber || catalog?.modelNumber}` : ""}
                 </p>
                 <h4 className="mt-0.5 truncate text-base font-semibold text-[#111111]">{name || "Scanned device"}</h4>
-                {device.imei || device.serial ? <p className="mt-0.5 truncate font-mono text-[11px] text-[#6b6b6b]">{device.imei ? `IMEI ${device.imei}` : `Serial ${device.serial}`}</p> : null}
+                {device.imei || device.serial || device.unitCode ? <p className="mt-0.5 truncate font-mono text-[11px] text-[#6b6b6b]">{[device.unitCode && `Barcode ${device.unitCode}`, device.imei && `IMEI ${device.imei}`, !device.imei && device.serial && `Serial ${device.serial}`].filter(Boolean).join(" · ")}</p> : null}
               </div>
               <button type="button" onClick={closeSheet} disabled={saving} aria-label="Close" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#6b6b6b] hover:bg-[#f5f5f5]"><X className="h-4 w-4" /></button>
             </header>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              <div ref={setCameraSheet} />
               {onShelf && known ? (
                 <p className="rounded-xl border border-[#cfe3d5] bg-[#f1f8f3] px-3 py-2 text-xs leading-5 text-[#2d2d2d]">
                   Received {new Date(known.receivedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}{known.source ? ` from ${known.source}` : ""} as {conditionLabels[known.condition] ?? known.condition}. Details come from its saved record. Check them, then print the label. <a href={`/devices?q=${encodeURIComponent(device.unitCode || device.imei || device.serial)}`} className="font-semibold underline">Gadgets history</a>
@@ -494,6 +524,8 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
                 </div>
               ) : null}
 
+              {device.unitCode ? <label className="block text-xs font-medium text-[#526057]">Shop barcode<input readOnly value={device.unitCode} aria-label="Shop barcode" className={`${fieldClass} font-mono`} /></label> : null}
+
               <label className="block text-xs font-medium text-[#526057]">Device name
                 <input list="scan-device-models" value={deviceName} onChange={(event) => setDeviceName(event.target.value)} placeholder={namePlaceholders[deviceType] ?? "Model and storage"} className={`${fieldClass} ${!name ? "border-[#eb6834]" : ""}`} />
                 <datalist id="scan-device-models">{appleModelsFor(deviceType).map((model) => <option key={model} value={model} />)}</datalist>
@@ -508,7 +540,7 @@ export function ScanArrivals({ items, canReceive, onReceived, onError, onNotice 
                       onChange={(event) => setDevice((current) => ({ ...current, [key]: key === "imei" ? event.target.value.replace(/\D/g, "").slice(0, 15) : event.target.value }))}
                       placeholder={placeholder}
                       inputMode={key === "imei" ? "numeric" : undefined}
-                      className={`mt-1 w-full rounded-lg border bg-white px-2.5 py-2 font-mono text-xs normal-case tracking-normal text-[#111111] outline-none focus:border-[#111111] ${blank(key) ? "border-[#eb6834]" : "border-[#d4d4d4]"}`}
+                      className={`mt-1 w-full rounded-lg border bg-white px-2.5 py-2 font-mono text-base normal-case tracking-normal text-[#111111] outline-none focus:border-[#111111] ${blank(key) ? "border-[#eb6834]" : "border-[#d4d4d4]"}`}
                     />
                   </label>
                 ))}

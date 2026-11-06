@@ -28,12 +28,14 @@ const emptyDevice: ScannedDevice = {
 /** Map a photo or About dump onto a catalog section without asking the staff to pick one. */
 export function categoryFromText(text: string) {
   const source = text.toLowerCase();
+  // A keyboard or case can name the iPad or iPhone it fits. That mention must not turn the item into the device.
+  if (/\b(case|cover|charger|cable|adapter|pencil|mouse|trackpad|keyboard|folio|strap|sleeve|airtag|power\s*bank|screen\s*protector)\b/.test(source)) return "Apple accessories";
   if (/\b(macbook|imac|mac mini|mac studio|mac pro)\b/.test(source) || /\bmac\b/.test(source)) return "Mac";
   if (/\bipad\b/.test(source)) return "iPad";
   if (/\bapple watch\b/.test(source) || /\bwatch\b/.test(source)) return "Apple Watch";
   if (/\bairpods\b/.test(source)) return "AirPods";
   if (/\b(apple tv|homepod)\b/.test(source)) return "Apple TV & Home";
-  if (/\b(case|cover|charger|cable|strap|accessor)/.test(source)) return "Apple accessories";
+  if (/\b(accessor)/.test(source)) return "Apple accessories";
   if (/\biphone\b/.test(source)) return "iPhone";
   return "";
 }
@@ -90,11 +92,26 @@ export function parseDeviceScan(raw: string): ScannedDevice {
   const named = appleModelKey(text);
   const group = identity?.group || (named ? named.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "");
   const storageLabel = storage.replace(/GB$/i, "GB").replace(/TB$/i, "TB");
-  const accessoryTitle = field(text, /\bACCESSORY[:\s]+(.+?)(?=\s+(?:COLOR|COLOUR|QTY|CATEGORY|IMEI|SR#|BATTERY|VERSION|SIM|FMI)\b|$)/i);
-  const category = (categoryFromText(text) === "Apple accessories" ? "Apple accessories" : "") || identity?.category || categoryFromText(`${group} ${text}`) || (group.startsWith("iPhone") ? "iPhone" : "");
-  const name = category === "Apple accessories" && accessoryTitle
-    ? accessoryTitle.replace(/\s+/g, " ").trim()
-    : [group || identity?.name, storageLabel].filter(Boolean).join(" ").trim();
+  const accessoryTitle = field(text, /\bACCESSORY[:\s]+(.+?)(?=\s+(?:COLOR|COLOUR|QTY|CATEGORY|IMEI|SR#|BATTERY|VERSION|SIM|FMI|ARRIVAL)\b|$)/i);
+  const markedCategory = field(text, /\bCategory\s+(iPhone|iPad|Mac|Apple Watch|AirPods|Apple TV & Home|Apple accessories)\b/i);
+  const categoryNames = ["iPhone", "iPad", "Mac", "Apple Watch", "AirPods", "Apple TV & Home", "Apple accessories"];
+  const statedCategory = categoryNames.find((label) => label.toLowerCase() === markedCategory.toLowerCase()) || "";
+  const category = statedCategory || (categoryFromText(text) === "Apple accessories" ? "Apple accessories" : "") || identity?.category || categoryFromText(`${group} ${text}`) || (group.startsWith("iPhone") ? "iPhone" : "");
+  const spoken = /\bCategory\s+/i.test(text)
+    ? field(text, /(?:^|\s)Apple\s+(.+?)(?=\s+(?:[A-Z0-9]{4,10}\/A|A\d{4}|Sr#|IMEI|Color|Colour|Version|Battery|SIM|FMI|Category|Qty|Accessory|Arrival)\b|$)/i).replace(/\s+/g, " ").trim()
+    : "";
+  const catalogName = group || identity?.name || "";
+  const spokenModel = spoken.replace(storageLabel ? new RegExp(`\\s+${storageLabel}$`, "i") : /$^/, "").trim();
+  const base = spokenModel.length > catalogName.length && spokenModel.toLowerCase().startsWith(catalogName.toLowerCase())
+    ? spokenModel
+    : catalogName || spokenModel;
+  const accessoryLead = text.split(/\s+(?:Color|Colour|Qty|Category|IMEI|Sr#|Serial|Battery|Version|Arrival|SIM|FMI|S\/N)\b/i)[0]
+    .replace(/^Apple\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const name = category === "Apple accessories"
+    ? (accessoryTitle || spokenModel || accessoryLead).replace(/\s+/g, " ").trim()
+    : [base, storageLabel && !new RegExp(`${storageLabel}$`, "i").test(base) ? storageLabel : ""].filter(Boolean).join(" ").trim();
 
   return {
     imei,

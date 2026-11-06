@@ -43,12 +43,12 @@ export async function POST(request: Request) {
     }
     const fields = mergeDevicePhotoFields(reads.map((read) => read.fields));
     const found = Object.values(fields).filter(Boolean).length;
-    if (!found) return NextResponse.json({ error: "No device details could be read. Retake the photos straight on, with the About screen filling the frame." }, { status: 422 });
+    if (!found) return NextResponse.json({ error: "The photo was received, but no device details were in it. Fill the frame with the text and take it again." }, { status: 422 });
     return NextResponse.json({ fields, scanText: devicePhotoScanText(fields) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     console.error("Device photo read failed", message.slice(0, 200));
-    if (message === "PHOTO_UNREADABLE") return NextResponse.json({ error: "The photo could not be read. Retake it in good light, straight on." }, { status: 422 });
+    if (message === "PHOTO_UNREADABLE") return NextResponse.json({ error: "The photo was received, but the details could not be filled. Hold it steady with the text in frame and take it again." }, { status: 422 });
     return NextResponse.json({ error: "The photo could not be read right now. Try again, or scan / type the details." }, { status: 502 });
   }
 }

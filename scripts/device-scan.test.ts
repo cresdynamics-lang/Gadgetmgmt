@@ -160,6 +160,12 @@ test("a printed unit barcode is its own code, and a case is an accessory", () =>
   assert.equal(accessory.category, "Apple accessories");
   assert.equal(accessory.name, "Case for iPhone 17e");
   assert.equal(accessory.colour, "BLACK");
+  const keyboard = parseDeviceScan("Magic Keyboard for iPad Pro 13 Color Black");
+  assert.equal(keyboard.category, "Apple accessories");
+  assert.equal(keyboard.name, "Magic Keyboard for iPad Pro 13");
+  const pencil = parseDeviceScan("Apple Pencil Pro Color White Qty 2");
+  assert.equal(pencil.category, "Apple accessories");
+  assert.match(pencil.name, /Pencil Pro/);
 });
 
 test("an iPad About screen is told apart from an iPhone", () => {

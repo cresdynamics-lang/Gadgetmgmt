@@ -174,6 +174,7 @@ const receiveSchema = z.object({
   sim: z.string().trim().max(20).optional(),
   version: z.string().trim().max(20).optional(),
   supplierCode: z.string().trim().toUpperCase().max(40).optional(),
+  unitCode: z.string().trim().toUpperCase().regex(/^GH[A-Z0-9]{8}$/).optional(),
   reorderLevel: z.coerce.number().int().nonnegative().max(100000).optional(),
   reference: z.string().trim().max(100).optional(),
   note: z.string().trim().max(300).optional(),
@@ -389,6 +390,7 @@ export async function POST(request: Request) {
     reference: parsed.data.reference || `${scan.kind === "imei" ? "IMEI" : "SCAN"}-${(scan.code || lookupResult.code).slice(-16)}`,
     note: parsed.data.note || "Scanned on arrival",
     imei: device.imei || (scan.kind === "imei" ? scan.code : null),
+    unitCode: parsed.data.unitCode,
     device: {
       serial: device.serial || null,
       storage: device.storage || null,

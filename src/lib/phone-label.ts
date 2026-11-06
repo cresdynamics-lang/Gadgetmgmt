@@ -70,7 +70,7 @@ function barcodeSvg(value: string, widthMm = 72, heightMm = 7.5) {
 
 export function phoneLabelInnerHtml(device: PhoneLabelData) {
   const title = phoneLabelTitle(device) || device.name || "Apple device";
-  const barcodeValue = device.unitCode || device.imei || device.serial;
+  const barcodeValue = /^GH[A-Z0-9]{8}$/.test(device.unitCode || "") ? device.unitCode : "";
   const battery = (device.batteryHealth || "").replace(/[^\d]/g, "").slice(0, 3);
   return `<article class="gh-phone-label" aria-label="Phone label">
     <header class="gh-phone-label__brand">
@@ -93,6 +93,7 @@ export function phoneLabelInnerHtml(device: PhoneLabelData) {
       </div>
     </div>
     <p class="gh-phone-label__note">${escapeHtml(workingNote(device))}</p>
+    ${device.imei ? `<p class="gh-phone-label__imei">IMEI ${escapeHtml(device.imei)}</p>` : ""}
     ${barcodeValue ? `<div class="gh-phone-label__barcode">${barcodeSvg(barcodeValue)}</div><p class="gh-phone-label__imei">${escapeHtml(barcodeValue)}</p>` : ""}
   </article>`;
 }
@@ -212,7 +213,7 @@ export function createPhoneLabelPdf(device: PhoneLabelData, logo?: string | null
   const height = PHONE_LABEL.heightMm;
   const doc = new jsPDF({ unit: "mm", format: [width, height], orientation: "landscape" });
   const title = phoneLabelTitle(device) || device.name || "Apple device";
-  const barcodeValue = device.unitCode || device.imei || device.serial;
+  const barcodeValue = /^GH[A-Z0-9]{8}$/.test(device.unitCode || "") ? device.unitCode : "";
   const battery = (device.batteryHealth || "").replace(/[^\d]/g, "").slice(0, 3);
 
   doc.setFillColor(255, 255, 255);
@@ -233,6 +234,7 @@ export function createPhoneLabelPdf(device: PhoneLabelData, logo?: string | null
 
   const left = 4;
   line(doc, `Sr# ${device.serial || "—"}`, left, 17.2, { size: 7 });
+  if (device.imei) line(doc, `IMEI ${device.imei}`, left, 13.6, { size: 6 });
   line(doc, `FMI ${device.fmi || "—"}`, left, 21.2, { size: 7 });
   if (device.sim || /iphone/i.test(device.category)) line(doc, `SIM ${device.sim || "—"}`, 32, 17.2, { size: 7 });
   line(doc, `Color ${device.colour || "—"}`, 32, 21.2, { size: 7 });
