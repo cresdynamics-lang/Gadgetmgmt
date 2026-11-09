@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowDownToLine, Check, Download, FileText, Package, Search } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { BarcodeCapture } from "@/components/barcode-capture";
 import { downloadInventoryReceipt, type InventoryReceiptData } from "@/lib/receipt-pdf";
 import { needsReorder, reorderThreshold } from "@/lib/stock-levels";
 
@@ -42,7 +43,6 @@ export default function InventoryPage() {
   const [lastReceipt, setLastReceipt] = useState<InventoryReceiptData | null>(null);
 
   const [addingProduct, setAddingProduct] = useState(false);
-
   async function refreshInventory() {
     const response = await fetch("/api/inventory", { cache: "no-store" });
     const data = await response.json();
@@ -179,6 +179,8 @@ export default function InventoryPage() {
 
         {receiving ? <form onSubmit={receiveStock} className="inventory-receive-form border border-[#dfe4df] bg-white p-4 sm:p-5">
           <div className="mb-4 flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#edf4ef] text-[#45755d]"><Package className="h-4 w-4"/></span><div><h3 className="text-sm font-semibold text-[#2d4134]">Receive supplier stock</h3><p className="mt-1 text-xs text-[#7e897f]">Search the catalog, record quantities, and create a downloadable goods received note.</p></div></div>
+
+          <BarcodeCapture />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="relative text-xs font-medium text-[#526057] sm:col-span-2 xl:col-span-1" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setProductPickerOpen(false); }}>
               <label htmlFor="receive-product-search">Product</label>
