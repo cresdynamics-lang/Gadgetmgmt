@@ -1,0 +1,6 @@
+node_modules
+.next
+.next-notifications-e2e
+.git
+.env*
+*.log

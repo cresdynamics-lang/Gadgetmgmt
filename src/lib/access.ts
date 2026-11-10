@@ -10,11 +10,11 @@ const roleAccess: Record<string, { pages: readonly string[]; capabilities: reado
     capabilities: ["sales", "inventory", "customers", "credit", "layaway", "staff", "branchSettings", "notifications"],
   },
   CASHIER: {
-    pages: ["/dashboard", "/sales", "/customers", "/credit"],
+    pages: ["/dashboard", "/sales", "/customers", "/credit", "/notifications"],
     capabilities: ["sales", "customers", "credit"],
   },
   INVENTORY_LEAD: {
-    pages: ["/dashboard", "/inventory"],
+    pages: ["/dashboard", "/inventory", "/notifications"],
     capabilities: ["inventory"],
   },
 };
