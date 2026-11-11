@@ -26,13 +26,29 @@ export function NotificationBell() {
     const controller = new AbortController();
     let seen: Set<string> | null = null;
     let inFlight = false;
+    let refreshAgain = false;
+    let readVersion = 0;
+    const acknowledgedReads = new Set<string>();
+    function applyRead(value: unknown) {
+      if (typeof value !== "string" || acknowledgedReads.has(value)) return;
+      acknowledgedReads.add(value); readVersion += 1;
+      const readAt = new Date().toISOString();
+      setState((current) => {
+        if (!current || current.userId !== userId) return current;
+        const known = current.alerts.find((alert) => alert.id === value);
+        return { ...current, unread: known?.readAt ? current.unread : Math.max(0, current.unread - 1), alerts: current.alerts.map((alert) => alert.id === value ? { ...alert, readAt } : alert) };
+      });
+      setCards((current) => current.filter((card) => card.confirmation || card.id !== value));
+    }
     async function refresh() {
-      if (inFlight) return;
+      if (inFlight) { refreshAgain = true; return; }
       inFlight = true;
+      const version = readVersion;
       try {
         const response = await fetch("/api/notifications/unread", { cache: "no-store", signal: controller.signal });
         const result = await notificationResponse<Feed>(response);
         if (controller.signal.aborted || !Array.isArray(result.alerts) || typeof result.unread !== "number") return;
+        if (version !== readVersion) { refreshAgain = true; return; }
         const arrivals = seen ? result.alerts.filter((alert) => !alert.readAt && !seen!.has(alert.id)).reverse() : [];
         seen ??= new Set();
         result.alerts.forEach((alert) => seen!.add(alert.id));
@@ -40,7 +56,10 @@ export function NotificationBell() {
         setState({ ...result, userId: userId! });
         setError("");
       } catch { /* Keep the last loaded inbox available during a transient outage. */ }
-      finally { inFlight = false; }
+      finally {
+        inFlight = false;
+        if (refreshAgain && !controller.signal.aborted) { refreshAgain = false; void refresh(); }
+      }
     }
     let sequence = 0;
     const feedback = (event: Event) => {
@@ -52,10 +71,13 @@ export function NotificationBell() {
     window.addEventListener("notification-feedback", feedback);
     const initial = window.setTimeout(() => void refresh(), 0);
     const interval = window.setInterval(() => void refresh(), 10_000);
-    const changed = () => void refresh();
+    const changed = (event: Event) => {
+      applyRead((event as CustomEvent<{ readId?: string }>).detail?.readId);
+      void refresh();
+    };
     const workerMessage = (event: MessageEvent) => { if (event.data?.type === "NOTIFICATIONS_CHANGED") void refresh(); };
     const channel = "BroadcastChannel" in window ? new BroadcastChannel("gadgethub-notifications") : null;
-    if (channel) channel.onmessage = changed;
+    if (channel) channel.onmessage = (event) => { applyRead(event.data?.readId); void refresh(); };
     if ("serviceWorker" in navigator && window.isSecureContext) {
       void registerNotificationWorker().catch(() => undefined);
       navigator.serviceWorker.addEventListener("message", workerMessage);
@@ -89,7 +111,7 @@ export function NotificationBell() {
     try {
       const response = await fetch("/api/notifications/inbox", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
       await notificationResponse<{ ok: boolean }>(response);
-      notifyInboxChanged();
+      notifyInboxChanged(id);
     } catch { setError("Could not mark the notification read. Please try again."); }
   }
   return <>

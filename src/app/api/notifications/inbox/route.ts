@@ -40,9 +40,8 @@ async function handlePOST(request: Request) {
   const input = parsed.data;
   const recipient = await prisma.user.findFirst({ where: { id: input.userId, status: "ACTIVE", ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) } });
   if (!recipient) return NextResponse.json({ error: "Recipient not available in your branch." }, { status: 404 });
-  if (input.email && !(await getCompanyEmailSettings()).configured) return NextResponse.json({ error: "Email is not configured. Use Configure email in your inbox to finish setup." }, { status: 503 });
-  if (input.push && (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.env.VAPID_SUBJECT)) return NextResponse.json({ error: "Browser push is not configured." }, { status: 503 });
   const scheduledAt = alertDeliveryTime(input);
+  // Persist the inbox message independently; optional channels fail/retry on their own delivery rows.
   const data = {
     userId: recipient.id, senderId: session.user.id, title: input.title, body: input.body,
     scheduledAt,

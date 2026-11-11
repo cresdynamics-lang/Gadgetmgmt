@@ -38,7 +38,7 @@ The worker writes a heartbeat after each successful outbox scan. The compose pan
 
 ## End-to-end test
 
-Install Chromium once with `npx playwright install chromium`, start Redis, then run `npm run test:notifications:e2e`. This creates a randomly named isolated Postgres schema and Redis queue, starts an isolated Next.js server on port 3117, logs in through the real browser form, and verifies sending, scheduling, mark-read persistence, sender deduplication, origin checks, cross-branch isolation and manager-only controls. It starts real BullMQ workers against a test-only captured email provider to verify acceptance, retries, permanent failures and restart recovery. The schema and queue are removed at the end. It requires a database account allowed to create/drop its isolated test schema; do not point it at a restricted production account.
+Install Chromium once with `npx playwright install chromium`, start Redis, then run `npm run test:notifications:e2e`. This creates a randomly named isolated Postgres schema and Redis queue, builds and starts an isolated production Next.js server on port 3117, logs in through the real browser form, and verifies sending, scheduling, mark-read persistence, sender deduplication, origin checks, cross-branch isolation and manager-only controls. It starts real BullMQ workers against a test-only captured email provider to verify acceptance, retries, permanent failures and restart recovery. The schema and queue are removed at the end. It requires a database account allowed to create/drop its isolated test schema; do not point it at a restricted production account.
 
 An actual outbound test is opt-in: set `NOTIFICATION_LIVE_EMAIL` to an approved recipient when running the end-to-end command. That mode uses the configured company sender and real Resend key for one email after deterministic tests pass. Without that variable, no real email is sent. Verify the sender domain and production worker deployment before rollout. Browser push additionally requires VAPID configuration and a real HTTPS browser/device permission test.
 
@@ -72,3 +72,19 @@ Browser verification also covers the actual Enable/Test/Disable push controls wi
 
 
 Company sender setup uses the `companyEmailSettings` capability, granted only to the `OWNER` administrator role. Branch managers, cashiers and inventory leads cannot read or update company sender settings. Browser subscription and self-test controls remain available to every active staff role for their own devices. Popup cards confirm a sent/scheduled message and announce received messages across workspace pages; multiple cards queue and can be dismissed individually. Sender confirmation indicates inbox availability and queued email/push, rather than claiming provider delivery.
+
+
+## Additional app addresses
+
+Cookie-authenticated notification writes accept the canonical `APP_BASE_URL`/`NEXTAUTH_URL` origin and any exact origins explicitly listed in `NOTIFICATION_ALLOWED_ORIGINS`. For example, keep `APP_BASE_URL=http://localhost:3000` and set `NOTIFICATION_ALLOWED_ORIGINS=http://192.168.1.2:3000` to use the app over the local network. Schemes and ports must match. This is separate from Next.js `allowedDevOrigins`, which does not configure the API's request-origin guard. Unlisted origins and missing/null Origin headers are rejected. Forwarded host headers cannot expand the allowlist. Load changed deployment environment settings by restarting the web process; this does not change notification role permissions.
+
+
+## Independent delivery channels
+
+The API persists the in-app message and any selected email/push jobs together before trying to enqueue external delivery. Missing email configuration, provider errors and exhausted retries cannot reject or roll back an otherwise valid in-app message. The worker updates only the corresponding delivery row. In-app visibility follows the scheduled time and recipient identity, independently of email status. Recipients can read and mark the message read even when email is FAILED; that read action does not change the email failure record. Regression coverage verifies message creation before email setup and recipient visibility/read state after provider rejection.
+
+
+The full Messages & Alerts page presents received-message history immediately below its inbox heading, ahead of device/setup controls. The sender history is expanded by default for managers. The page's Refresh status action refreshes the in-app inbox for every staff role as well as management delivery data where allowed. Focusing the window also refreshes the inbox. Browser coverage compares bell entries with the full received history and verifies the refresh request.
+
+
+Successful mark-read actions update the bell badge immediately in the current window and other tabs. Read IDs are broadcast so duplicate events cannot decrement twice. A refresh already in flight is followed by another refresh, and responses captured before a read event cannot overwrite the updated badge. Tests cover reading from the full inbox and bell panel, cross-tab updates, and a deliberately delayed feed response.

@@ -55,8 +55,10 @@ export function StaffInbox() {
     const channel = "BroadcastChannel" in window ? new BroadcastChannel("gadgethub-notifications") : null;
     if (channel) channel.onmessage = changed;
     navigator.serviceWorker?.addEventListener("message", workerMessage);
+    window.addEventListener("notifications-refresh", changed);
+    window.addEventListener("focus", changed);
     const timer = window.setInterval(() => void refresh().catch(() => setError("Could not refresh notifications. Displaying the last loaded messages.")), 15_000);
-    return () => { channel?.close(); navigator.serviceWorker?.removeEventListener("message", workerMessage); window.clearTimeout(initial); window.clearInterval(timer); };
+    return () => { window.removeEventListener("notifications-refresh", changed); window.removeEventListener("focus", changed); channel?.close(); navigator.serviceWorker?.removeEventListener("message", workerMessage); window.clearTimeout(initial); window.clearInterval(timer); };
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -77,15 +79,18 @@ export function StaffInbox() {
   }
 
   async function markRead(id: string) {
-    try { await api("/api/notifications/inbox", "PATCH", { id }); await refresh(); notifyInboxChanged(); }
+    try { await api("/api/notifications/inbox", "PATCH", { id }); notifyInboxChanged(id); await refresh(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not mark alert read."); }
   }
 
   return <section className="space-y-4 rounded-2xl border border-[#e2e9e2] bg-white p-5" aria-labelledby="staff-inbox-heading">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 id="staff-inbox-heading" className="font-semibold text-[#304235]">Your inbox · {unread} unread</h3><p className="mt-1 text-xs text-[#7c897f]">Staff messages and scheduled alerts. Times use your device timezone.</p></div></div>
-    <PwaControls />
     {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
     {notice ? <p role="status" className="text-sm text-green-800">{notice}</p> : null}
+    <section aria-label="Received messages" className="rounded-xl border border-[#e2e9e2] px-4"><h4 className="pt-4 text-sm font-semibold text-[#304235]">Received messages</h4>
+    <div className="max-h-[32rem] divide-y divide-[#edf1ed] overflow-y-auto">{alerts.map((alert) => <article key={alert.id} className="py-4"><div className="flex items-start justify-between gap-3"><h4 className={`text-sm ${alert.readAt ? "text-[#69766c]" : "font-semibold text-[#20382d]"}`}>{alert.title}</h4>{!alert.readAt ? <button className={button} onClick={() => void markRead(alert.id)}>Mark read</button> : <span className="text-xs text-[#7c897f]">Read</span>}</div><p className="mt-2 whitespace-pre-wrap break-words text-sm text-[#69766c]">{alert.body}</p><p className="mt-2 text-xs text-[#7c897f]">{new Date(alert.scheduledAt).toLocaleString()}{alert.deliveries.map((delivery) => ` · ${delivery.channel}: ${delivery.status.toLowerCase()}`).join("")}</p></article>)}{!alerts.length ? <p className="py-6 text-center text-sm text-[#7c897f]">{loaded ? "Your inbox is empty." : "Loading your inbox…"}</p> : null}</div>
+    </section>
+    <PwaControls />
     {canManage ? <>
     <div className={`rounded-xl border p-3 ${emailConfigured && !emailTestMode ? "border-[#dce6dd] bg-[#f8fbf8]" : "border-[#ead8b7] bg-[#fffaf0]"}`}>
       <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#69766c]" role="status">{emailConfigured ? emailTestMode ? "Email is using a test sender. Configure your company sender before sending broadly." : "Company email is configured." : canConfigureEmail ? "Email is not configured. Add your company sender here to enable email notifications." : "Email is not configured. Ask the company owner to add the sender in Messages & alerts."}</p>{canConfigureEmail ? <button type="button" className={button} onClick={() => setEmailSetupOpen(true)}>{emailConfigured && !emailTestMode ? "Edit email settings" : "Configure email"}</button> : null}</div>
@@ -101,8 +106,7 @@ export function StaffInbox() {
       <div className="flex flex-wrap gap-4 text-xs sm:col-span-2"><label><input type="checkbox" checked disabled /> In-app notification (always included)</label><label><input name="email" type="checkbox" disabled={!emailConfigured} /> Also email</label><label><input name="push" type="checkbox" disabled={!key} /> Also browser push</label></div>
       <button disabled={busy} className={button}>{busy ? "Saving…" : timing === "now" ? "Send now" : "Schedule message"}</button>
     </form></details>
-    <details className="rounded-xl border border-[#e2e9e2] p-4"><summary className="cursor-pointer text-sm font-semibold text-[#365b43]">Sent &amp; scheduled messages ({sent.length})</summary><div className="divide-y divide-[#edf1ed]">{sent.map((message) => <article key={message.id} className="py-3"><p className="text-sm font-semibold">{message.title} · {message.user.name}</p><p className="mt-1 whitespace-pre-wrap break-words text-sm text-[#69766c]">{message.body}</p><p className="mt-1 text-xs text-[#7c897f]">{new Date(message.scheduledAt).getTime() > loadedAt ? "Scheduled for" : "Available in app since"} {new Date(message.scheduledAt).toLocaleString()} · {message.readAt ? "Read" : "Unread"}</p>{message.deliveries.map((delivery) => <p key={delivery.channel} className="mt-1 text-xs text-[#69766c]">{delivery.channel}: {delivery.status === "SENT" ? "Accepted by provider" : delivery.status.toLowerCase()} · {delivery.attempts} attempts{delivery.lastError ? ` · ${delivery.lastError}` : ""}</p>)}</article>)}{!sent.length ? <p className="py-3 text-sm text-[#69766c]">No sent messages yet.</p> : null}</div></details>
+    <details open className="rounded-xl border border-[#e2e9e2] p-4"><summary className="cursor-pointer text-sm font-semibold text-[#365b43]">Sent &amp; scheduled messages ({sent.length})</summary><div className="divide-y divide-[#edf1ed]">{sent.map((message) => <article key={message.id} className="py-3"><p className="text-sm font-semibold">{message.title} · {message.user.name}</p><p className="mt-1 whitespace-pre-wrap break-words text-sm text-[#69766c]">{message.body}</p><p className="mt-1 text-xs text-[#7c897f]">{new Date(message.scheduledAt).getTime() > loadedAt ? "Scheduled for" : "Available in app since"} {new Date(message.scheduledAt).toLocaleString()} · {message.readAt ? "Read" : "Unread"}</p>{message.deliveries.map((delivery) => <p key={delivery.channel} className="mt-1 text-xs text-[#69766c]">{delivery.channel}: {delivery.status === "SENT" ? "Accepted by provider" : delivery.status.toLowerCase()} · {delivery.attempts} attempts{delivery.lastError ? ` · ${delivery.lastError}` : ""}</p>)}</article>)}{!sent.length ? <p className="py-3 text-sm text-[#69766c]">No sent messages yet.</p> : null}</div></details>
     </> : null}
-    <div className="divide-y divide-[#edf1ed]">{alerts.map((alert) => <article key={alert.id} className="py-4"><div className="flex items-start justify-between gap-3"><h4 className={`text-sm ${alert.readAt ? "text-[#69766c]" : "font-semibold text-[#20382d]"}`}>{alert.title}</h4>{!alert.readAt ? <button className={button} onClick={() => void markRead(alert.id)}>Mark read</button> : <span className="text-xs text-[#7c897f]">Read</span>}</div><p className="mt-2 whitespace-pre-wrap break-words text-sm text-[#69766c]">{alert.body}</p><p className="mt-2 text-xs text-[#7c897f]">{new Date(alert.scheduledAt).toLocaleString()}{alert.deliveries.map((delivery) => ` · ${delivery.channel}: ${delivery.status.toLowerCase()}`).join("")}</p></article>)}{!alerts.length ? <p className="py-6 text-center text-sm text-[#7c897f]">{loaded ? "Your inbox is empty." : "Loading your inbox…"}</p> : null}</div>
   </section>;
 }

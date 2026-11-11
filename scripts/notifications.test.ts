@@ -128,3 +128,21 @@ test("only administrators configure company email; all staff can access notifica
   }
   assert.equal(canUseCapability("UNKNOWN", "companyEmailSettings"), false);
 });
+
+test("notification writes accept an explicit LAN origin without trusting arbitrary hosts", () => {
+  const previous = { APP_BASE_URL: process.env.APP_BASE_URL, NOTIFICATION_ALLOWED_ORIGINS: process.env.NOTIFICATION_ALLOWED_ORIGINS };
+  try {
+    process.env.APP_BASE_URL = "http://localhost:3000";
+    process.env.NOTIFICATION_ALLOWED_ORIGINS = " http://192.168.1.2:3000,invalid-value ";
+    const request = (origin: string) => new Request("http://localhost:3000/api/notifications/inbox", { headers: { origin, host: "192.168.1.2:3000", "x-forwarded-host": "evil.example" } });
+    assert.equal(sameOrigin(request("http://192.168.1.2:3000")), true);
+    assert.equal(sameOrigin(request("http://localhost:3000")), true);
+    assert.equal(sameOrigin(request("http://192.168.1.2:3001")), false);
+    assert.equal(sameOrigin(request("https://192.168.1.2:3000")), false);
+    assert.equal(sameOrigin(request("https://evil.example")), false);
+    assert.equal(sameOrigin(request("null")), false);
+    assert.equal(sameOrigin(request("http://192.168.1.2:3000.evil.example")), false);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});

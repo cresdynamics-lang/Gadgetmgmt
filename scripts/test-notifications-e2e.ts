@@ -52,7 +52,16 @@ async function main() {
     const cashier = await prisma.user.create({ data: { name: "Notification Cashier", email: "cashier@notifications.invalid", passwordHash, role: "CASHIER", branchId: a.id } });
     const inventory = await prisma.user.create({ data: { name: "Notification Inventory", email: "inventory@notifications.invalid", passwordHash, role: "INVENTORY_LEAD", branchId: a.id } });
     const outsider = await prisma.user.create({ data: { name: "Other Branch", email: "other@notifications.invalid", passwordHash, role: "CASHIER", branchId: b.id } });
-    const serverArgs = ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)];
+    // Two dev servers rewrite the shared next-env.d.ts and can trigger continuous HMR reloads.
+    // Build the isolated app once and test its production server instead.
+    const buildApp = async () => {
+      const child = start(["node_modules/next/dist/bin/next", "build"]);
+      return new Promise<number | null>((resolve) => child.once("exit", resolve));
+    };
+    let buildStatus = await buildApp();
+    if (buildStatus !== 0) buildStatus = await buildApp();
+    assert.equal(buildStatus, 0, "Isolated production build failed; inspect process logs.");
+    const serverArgs = ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)];
     let server = start(serverArgs);
     let restarts = 0;
     await expect.poll(async () => {
@@ -89,6 +98,13 @@ async function main() {
     const unauthorized = await fetch(base + "/api/notifications/inbox");
     assert.equal(unauthorized.status, 401);
     const sender = await login(owner.email);
+    const noEmailSetup = await sender.context.request.post(base + "/api/notifications/inbox", {
+      headers: { Origin: base }, data: { requestId: randomUUID(), userId: inventory.id, title: "In-app while email is unavailable", body: "Email setup must not block the inbox.", sendNow: true, email: true },
+    });
+    assert.equal(noEmailSetup.status(), 201);
+    const noEmailSetupId = (await noEmailSetup.json()).id;
+    assert.ok(await prisma.staffAlert.findUnique({ where: { id: noEmailSetupId } }));
+    console.log("PASS: missing email configuration does not reject or roll back the in-app message");
     await sender.page.getByRole("button", { name: "Configure email", exact: true }).click();
     await sender.page.getByLabel("Company sender email", { exact: true }).fill("notifications@notifications.invalid");
     await sender.page.getByLabel("Sender name", { exact: true }).fill("Fixture Company");
@@ -116,8 +132,17 @@ async function main() {
 
     const receiver = await login(cashier.email);
     await expect(receiver.page.getByRole("heading", { name: payload.title })).toBeVisible();
+    const receivedHistory = receiver.page.getByRole("region", { name: "Received messages", exact: true });
+    await expect(receivedHistory.getByRole("heading", { name: payload.title, exact: true })).toBeVisible();
+    const bellHistory = await receiver.context.request.get(base + "/api/notifications/unread");
+    for (const message of (await bellHistory.json()).alerts) await expect(receivedHistory.getByRole("heading", { name: message.title, exact: true })).toBeVisible();
+    const refreshedInbox = receiver.page.waitForResponse((response) => response.url().endsWith("/api/notifications/inbox") && response.request().method() === "GET");
+    await receiver.page.getByRole("button", { name: "Refresh status", exact: true }).click();
+    assert.equal((await refreshedInbox).status(), 200);
+    console.log("PASS: bell history appears in the full received-message history and the page refresh reloads it");
     await expect(receiver.page.getByText("Compose an alert", { exact: true })).toHaveCount(0);
     await receiver.page.getByRole("button", { name: "Mark read", exact: true }).click();
+    await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
     await expect.poll(async () => (await prisma.staffAlert.findUnique({ where: { id: immediate.id } }))?.readAt !== null).toBe(true);
     assert.equal((await post(receiver.context, payload)).status(), 403);
     assert.equal((await receiver.context.request.get(base + "/api/notifications")).status(), 403);
@@ -149,7 +174,22 @@ async function main() {
     await receiver.page.getByRole("button", { name: /Messages and alerts, 1 unread/ }).click();
     const recent = receiver.page.getByRole("region", { name: "Recent notifications" });
     await expect(recent).toContainText("In-app without email or push");
+    const otherTab = await receiver.context.newPage();
+    await otherTab.goto(base + "/customers");
+    await expect(otherTab.getByRole("button", { name: /Messages and alerts, 1 unread/ })).toHaveAttribute("aria-busy", "false");
+    // Hold a stale refresh response while the read succeeds. The badge must still update immediately.
+    await receiver.page.route("**/api/notifications/unread", async (route) => {
+      const response = await route.fetch();
+      await delay(1500);
+      await route.fulfill({ response });
+    });
+    await receiver.page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await recent.getByRole("button", { name: "Mark read" }).click();
+    await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
+    await expect(otherTab.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
+    await receiver.page.unrouteAll({ behavior: "wait" });
+    await otherTab.close();
+    console.log("PASS: read events update bell counts in both tabs and cannot be overwritten by a stale refresh");
     await expect.poll(async () => Boolean((await prisma.staffAlert.findUnique({ where: { id: browserOnlyId } }))?.readAt)).toBe(true);
     await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
     console.log("PASS: normal-browser in-app toast, workspace bell panel, and mark-read without email/push");
@@ -241,6 +281,18 @@ async function main() {
     await expect.poll(() => deliveryState(retry), { timeout: 70_000, intervals: [1000] }).toBe("SENT");
     const rejected = await create("Rejected email", { email: true });
     await expect.poll(() => deliveryState(rejected), { timeout: 20_000 }).toBe("FAILED");
+    const failedEmailInbox = await receiver.context.request.get(base + "/api/notifications/inbox");
+    const retained = (await failedEmailInbox.json()).alerts.find((alert: { id: string }) => alert.id === rejected);
+    assert.ok(retained, "Recipient must retain the in-app message after email rejection");
+    assert.equal(retained.readAt, null);
+    assert.equal(retained.deliveries.find((delivery: { channel: string }) => delivery.channel === "EMAIL").status, "FAILED");
+    await receiver.page.reload();
+    const rejectedCard = receiver.page.locator("article").filter({ has: receiver.page.getByRole("heading", { name: "Rejected email", exact: true }) });
+    await expect(rejectedCard).toBeVisible();
+    await rejectedCard.getByRole("button", { name: "Mark read", exact: true }).click();
+    await expect.poll(async () => Boolean((await prisma.staffAlert.findUnique({ where: { id: rejected } }))?.readAt)).toBe(true);
+    assert.equal(await deliveryState(rejected), "FAILED");
+    console.log("PASS: rejected email leaves the recipient's in-app message visible, unread and independently markable as read");
     await stop(worker);
     const recovered = await create("Outbox recovery email", { email: true, sendNow: false, scheduledAt: new Date(Date.now() + 2000).toISOString() });
     await delay(2500);
