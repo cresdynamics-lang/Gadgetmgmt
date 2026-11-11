@@ -45,6 +45,8 @@ type StockUnit = {
   condition: "NEW" | "OPEN_BOX" | "REFURBISHED" | "USED";
   color: string | null;
   storage: string | null;
+  ram: string | null;
+  notes: string | null;
   location: string | null;
   activationLock: "UNKNOWN" | "ON" | "OFF";
   saleItemId: string | null;
@@ -77,6 +79,7 @@ export default function InventoryPage() {
   const [units, setUnits] = useState<StockUnit[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [canViewCost, setCanViewCost] = useState(session?.user.role === "OWNER");
+  const [editingDevice, setEditingDevice] = useState(false);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -125,20 +128,20 @@ export default function InventoryPage() {
   const selectedProduct = items.find((item) => item.product.id === selectedProductId) ?? null;
   const recordingDevice = !selectedProduct || selectedProduct.product.tracksUnits;
   const receiveMatches = useMemo(() => items.filter((item) => `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(productSearch.trim().toLowerCase())).slice(0, 30), [items, productSearch]);
-  const filteredItems = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return items;
-    const unitProductIds = new Set(units.filter((unit) => `${unit.imei ?? ""} ${unit.imei2 ?? ""} ${unit.serialNumber ?? ""} ${unit.location ?? ""}`.toLowerCase().includes(needle)).map((unit) => unit.productId));
-    return items.filter((item) => unitProductIds.has(item.product.id) || `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(needle));
-  }, [items, query, units]);
   const visibleUnits = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return units.filter((unit) => {
-      if (unit.status === "SOLD" && !needle) return false;
-      if (!needle) return true;
-      return `${unit.imei ?? ""} ${unit.imei2 ?? ""} ${unit.serialNumber ?? ""} ${unit.location ?? ""} ${statusLabel[unit.status]}`.toLowerCase().includes(needle);
+      if (unit.status === "SOLD" && !words.length) return false;
+      const product = items.find((item) => item.product.id === unit.productId)?.product;
+      const details = `${product?.name ?? ""} ${product?.sku ?? ""} ${product?.brand ?? ""} ${unit.imei ?? ""} ${unit.imei2 ?? ""} ${unit.serialNumber ?? ""} ${unit.color ?? ""} ${unit.storage ?? ""} ${unit.ram ?? ""} ${unit.condition.replaceAll("_", " ")} ${unit.location ?? ""} ${statusLabel[unit.status]}`.toLowerCase();
+      return words.every((word) => details.includes(word));
     });
-  }, [query, units]);
+  }, [items, query, units]);
+  const filteredItems = useMemo(() => {
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const productIds = new Set(visibleUnits.map((unit) => unit.productId));
+    return items.filter((item) => productIds.has(item.product.id) || words.every((word) => `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(word)));
+  }, [items, query, visibleUnits]);
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId) ?? null;
   const stockUnits = items.reduce((sum, item) => sum + item.stockOnHand, 0);
   const lowStockCount = items.filter((item) => needsReorder(item.stockOnHand - item.reservedStock, item.reorderLevel, item.product.reorderLevel)).length;
@@ -267,6 +270,31 @@ export default function InventoryPage() {
       setNotice("Quantity received. The goods received note is ready.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Stock receipt failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveDeviceDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedUnit) return;
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/inventory/units/${selectedUnit.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Device details could not be saved.");
+      await refreshInventory();
+      setEditingDevice(false);
+      setNotice("Device details updated.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Device details could not be saved.");
     } finally {
       setSaving(false);
     }
@@ -414,6 +442,15 @@ export default function InventoryPage() {
             </div>
             <button type="button" onClick={() => setRevealed((current) => ({ ...current, [selectedUnit.id]: !current[selectedUnit.id] }))} className="text-xs font-semibold text-[#284a34]">{revealed[selectedUnit.id] ? "Hide identifier" : "Show identifier"}</button>
           </div>
+          {selectedUnit.status !== "SOLD" && !selectedUnit.saleItemId ? <div className="mt-3">
+            <button type="button" disabled={saving} onClick={() => setEditingDevice((current) => !current)} className="text-sm font-semibold text-[#284a34]">{editingDevice ? "Cancel editing" : "Edit device details"}</button>
+            {editingDevice ? <form key={selectedUnit.id} onSubmit={saveDeviceDetails} className="mt-3 grid gap-3 sm:grid-cols-2">
+              {(["color", "storage", "ram", "location", "notes"] as const).map((field) => <label key={field} className="text-xs font-medium text-[#526057]">{field === "ram" ? "RAM" : field.charAt(0).toUpperCase() + field.slice(1)}<input name={field} defaultValue={selectedUnit[field] ?? ""} maxLength={field === "notes" ? 300 : field === "location" ? 80 : 40} className={fieldClass} /></label>)}
+              <label className="text-xs font-medium text-[#526057]">Condition<select name="condition" defaultValue={selectedUnit.condition} className={fieldClass}><option value="NEW">New</option><option value="OPEN_BOX">Open box</option><option value="REFURBISHED">Refurbished</option><option value="USED">Used</option></select></label>
+              <label className="text-xs font-medium text-[#526057]">Activation lock<select name="activationLock" defaultValue={selectedUnit.activationLock} className={fieldClass}><option value="UNKNOWN">Not checked</option><option value="OFF">Off</option><option value="ON">On</option></select></label>
+              <div className="sm:col-span-2"><button disabled={saving} className="rounded-lg bg-[#244d3f] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save device details"}</button></div>
+            </form> : null}
+          </div> : null}
           {selectedUnit.status === "SOLD" || selectedUnit.saleItemId ? <p className="mt-3 text-xs text-[#69746c]">This device is tied to a sale. Change it from the sale, not from stock.</p> : <div className="mt-3 flex flex-wrap gap-2">
             {shelfStatuses.map((status) => <button key={status} type="button" disabled={movingId === selectedUnit.id || selectedUnit.status === status} onClick={() => void moveUnit(status)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${selectedUnit.status === status ? "bg-[#173a2b] text-white" : "border border-[#cbd5cc] text-[#284a34] hover:bg-[#edf3e9]"} disabled:opacity-60`}>{movingId === selectedUnit.id && selectedUnit.status !== status ? "Saving…" : statusLabel[status]}</button>)}
           </div>}
@@ -449,8 +486,8 @@ export default function InventoryPage() {
 
         <section className="inventory-table-panel overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_4px_18px_rgba(24,54,37,.03)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8ebe8] p-3.5">
-            <h3 className="text-sm font-semibold">Branch stock</h3>
-            <div className="relative w-full sm:max-w-xs"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input aria-label="Find a device or product" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, SKU, IMEI or serial" autoComplete="off" className="w-full border border-[#d6ddd6] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#315d3f]" /></div>
+            <div><h3 className="text-sm font-semibold">Find and edit devices</h3><p className="mt-1 text-xs text-[#69746c]">Search a model and variant details, then select a device below. No camera needed.</p></div>
+            <div className="relative w-full sm:max-w-xs"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#78847a]" /><input aria-label="Find a device or product" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, color, storage, RAM, IMEI or serial" autoComplete="off" className="w-full border border-[#d6ddd6] py-2 pl-9 pr-3 text-sm outline-none focus:border-[#315d3f]" /></div>
           </div>
           <div className="overflow-x-auto"><table className="min-w-full text-left text-sm">
             <thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Product</th><th className="px-4 py-3 font-medium">SKU</th><th className="px-4 py-3 font-medium">Tracking</th><th className="px-4 py-3 text-right font-medium">On hand</th><th className="px-4 py-3 text-right font-medium">Available</th>{canViewCost ? <th className="px-4 py-3 text-right font-medium">Cost</th> : null}<th className="px-4 py-3 font-medium">Stock status</th></tr></thead>
@@ -462,7 +499,7 @@ export default function InventoryPage() {
                 const stockLabel = low ? "Reorder" : threshold === 0 ? "No alert set" : available <= 0 ? "Out of stock" : "In stock";
                 const productUnits = visibleUnits.filter((unit) => unit.productId === item.product.id);
                 return <tr key={item.id} className="align-top hover:bg-[#f9faf8]">
-                  <td className="px-4 py-3 font-medium">{item.product.name}{productUnits.length ? <ul className="mt-2 space-y-1">{productUnits.slice(0, 8).map((unit) => <li key={unit.id}><button type="button" onClick={() => setSelectedUnitId(unit.id)} className={`block text-left font-mono text-[11px] font-normal ${selectedUnitId === unit.id ? "text-[#173a2b]" : "text-[#69746c]"}`}>{identifier(unit)} · {statusLabel[unit.status]}</button></li>)}{productUnits.length > 8 ? <li className="text-[11px] font-normal text-[#8b948b]">Search to narrow {productUnits.length - 8} more.</li> : null}</ul> : null}</td>
+                  <td className="px-4 py-3 font-medium">{item.product.name}{productUnits.length ? <ul className="mt-2 space-y-1">{productUnits.slice(0, 8).map((unit) => <li key={unit.id}><button type="button" onClick={() => { setSelectedUnitId(unit.id); setEditingDevice(false); }} className={`block text-left font-mono text-[11px] font-normal ${selectedUnitId === unit.id ? "text-[#173a2b]" : "text-[#69746c]"}`}>{identifier(unit)} · {[unit.color, unit.storage, unit.ram ? `${unit.ram} RAM` : null, unit.condition.replaceAll("_", " "), statusLabel[unit.status]].filter(Boolean).join(" · ")}</button></li>)}{productUnits.length > 8 ? <li className="text-[11px] font-normal text-[#8b948b]">Search to narrow {productUnits.length - 8} more.</li> : null}</ul> : null}</td>
                   <td className="px-4 py-3 font-mono text-xs text-[#69746c]">{item.product.sku}</td>
                   <td className="px-4 py-3 text-[#69746c]">{item.product.tracksUnits ? "Each device" : "Quantity"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{item.stockOnHand}</td>
