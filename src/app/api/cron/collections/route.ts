@@ -6,6 +6,7 @@ import { normalizeKenyanPhone } from "@/lib/mpesa";
 import { creditStatusForDays, daysUntilDue as calculateDaysUntilDue } from "@/lib/credit-lifecycle";
 import { deliverNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { releaseSaleHold } from "@/lib/stock-units";
 
 export const maxDuration = 60;
 
@@ -242,6 +243,7 @@ async function deliverQueued() {
           if (released.count !== 1) throw new Error("RESERVATION_NOT_FOUND");
           await transaction.inventoryMovement.create({ data: { branchId: expired.sale.branchId, productId: item.productId, userId: expired.sale.cashierId, saleId: expired.sale.id, type: "RESERVATION_RELEASE", quantity: -item.quantity, reference: expired.sale.invoiceNumber, idempotencyKey: `payment-expiry-${expired.id}-${item.productId}`, note: "Stock released after third-party payment link expired" } });
         }
+        await releaseSaleHold(transaction, expired.sale.id);
         await transaction.sale.updateMany({ where: { id: expired.sale.id, status: "PENDING" }, data: { status: "VOIDED" } });
       });
     } catch { console.error("Could not release expired payment-request stock", expired.id); }

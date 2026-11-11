@@ -4,8 +4,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { tracksUnits } from "@/lib/device-units";
 import { canUseCapability } from "@/lib/entitlements";
 import { rejectSensitiveQuery } from "@/lib/request-guards";
+import { claimDevicesForSale, StockUnitError } from "@/lib/stock-units";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { normalizeKenyanPhone } from "@/lib/mpesa";
@@ -20,7 +22,7 @@ export async function GET(request: Request) {
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
-  const [products, customers, creditPolicy] = await Promise.all([
+  const [products, customers, creditPolicy, devices] = await Promise.all([
     prisma.product.findMany({
       where: { branchId },
       select: {
@@ -29,6 +31,7 @@ export async function GET(request: Request) {
         name: true,
         category: true,
         sellingPrice: true,
+        unitTracking: true,
         inventory: {
           where: { branchId },
           select: { stockOnHand: true, reservedStock: true },
@@ -42,11 +45,17 @@ export async function GET(request: Request) {
       orderBy: { name: "asc" },
     }),
     prisma.creditPolicy.findUnique({ where: { branchId }, select: { minimumDepositPercent: true, defaultCreditLimit: true } }),
+    prisma.stockUnit.findMany({
+      where: { branchId, status: "IN_STOCK" },
+      select: { id: true, productId: true, imei: true, imei2: true, serialNumber: true },
+    }),
   ]);
 
   return NextResponse.json({
     products: products.map(({ inventory, ...product }) => ({
       ...product,
+      tracksUnits: tracksUnits(product.category, product.unitTracking),
+      devices: devices.filter((unit) => unit.productId === product.id).map(({ id, imei, imei2, serialNumber }) => ({ id, imei, imei2, serialNumber })),
       available: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - (inventory[0]?.reservedStock ?? 0)),
     })),
     customers,
@@ -54,8 +63,18 @@ export async function GET(request: Request) {
   });
 }
 
+const deviceClaimSchema = z.object({
+  stockUnitId: z.string().cuid().optional(),
+  imei: z.string().trim().max(20).optional(),
+  serialNumber: z.string().trim().max(40).optional(),
+}).strict();
+
 const checkoutSchema = z.object({
-  items: z.array(z.object({ productId: z.string().cuid(), quantity: z.number().int().min(1).max(1000) })).min(1).max(100),
+  items: z.array(z.object({
+    productId: z.string().cuid(),
+    quantity: z.number().int().min(1).max(1000),
+    devices: z.array(deviceClaimSchema).max(1000).optional(),
+  }).strict()).min(1).max(100),
   customerId: z.string().cuid().nullable().optional(),
   payerPhone: z.string().trim().min(7).max(30).optional(),
   payerConsent: z.literal(true).optional(),
@@ -140,8 +159,10 @@ export async function POST(request: Request) {
   }
 
   const quantities = new Map<string, number>();
+  const deviceClaims = new Map<string, NonNullable<(typeof parsed.data.items)[number]["devices"]>>();
   for (const item of parsed.data.items) {
     quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+    if (item.devices?.length) deviceClaims.set(item.productId, [...(deviceClaims.get(item.productId) ?? []), ...item.devices]);
   }
 
   try {
@@ -152,6 +173,8 @@ export async function POST(request: Request) {
         select: {
           id: true,
           name: true,
+          category: true,
+          unitTracking: true,
           costPrice: true,
           sellingPrice: true,
           inventory: { where: { branchId }, select: { id: true, stockOnHand: true, reservedStock: true } },
@@ -282,6 +305,23 @@ export async function POST(request: Request) {
         },
       });
 
+      for (const line of createdSale.saleItems) {
+        const product = products.find((item) => item.id === line.productId);
+        if (!product) throw new Error("PRODUCT_UNAVAILABLE");
+        await claimDevicesForSale(transaction, {
+          branchId,
+          productId: product.id,
+          category: product.category,
+          unitTracking: product.unitTracking,
+          quantity: line.quantity,
+          devices: deviceClaims.get(product.id),
+          saleItemId: line.id,
+          userId: session.user.id,
+          hold: parsed.data.paymentMethod === "PAY_LINK",
+          stockSnapshot: lineItems.find((item) => item.product.id === product.id)?.inventory,
+        });
+      }
+
       let salePaymentLink: { token: string; amount: number } | null = null;
       let payerNotificationId: string | null = null;
       if (parsed.data.paymentMethod === "PAY_LINK") {
@@ -323,7 +363,11 @@ export async function POST(request: Request) {
 
       const creditPlanLinks: { token: string; planReference: string; productName: string; payerToken?: string; payerAmount?: number }[] = [];
       if (parsed.data.paymentMethod === "CREDIT") {
-        if (parsed.data.imei && await transaction.creditPlan.findUnique({ where: { imei: parsed.data.imei }, select: { id: true } })) throw new Error("IMEI_ALREADY_REGISTERED");
+        const soldUnits = await transaction.stockUnit.findMany({ where: { saleItem: { saleId: createdSale.id } }, select: { imei: true } });
+        const unitImeis = soldUnits.map((unit) => unit.imei).filter((value): value is string => Boolean(value));
+        if (parsed.data.imei && unitImeis.length > 0 && !unitImeis.includes(parsed.data.imei)) throw new StockUnitError(400, "The Lipa IMEI has to match the device being sold.");
+        const creditImei = parsed.data.imei || (unitImeis.length === 1 ? unitImeis[0] : undefined);
+        if (creditImei && await transaction.creditPlan.findUnique({ where: { imei: creditImei }, select: { id: true } })) throw new Error("IMEI_ALREADY_REGISTERED");
         let depositRemaining = paidAmount;
         for (let index = 0; index < saleLines.length; index += 1) {
           const line = saleLines[index];
@@ -354,7 +398,7 @@ export async function POST(request: Request) {
               branchId,
               customerId: customerId!,
               productId: line.product.id,
-              ...(parsed.data.imei ? { imei: parsed.data.imei } : {}),
+              ...(creditImei ? { imei: creditImei } : {}),
               totalAmount: line.total,
               depositAmount: allocatedDeposit,
               balance: lineBalance,
@@ -434,6 +478,10 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "IMEI_ALREADY_REGISTERED") return NextResponse.json({ error: "This IMEI is already attached to a Lipa account." }, { status: 409 });
     if (error instanceof Error && error.message === "INVALID_PAID_AMOUNT") return NextResponse.json({ error: "Use two distinct payment methods whose amounts add up to the sale total." }, { status: 400 });
     if (error instanceof Error && error.message === "SALE_AMOUNT_OUT_OF_RANGE") return NextResponse.json({ error: "Sale total exceeds the supported integer amount or contains an invalid price." }, { status: 400 });
+    if (error instanceof StockUnitError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ error: "This IMEI or serial is already on record." }, { status: 409 });
+    }
     if (error instanceof Error && error.message === "PRODUCT_UNAVAILABLE") {
       return NextResponse.json({ error: "One or more products are unavailable at your branch." }, { status: 400 });
     }

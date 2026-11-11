@@ -21,7 +21,8 @@
     "test:money-allocation": "node --import tsx --test scripts/money-allocation.test.ts",
     "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts",
     "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts",
-    "test:access": "node --import tsx --test scripts/access.test.ts"
+    "test:access": "node --import tsx --test scripts/access.test.ts",
+    "test:device-units": "node --import tsx --test scripts/device-units.test.ts scripts/barcode-scanner.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

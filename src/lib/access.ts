@@ -92,6 +92,12 @@ const SENSITIVE_QUERY_KEYS = new Set([
   "user_id",
   "userdetails",
   "session",
+  "imei",
+  "imei1",
+  "imei2",
+  "serial",
+  "serialnumber",
+  "serial_number",
 ]);
 
 export function isAppRole(role: string): role is AppRole {
