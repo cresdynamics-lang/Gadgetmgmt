@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { canAccessPage, hasSensitiveQuery, isSensitiveQueryKey, safeInternalPath } from "@/lib/access";
+import { canAccessPage, hasSensitiveQuery, isOwnerEntitlementPath, isSensitiveQueryKey, safeInternalPath } from "@/lib/access";
 import { getAccessMap } from "@/lib/entitlements";
 
 export default auth(async (request) => {
@@ -28,7 +28,13 @@ export default auth(async (request) => {
     return Response.redirect(loginUrl);
   }
   if (request.auth?.user && pathname !== "/login" && !publicCustomerPayment) {
-    const grants = await getAccessMap();
+    let grants;
+    try {
+      grants = await getAccessMap();
+    } catch {
+      if (request.auth.user.role === "OWNER" && isOwnerEntitlementPath(pathname)) return;
+      return new Response("Page access could not be checked. Try again shortly.", { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+    }
     if (!canAccessPage(request.auth.user.role, pathname, grants)) {
       if (pathname !== "/dashboard" && canAccessPage(request.auth.user.role, "/dashboard", grants)) {
         return Response.redirect(new URL("/dashboard", request.nextUrl));

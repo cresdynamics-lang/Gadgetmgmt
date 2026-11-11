@@ -2,10 +2,10 @@ import { AppShell } from "@/components/app-shell";
 import { MetricCard } from "@/components/metric-card";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CirclePlus, CreditCard, PackageCheck } from "lucide-react";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessPage } from "@/lib/access";
 import { getAccessMap } from "@/lib/entitlements";
+import { requirePage } from "@/lib/require-page";
 import { AiBriefing } from "@/app/insights/ai-briefing";
 import { needsReorder } from "@/lib/stock-levels";
 
@@ -14,7 +14,7 @@ export const instant = false;
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
 export default async function DashboardPage() {
-  const session = await auth();
+  const session = await requirePage("/dashboard");
   const grants = await getAccessMap();
   const role = session?.user.role ?? "";
   const branchId = session?.user.branchId;

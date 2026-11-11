@@ -17,7 +17,12 @@ export async function GET(request: Request) {
   if (!session?.user) return json({ error: "Authentication required" }, 401);
   if (session.user.role !== "OWNER") return json({ error: "Only the Gadgethub owner can view role entitlements." }, 403);
 
-  const grants = await getAccessMap();
+  let grants;
+  try {
+    grants = await getAccessMap();
+  } catch {
+    return json({ error: "Role entitlements could not be loaded." }, 503);
+  }
   return json({
     grants: ROLE_IDS.map((role) => ({
       role,

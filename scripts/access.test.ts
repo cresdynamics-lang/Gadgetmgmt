@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   assertEntitlementFloors,
+  applyPageFloors,
   buildAccessMap,
   canAccessPage,
   canAssignStaffRole,
@@ -42,6 +43,12 @@ test("uses stored entitlements and still keeps role access with the owner", () =
   assert.equal(canUseCapability("CASHIER", "sales", grants), false);
   assert.equal(canAccessPage("CASHIER", "/access", grants), false);
   assert.equal(canAccessPage("CASHIER", "/access", { CASHIER: { pages: ["*"], capabilities: [] } }), false);
+  assert.equal(canAccessPage("CASHIER", "/sales", { CASHIER: { pages: ["*"], capabilities: [] } }), false);
+  assert.equal(canAccessPage("CASHIER", "/dashboard", { CASHIER: { pages: ["*", "/dashboard"], capabilities: [] } }), true);
+  assert.equal(canAccessPage("CASHIER", "/insights", { CASHIER: { pages: ["/dashboard", "/insights"], capabilities: [] } }), false);
+  assert.equal(canAccessPage("BRANCH_MANAGER", "/insights", { BRANCH_MANAGER: { pages: ["/insights"], capabilities: [] } }), true);
+  assert.deepEqual(applyPageFloors("CASHIER", ["*"]), []);
+  assert.deepEqual(buildAccessMap([{ role: "CASHIER", pages: ["*"], capabilities: ["sales"] }]).CASHIER.pages, []);
   assert.equal(canAccessPage("UNKNOWN", "/dashboard"), false);
 });
 
@@ -98,6 +105,17 @@ test("rejects passwords and user details in urls", () => {
   assert.equal(safeInternalPath("/\\evil.example"), null);
   assert.equal(safeInternalPath("/dashboard?password=secret"), null);
   assert.equal(safeInternalPath("/%2f%2fevil.example"), null);
+});
+
+test("each editable page is refused on the server when it is not granted", () => {
+  const pages = ["/dashboard", "/sales", "/inventory", "/customers", "/credit", "/layaway", "/staff", "/insights", "/notifications", "/settings", "/access"];
+  for (const page of pages) {
+    const layout = readFileSync(path.join(root, "src/app", page.slice(1), "layout.tsx"), "utf8");
+    assert.match(layout, new RegExp(`requirePage\\("${page}"\\)`));
+    assert.match(layout, /export const instant = false/);
+  }
+  const dashboard = readFileSync(path.join(root, "src/app/dashboard/page.tsx"), "utf8");
+  assert.match(dashboard, /await requirePage\("\/dashboard"\)/);
 });
 
 test("server capability checks await the stored entitlement", () => {

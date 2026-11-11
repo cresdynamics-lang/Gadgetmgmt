@@ -4,6 +4,7 @@ export const navItems = [
   { label: "Inventory", href: "/inventory" },
   { label: "Customers", href: "/customers" },
   { label: "Lipa Mdogo Mdogo", href: "/credit" },
+  { label: "Layaway close-out", href: "/layaway" },
   { label: "Staff & Users", href: "/staff" },
   { label: "Role access", href: "/access" },
   { label: "Business insights", href: "/insights" },

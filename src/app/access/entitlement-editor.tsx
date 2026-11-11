@@ -20,11 +20,11 @@ type GrantResponse = {
 };
 
 function toState(grant: GrantResponse): GrantState {
-  const allPages = grant.pages.includes("*");
+  const allPages = grant.role === "OWNER" && grant.pages.includes("*");
   return {
     role: grant.role,
     allPages,
-    pages: allPages ? PAGE_CATALOG.map((page) => page.path) : grant.pages,
+    pages: allPages ? PAGE_CATALOG.map((page) => page.path) : grant.pages.filter((page) => page !== "*"),
     capabilities: grant.capabilities,
   };
 }
@@ -102,7 +102,7 @@ export function EntitlementEditor() {
         <div className="pointer-events-none absolute -right-8 -top-20 h-60 w-60 rounded-full border border-[#d2e8d8]" />
         <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#438061]"><ShieldCheck className="h-3.5 w-3.5" />Owner only</p>
         <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[#20382c] sm:text-[31px]">Role access</h2>
-        <p className="mt-1.5 max-w-2xl text-sm text-[#6f8376]">Choose the pages and actions for each role. Only the Gadgethub owner can open or change this screen. That check runs on the server. All-pages access stays with the owner, and business insights stay with the owner and branch managers.</p>
+        <p className="mt-1.5 max-w-2xl text-sm text-[#6f8376]">Choose the pages and actions for each role. Both are saved together and checked on the server. Only the Gadgethub owner can open or change this screen. All-pages access stays with the owner, and business insights stay with the owner and branch managers.</p>
       </section>
 
       {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
@@ -111,7 +111,7 @@ export function EntitlementEditor() {
       <section className="overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_5px_22px_rgba(24,54,37,.035)]">
         <div className="border-b border-[#e8ebe8] px-4 py-4 sm:px-5">
           <h3 className="text-sm font-semibold text-[#23372b]">Pages</h3>
-          <p className="mt-1 text-xs text-[#819087]">All pages includes current and future screens. This role-access screen stays with the owner either way.</p>
+          <p className="mt-1 text-xs text-[#819087]">These are the screens each role can open. Saving stores them with the capabilities below. The server refuses a screen that is not checked, including when someone types the address. All pages includes current and future screens and stays with the owner. This role-access screen stays with the owner and is not listed here.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -140,13 +140,14 @@ export function EntitlementEditor() {
                 <tr key={page.path}>
                   <td className="px-4 py-3 text-[#263b2e]">{page.label}</td>
                   {grants.map((grant) => {
-                    const checked = grant.allPages || grant.pages.includes(page.path);
+                    const ownerWide = grant.role === "OWNER" && grant.allPages;
+                    const checked = ownerWide || grant.pages.includes(page.path);
                     return (
                       <td key={grant.role} className="px-4 py-3">
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={loading || saving || !ready || grant.allPages || (page.path === "/insights" && grant.role !== "OWNER" && grant.role !== "BRANCH_MANAGER")}
+                          disabled={loading || saving || !ready || ownerWide || (page.path === "/insights" && grant.role !== "OWNER" && grant.role !== "BRANCH_MANAGER")}
                           aria-label={`${page.label} for ${ROLE_CATALOG.find((role) => role.id === grant.role)?.label ?? grant.role}`}
                           onChange={(event) => updateGrant(grant.role, (current) => ({
                             ...current,

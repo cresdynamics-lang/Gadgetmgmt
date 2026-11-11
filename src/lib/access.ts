@@ -116,12 +116,17 @@ export function normalizeCapabilities(values: readonly string[]): AccessCapabili
   return CAPABILITY_CATALOG.map((capability) => capability.id).filter((id) => values.includes(id));
 }
 
+export function applyPageFloors(role: AppRole, pages: readonly string[]) {
+  if (role === "OWNER") return [...pages];
+  return pages.filter((page) => page !== "*" && (role === "BRANCH_MANAGER" || page !== "/insights"));
+}
+
 export function buildAccessMap(rows: readonly { role: string; pages: readonly string[]; capabilities: readonly string[] }[]) {
   const map = defaultAccessMap();
   for (const row of rows) {
     if (!isAppRole(row.role)) continue;
     map[row.role] = {
-      pages: normalizePages(row.pages),
+      pages: applyPageFloors(row.role, normalizePages(row.pages)),
       capabilities: normalizeCapabilities(row.capabilities),
     };
   }
@@ -135,7 +140,8 @@ export function isOwnerEntitlementPath(pathname: string) {
 export function canAccessPage(role: string, pathname: string, grants?: AccessMap) {
   if (isOwnerEntitlementPath(pathname)) return role === "OWNER";
   const stored = grants && isAppRole(role) ? grants[role]?.pages : undefined;
-  const pages = stored ?? (isAppRole(role) ? defaultRoleGrants[role].pages : []);
+  const raw = stored ?? (isAppRole(role) ? defaultRoleGrants[role].pages : []);
+  const pages = isAppRole(role) ? applyPageFloors(role, raw) : [];
   return pages.includes("*") || pages.some((page) => page !== "*" && (pathname === page || pathname.startsWith(`${page}/`)));
 }
 
