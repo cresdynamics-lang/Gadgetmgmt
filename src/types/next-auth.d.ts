@@ -13,6 +13,8 @@ declare module "next-auth" {
       role: string;
       branchId: string | null;
       branchName: string | null;
+      pages: string[];
+      capabilities: string[];
     } & DefaultSession["user"];
   }
 }
@@ -23,5 +25,7 @@ declare module "next-auth/jwt" {
     role: string;
     branchId: string | null;
     branchName: string | null;
+    pages?: string[];
+    capabilities?: string[];
   }
 }

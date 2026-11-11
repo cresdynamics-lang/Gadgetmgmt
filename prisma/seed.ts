@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { defaultRoleGrants, ROLE_IDS } from "../src/lib/access";
+
 const prisma = new PrismaClient();
 
 async function main() {
@@ -99,6 +101,36 @@ async function main() {
       reorderLevel: 8,
     },
   });
+
+  for (const role of ROLE_IDS) {
+    const existingEntitlement = await prisma.roleEntitlement.findUnique({ where: { role }, select: { role: true } });
+    if (existingEntitlement) continue;
+    const grant = defaultRoleGrants[role];
+    await prisma.roleEntitlement.create({
+      data: { role, pages: [...grant.pages], capabilities: [...grant.capabilities] },
+    });
+  }
+
+  const seedDemoStaff = process.env.SEED_DEMO_STAFF
+    ? process.env.SEED_DEMO_STAFF === "true"
+    : process.env.NODE_ENV !== "production";
+
+  if (seedDemoStaff) {
+    const demoStaff = [
+      { email: "manager.westlands@gadgethub.test", name: "Westlands Branch Manager", role: "BRANCH_MANAGER" as const },
+      { email: "cashier.westlands@gadgethub.test", name: "Westlands Cashier", role: "CASHIER" as const },
+      { email: "inventory.westlands@gadgethub.test", name: "Westlands Inventory Lead", role: "INVENTORY_LEAD" as const },
+    ];
+    for (const member of demoStaff) {
+      if (member.email === ownerEmail) continue;
+      await prisma.user.upsert({
+        where: { email: member.email },
+        update: { name: member.name, passwordHash, role: member.role, status: "ACTIVE", branchId: westlands.id },
+        create: { name: member.name, email: member.email, passwordHash, role: member.role, branchId: westlands.id },
+      });
+    }
+    console.log("Demo staff accounts are ready for local testing. They share INITIAL_OWNER_PASSWORD and are skipped when NODE_ENV is production.");
+  }
 
   console.log("Database seed completed successfully.");
 }

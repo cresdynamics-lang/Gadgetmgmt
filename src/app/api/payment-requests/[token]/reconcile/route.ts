@@ -3,16 +3,19 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { prisma } from "@/lib/prisma";
 
 const reconciliationSchema = z.object({ verified: z.literal(true), receipt: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6,20}$/).optional() }).strict();
 
-export async function POST(_request: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "credit") || !["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can reconcile M-Pesa payments." }, { status: 403 });
-  const parsed = reconciliationSchema.safeParse(await _request.json().catch(() => null));
+  if (!(await canUseCapability(session.user.role, "credit")) || !["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can reconcile M-Pesa payments." }, { status: 403 });
+  const parsed = reconciliationSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Confirm the M-Pesa statement check and enter a valid receipt if missing." }, { status: 400 });
   const { token: requestId } = await params;
   const paymentRequest = await prisma.paymentRequest.findFirst({
