@@ -1,7 +1,7 @@
 "use client";
 
 import { PwaControls } from "./pwa-controls";
-import { notifyInboxChanged } from "@/lib/notification-events";
+import { notifyInboxChanged, showNotificationCard } from "@/lib/notification-events";
 import { EmailSetup } from "./email-setup";
 import { notificationResponse } from "@/lib/notification-response";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -68,7 +68,9 @@ export function StaffInbox() {
       requestId.current ??= crypto.randomUUID();
       const result = await api("/api/notifications/inbox", "POST", { requestId: requestId.current, sendNow: timing === "now", userId: data.get("userId"), title: data.get("title"), body: data.get("body"), ...(timing === "scheduled" && schedule ? { scheduledAt: new Date(schedule).toISOString() } : {}), email: data.get("email") === "on", push: data.get("push") === "on" });
       requestId.current = null; form.reset(); setTiming("now");
-      setNotice(timing === "scheduled" ? "Message scheduled for the selected time." : result.deliveryPending ? "Message is available in the recipient’s inbox. Email or push delivery is pending until the worker reconnects." : "Message is available in the recipient’s inbox. Any selected email or push delivery has been queued.");
+      const confirmation = timing === "scheduled" ? "Message scheduled for the selected time." : result.deliveryPending ? "Message is available in the recipient’s inbox. Email or push delivery is pending until the worker reconnects." : "Message is available in the recipient’s inbox. Any selected email or push delivery has been queued.";
+      setNotice(confirmation);
+      showNotificationCard(timing === "scheduled" ? "Message scheduled" : "Message sent", confirmation);
       await refresh().catch(() => setError("Message saved, but the inbox could not refresh. Refresh to see the latest messages."));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save alert."); }
     finally { setBusy(false); }

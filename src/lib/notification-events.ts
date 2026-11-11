@@ -10,3 +10,7 @@ export function notifyInboxChanged() {
 export function registerNotificationWorker() {
   return navigator.serviceWorker.register("/notifications-sw.js", { scope: "/", updateViaCache: "none" });
 }
+
+export function showNotificationCard(title: string, body: string) {
+  window.dispatchEvent(new CustomEvent("notification-feedback", { detail: { title, body } }));
+}

@@ -50,6 +50,7 @@ async function main() {
     const owner = await prisma.user.create({ data: { name: "Notification Owner", email: "owner@notifications.invalid", passwordHash, role: "OWNER", branchId: a.id } });
     const manager = await prisma.user.create({ data: { name: "Notification Manager", email: "manager@notifications.invalid", passwordHash, role: "BRANCH_MANAGER", branchId: a.id } });
     const cashier = await prisma.user.create({ data: { name: "Notification Cashier", email: "cashier@notifications.invalid", passwordHash, role: "CASHIER", branchId: a.id } });
+    const inventory = await prisma.user.create({ data: { name: "Notification Inventory", email: "inventory@notifications.invalid", passwordHash, role: "INVENTORY_LEAD", branchId: a.id } });
     const outsider = await prisma.user.create({ data: { name: "Other Branch", email: "other@notifications.invalid", passwordHash, role: "CASHIER", branchId: b.id } });
     const serverArgs = ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)];
     let server = start(serverArgs);
@@ -104,6 +105,7 @@ async function main() {
     const submittedResponse = await submitted;
     assert.equal(submittedResponse.status(), 201);
     const immediate = await submittedResponse.json();
+    await expect(sender.page.getByLabel("Message confirmation")).toContainText("Message sent");
     const payload = submittedResponse.request().postDataJSON();
     const post = (context: BrowserContext, data: unknown, origin = base) => context.request.post(base + "/api/notifications/inbox", { data, headers: { Origin: origin } });
     const duplicate = await post(sender.context, payload);
@@ -120,6 +122,16 @@ async function main() {
     assert.equal((await post(receiver.context, payload)).status(), 403);
     assert.equal((await receiver.context.request.get(base + "/api/notifications")).status(), 403);
     const managerSession = await login(manager.email);
+    const inventorySession = await login(inventory.email);
+    for (const member of [managerSession, receiver, inventorySession]) {
+      assert.equal((await member.context.request.get(base + "/api/notifications/email-settings")).status(), 403);
+      assert.equal((await member.context.request.put(base + "/api/notifications/email-settings", { data: { senderEmail: "wrong@notifications.invalid", senderName: "Wrong" }, headers: { Origin: base } })).status(), 403);
+      await expect(member.page.getByRole("button", { name: "Configure email", exact: true })).toHaveCount(0);
+      await expect(member.page.getByRole("button", { name: "Edit email settings", exact: true })).toHaveCount(0);
+      await expect(member.page.getByRole("button", { name: "Enable browser notifications", exact: true })).toBeEnabled();
+      assert.equal((await member.context.request.get(base + "/api/notifications/push")).status(), 200);
+    }
+    console.log("PASS: administrator-only company email settings; every staff role can enable browser notifications");
     assert.equal((await managerSession.context.request.put(base + "/api/notifications/email-settings", { data: { senderEmail: "wrong@notifications.invalid", senderName: "Wrong" }, headers: { Origin: base } })).status(), 403);
     assert.equal((await post(managerSession.context, { ...payload, requestId: randomUUID(), userId: outsider.id })).status(), 404);
     const unrelated = await managerSession.context.request.get(base + "/api/notifications/inbox");
@@ -141,6 +153,18 @@ async function main() {
     await expect.poll(async () => Boolean((await prisma.staffAlert.findUnique({ where: { id: browserOnlyId } }))?.readAt)).toBe(true);
     await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
     console.log("PASS: normal-browser in-app toast, workspace bell panel, and mark-read without email/push");
+    const oldCard = receiver.page.getByRole("button", { name: "Dismiss notification", exact: true });
+    if (await oldCard.isVisible()) await oldCard.click();
+    await receiver.page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent("notification-feedback", { detail: { title: "First message update", body: "Email queued." } }));
+      window.dispatchEvent(new CustomEvent("notification-feedback", { detail: { title: "Second message update", body: "Notification saved." } }));
+    });
+    await expect(receiver.page.getByLabel("Message confirmation")).toContainText("First message update");
+    await expect(receiver.page.getByLabel("Message confirmation")).toContainText("1 more notifications queued");
+    await receiver.page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(receiver.page.getByLabel("Message confirmation")).toContainText("Second message update");
+    await receiver.page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    console.log("PASS: sent-message popup confirmation and multiple popup cards queue without replacement");
 
     await receiver.page.evaluate(() => navigator.serviceWorker.ready);
     await expect.poll(() => receiver.page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);

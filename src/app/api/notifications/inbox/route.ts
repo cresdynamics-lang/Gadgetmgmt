@@ -22,7 +22,7 @@ async function handleGET() {
     getCompanyEmailSettings(),
   ]);
   return NextResponse.json({ alerts, unread, recipients, sent, canManage,
-    canConfigureEmail: session.user.role === "OWNER",
+    canConfigureEmail: canUseCapability(session.user.role, "companyEmailSettings"),
     emailConfigured: email.configured,
     emailTestMode: email.testMode,
     workerOnline: Boolean(heartbeat?.finishedAt && Date.now() - heartbeat.finishedAt.getTime() < 90_000),

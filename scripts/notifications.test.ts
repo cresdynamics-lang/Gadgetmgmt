@@ -119,3 +119,12 @@ test("Prisma schema and generated client retain the notification storage contrac
     assert.ok(Prisma.dmmf.datamodel.models.some((model) => model.name === name), `${name} must be present in the generated client; run npm run db:generate`);
   }
 });
+
+test("only administrators configure company email; all staff can access notification controls", async () => {
+  const { canAccessPage, canUseCapability } = await import("../src/lib/access");
+  for (const role of ["OWNER", "BRANCH_MANAGER", "CASHIER", "INVENTORY_LEAD"]) {
+    assert.equal(canUseCapability(role, "companyEmailSettings"), role === "OWNER");
+    assert.equal(canAccessPage(role, "/notifications"), true);
+  }
+  assert.equal(canUseCapability("UNKNOWN", "companyEmailSettings"), false);
+});

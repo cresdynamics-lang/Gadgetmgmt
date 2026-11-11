@@ -69,3 +69,6 @@ The installed Web Push 4 library uses named exports. The worker and setup comman
 
 
 Browser verification also covers the actual Enable/Test/Disable push controls with a captured browser subscription and push transport, and the shared inbox under standalone display-mode emulation. The normal-browser toast/panel and real service-worker offline/cache checks passed. A real device's external push-service delivery must still be verified on the deployed HTTPS origin.
+
+
+Company sender setup uses the `companyEmailSettings` capability, granted only to the `OWNER` administrator role. Branch managers, cashiers and inventory leads cannot read or update company sender settings. Browser subscription and self-test controls remain available to every active staff role for their own devices. Popup cards confirm a sent/scheduled message and announce received messages across workspace pages; multiple cards queue and can be dismissed individually. Sender confirmation indicates inbox availability and queued email/push, rather than claiming provider delivery.

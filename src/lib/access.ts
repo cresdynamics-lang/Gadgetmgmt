@@ -1,9 +1,9 @@
-export type AccessCapability = "sales" | "inventory" | "customers" | "credit" | "layaway" | "staff" | "branchSettings" | "notifications";
+export type AccessCapability = "sales" | "inventory" | "customers" | "credit" | "layaway" | "staff" | "branchSettings" | "notifications" | "companyEmailSettings";
 
 const roleAccess: Record<string, { pages: readonly string[]; capabilities: readonly AccessCapability[] }> = {
   OWNER: {
     pages: ["*"],
-    capabilities: ["sales", "inventory", "customers", "credit", "layaway", "staff", "branchSettings", "notifications"],
+    capabilities: ["sales", "inventory", "customers", "credit", "layaway", "staff", "branchSettings", "notifications", "companyEmailSettings"],
   },
   BRANCH_MANAGER: {
     pages: ["/dashboard", "/sales", "/inventory", "/customers", "/credit", "/staff", "/insights", "/settings", "/notifications"],
