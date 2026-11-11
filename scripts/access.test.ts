@@ -96,6 +96,8 @@ test("rejects passwords and user details in urls", () => {
   assert.equal(hasSensitiveQuery(new URLSearchParams("password=secret")), true);
   assert.equal(hasSensitiveQuery(new URLSearchParams("Email=person@example.com")), true);
   assert.equal(hasSensitiveQuery(new URLSearchParams("user_id=123")), true);
+  assert.equal(hasSensitiveQuery(new URLSearchParams("imei=490154203237518")), true);
+  assert.equal(hasSensitiveQuery(new URLSearchParams("serial=C02ABCDEF12")), true);
   assert.equal(hasAnyQuery("https://gadgethub.local/api/staff"), false);
   assert.equal(hasAnyQuery("https://gadgethub.local/api/staff?email=person@example.com"), true);
   assert.equal(safeInternalPath("/dashboard"), "/dashboard");

@@ -105,6 +105,39 @@ enum ProductCondition {
   EX_UK
 }
 
+enum UnitStatus {
+  IN_STOCK
+  RESERVED
+  SOLD
+  IN_REPAIR
+  RETURNED
+}
+
+enum DeviceCondition {
+  NEW
+  OPEN_BOX
+  REFURBISHED
+  USED
+}
+
+enum NetworkLock {
+  UNKNOWN
+  LOCKED
+  UNLOCKED
+}
+
+enum ActivationLock {
+  UNKNOWN
+  ON
+  OFF
+}
+
+enum CosmeticGrade {
+  A
+  B
+  C
+}
+
 model Branch {
   id            String                 @id @default(cuid())
   name          String
@@ -125,6 +158,7 @@ model Branch {
   creditPolicy  CreditPolicy?
   movements     InventoryMovement[]
   notifications CustomerNotification[]
+  stockUnits    StockUnit[]
 }
 
 model User {
@@ -144,6 +178,7 @@ model User {
   layawayOrdersCreated      LayawayOrder[]            @relation("LayawayCreatedBy")
   layawayPaymentsReceived   LayawayPayment[]          @relation("LayawayReceivedBy")
   creditSubmissionsReviewed CreditPaymentSubmission[] @relation("CreditSubmissionReviewer")
+  stockUnits                StockUnit[]
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
 }
@@ -198,6 +233,7 @@ model Product {
   costPrice       Int
   sellingPrice    Int
   reorderLevel    Int                 @default(0)
+  unitTracking    Boolean?
   branchId        String
   branch          Branch              @relation(fields: [branchId], references: [id])
   inventory       InventoryItem[]
@@ -205,6 +241,7 @@ model Product {
   creditPlans     CreditPlan[]
   layawayOrders   LayawayOrder[]
   movements       InventoryMovement[]
+  stockUnits      StockUnit[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -284,7 +321,50 @@ model SaleItem {
   discountAmount Int      @default(0)
   taxAmount      Int      @default(0)
   total          Int
+  stockUnits     StockUnit[]
   createdAt      DateTime @default(now())
+}
+
+model StockUnit {
+  id                 String           @id @default(cuid())
+  branchId           String
+  branch             Branch           @relation(fields: [branchId], references: [id])
+  productId          String
+  product            Product          @relation(fields: [productId], references: [id])
+  recordedById       String
+  recordedBy         User             @relation(fields: [recordedById], references: [id])
+  imei               String?          @unique
+  imei2              String?          @unique
+  serialNumber       String?          @unique
+  barcode            String?
+  status             UnitStatus       @default(IN_STOCK)
+  condition          DeviceCondition  @default(NEW)
+  cosmeticGrade      CosmeticGrade?
+  color              String?
+  storage            String?
+  ram                String?
+  screenSize         String?
+  processor          String?
+  region             String?
+  camera             String?
+  networkLock        NetworkLock      @default(UNKNOWN)
+  osVersion          String?
+  activationLock     ActivationLock   @default(UNKNOWN)
+  batteryHealth      Int?
+  location           String?
+  supplierName       String?
+  purchaseReference  String?
+  notes              String?
+  saleItemId         String?
+  saleItem           SaleItem?        @relation(fields: [saleItemId], references: [id])
+  receivedAt         DateTime         @default(now())
+  soldAt             DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([branchId, status])
+  @@index([productId, status])
+  @@index([saleItemId])
 }
 
 model CreditPlan {

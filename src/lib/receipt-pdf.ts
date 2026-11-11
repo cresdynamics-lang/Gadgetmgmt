@@ -59,7 +59,7 @@ export type InventoryReceiptData = {
   quantity: number;
   previousStock: number;
   newStock: number;
-  product: { name: string; sku: string; category: string; brand: string | null; costPrice: number };
+  product: { name: string; sku: string; category: string; brand: string | null; costPrice?: number };
 };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
@@ -440,7 +440,7 @@ export function downloadInventoryReceipt(receipt: InventoryReceiptData) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.text("Received into branch inventory", margin + 5, tableY + 21);
-  doc.text(money(receipt.product.costPrice), right - 5, tableY + 21, { align: "right" });
+  doc.text(receipt.product.costPrice == null ? "—" : money(receipt.product.costPrice), right - 5, tableY + 21, { align: "right" });
   doc.setDrawColor(226, 231, 224);
   doc.line(margin, tableY + 28, right, tableY + 28);
 

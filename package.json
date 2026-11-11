@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:https": "next dev --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -26,7 +27,8 @@
     "notifications:setup-push": "node --env-file=.env --import tsx scripts/setup-notification-push.ts",
     "predev": "npm run db:generate",
     "prebuild": "npm run db:generate",
-    "test:access": "node --import tsx --test scripts/access.test.ts"
+    "test:access": "node --import tsx --test scripts/access.test.ts",
+    "test:device-units": "node --import tsx --test scripts/device-units.test.ts scripts/barcode-scanner.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -34,6 +36,7 @@
     "@swc/helpers": "^0.5.17",
     "@tanstack/react-query": "^5.104.1",
     "@tanstack/react-table": "^9.2.8",
+    "@zxing/library": "^0.21.3",
     "bcryptjs": "^3.0.0",
     "bullmq": "^6.7.3",
     "clsx": "^2.1.1",

@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { BarcodeCapture } from "@/components/barcode-capture";
+import type { DetectedCode } from "@/lib/barcode-scanner";
+import { claimFromIdentifier } from "@/lib/device-units";
 import { downloadSaleReceipt } from "@/lib/receipt-pdf";
 
-type Product = { id: string; sku: string; name: string; category: string; sellingPrice: number; available: number };
+type KnownDevice = { id: string; imei: string | null; imei2: string | null; serialNumber: string | null };
+type Product = { id: string; sku: string; name: string; category: string; sellingPrice: number; available: number; tracksUnits?: boolean; devices?: KnownDevice[] };
 type Customer = { id: string; name: string; phone: string };
 type CreditPolicy = { minimumDepositPercent: number; defaultCreditLimit: number };
 type NewCustomer = { name: string; phone: string; email: string };
@@ -37,6 +41,7 @@ export default function SalesPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [creditPolicy, setCreditPolicy] = useState<CreditPolicy>({ minimumDepositPercent: 20, defaultCreditLimit: 0 });
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [deviceDrafts, setDeviceDrafts] = useState<Record<string, string[]>>({});
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All items");
   const [customerId, setCustomerId] = useState("");
@@ -162,18 +167,52 @@ export default function SalesPage() {
     return sum + Math.ceil(Math.max(0, lineTotal - allocatedDeposit) / creditTermMonths);
   }, 0);
   const newCustomerReady = newCustomer.name.trim().length >= 2 && newCustomer.phone.trim().length >= 7;
+  const devicesIncomplete = cartItems.some(({ product, quantity }) => {
+    if (!product.tracksUnits) return false;
+    const drafts = deviceDrafts[product.id] ?? [];
+    return drafts.length !== quantity || drafts.some((value) => !claimFromIdentifier(value, product.devices ?? []));
+  });
   const receiptSubtotal = receipt?.saleItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) ?? 0;
   const categories = ["All items", ...Array.from(new Set(products.map((product) => product.category))).sort((a, b) => a.localeCompare(b))];
   const filteredProducts = products.filter((product) => (activeCategory === "All items" || product.category === activeCategory) && `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase()));
 
   function setQuantity(product: Product, quantity: number) {
+    const nextQuantity = quantity < 1 ? 0 : Math.min(quantity, product.available);
     setCart((current) => {
       const next = { ...current };
-      if (quantity < 1) delete next[product.id];
-      else next[product.id] = Math.min(quantity, product.available);
+      if (nextQuantity < 1) delete next[product.id];
+      else next[product.id] = nextQuantity;
       return next;
     });
+    if (product.tracksUnits) {
+      setDeviceDrafts((current) => {
+        const next = { ...current };
+        if (nextQuantity < 1) delete next[product.id];
+        else next[product.id] = Array.from({ length: nextQuantity }, (_, index) => next[product.id]?.[index] ?? "");
+        return next;
+      });
+    }
     setReceipt(null);
+  }
+
+  function applyScannedDevice(code: DetectedCode) {
+    const value = code.imei ?? code.serialNumber;
+    if (!value) {
+      setError("That code did not include a serial number or IMEI.");
+      return;
+    }
+    setError("");
+    setDeviceDrafts((current) => {
+      const next = { ...current };
+      for (const [productId, drafts] of Object.entries(next)) {
+        const empty = drafts.findIndex((draft) => !draft.trim());
+        if (empty >= 0) {
+          next[productId] = drafts.map((draft, index) => index === empty ? value : draft);
+          return next;
+        }
+      }
+      return current;
+    });
   }
 
   async function completeSale(event: FormEvent<HTMLFormElement>) {
@@ -186,7 +225,11 @@ export default function SalesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+          items: cartItems.map(({ product, quantity }) => ({
+            productId: product.id,
+            quantity,
+            ...(product.tracksUnits ? { devices: (deviceDrafts[product.id] ?? []).map((value) => claimFromIdentifier(value, product.devices ?? [])).filter((claim): claim is NonNullable<typeof claim> => Boolean(claim)) } : {}),
+          })),
           customerId: customerId || null,
           ...(showNewCustomer ? { newCustomer } : {}),
           paymentMethod,
@@ -208,6 +251,7 @@ export default function SalesPage() {
       if (!response.ok) throw new Error(data.error ?? "Sale could not be completed.");
       setReceipt(data);
       setCart({});
+      setDeviceDrafts({});
       setCustomerId("");
       setShowNewCustomer(false);
       setNewCustomer(blankCustomer);
@@ -295,7 +339,8 @@ export default function SalesPage() {
 
           <form onSubmit={completeSale} className="sales-checkout h-fit overflow-hidden rounded-2xl border border-[#dfe4df] bg-white shadow-[0_10px_28px_rgba(24,54,37,.06)] xl:sticky xl:top-[96px]">
             <div className="flex items-center justify-between border-b border-[#e5e9e5] bg-[#f8faf8] px-4 py-3.5"><div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#e6f2e9] text-[#39724f]"><ShoppingBag className="h-4 w-4"/></span><div><h3 className="text-sm font-semibold text-[#263b2e]">Current sale</h3><p className="mt-0.5 text-[10px] text-[#8b978f]">Review before checkout</p></div></div><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-[#6d7f73] ring-1 ring-[#e7ede8]">{cartItems.reduce((sum, item) => sum + item.quantity, 0)} units</span></div>
-            {cartItems.length ? <div className="divide-y divide-[#f0f3f0] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#293d30]">{product.name}</p><p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5ebe5] bg-[#fafcfa]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#eef4ef]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#304637]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#52745d] transition hover:bg-[#eef4ef] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#293d30]">{money(product.sellingPrice * quantity)}</span></div></div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f1f6f1] text-[#7c9583]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#4a5f50]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customerâ€™s basket.</p></div></div>}
+            {cartItems.some((item) => item.product.tracksUnits) ? <div className="border-b border-[#e5e9e5] px-4 py-3"><BarcodeCapture variant="field" onDetected={applyScannedDevice} /></div> : null}
+            {cartItems.length ? <div className="divide-y divide-[#f0f3f0] px-4">{cartItems.map(({ product, quantity }) => <div key={product.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[13px] font-semibold text-[#293d30]">{product.name}</p><p className="mt-1 text-[10px] text-[#87948c]">{money(product.sellingPrice)} each</p></div><button type="button" onClick={() => setQuantity(product, 0)} aria-label={`Remove ${product.name}`} className="rounded-lg p-1.5 text-[#aa746b] transition hover:bg-[#fff0ed] hover:text-[#a54f40]"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="mt-2.5 flex items-center justify-between"><div className="flex items-center rounded-lg border border-[#e5ebe5] bg-[#fafcfa]"><button type="button" onClick={() => setQuantity(product, quantity - 1)} aria-label={`Decrease ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-l-lg text-[#6b7b70] transition hover:bg-[#eef4ef]"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-xs font-semibold tabular-nums text-[#304637]">{quantity}</span><button type="button" disabled={quantity >= product.available} onClick={() => setQuantity(product, quantity + 1)} aria-label={`Increase ${product.name} quantity`} className="grid h-8 w-8 place-items-center rounded-r-lg text-[#52745d] transition hover:bg-[#eef4ef] disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button></div><span className="text-[13px] font-bold tabular-nums text-[#293d30]">{money(product.sellingPrice * quantity)}</span></div>{product.tracksUnits ? <div className="mt-2 space-y-1.5">{(deviceDrafts[product.id] ?? []).map((value, index) => <label key={`${product.id}-${index}`} className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#788074]">Device {index + 1} IMEI or serial<input value={value} onChange={(event) => setDeviceDrafts((current) => ({ ...current, [product.id]: (current[product.id] ?? []).map((entry, entryIndex) => entryIndex === index ? event.target.value : entry) }))} autoComplete="off" spellCheck={false} placeholder="Scan the QR or type the serial" className="mt-1 w-full rounded-lg border border-[#d6ddd6] bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal" /></label>)}</div> : null}</div>)}</div> : <div className="grid min-h-48 place-items-center px-5 py-7 text-center"><div><span className="mx-auto grid h-12 w-12 place-items-center rounded-[17px] bg-[#f1f6f1] text-[#7c9583]"><ShoppingBag className="h-5 w-5" strokeWidth={1.6}/></span><p className="mt-3 text-xs font-semibold text-[#4a5f50]">Your sale starts here</p><p className="mx-auto mt-1 max-w-[200px] text-[11px] leading-relaxed text-[#909b93]">Choose an item from the catalogue to build the customerâ€™s basket.</p></div></div>}
             <div className="space-y-4 border-t border-[#e5e9e5] p-4">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Customer <span className="font-normal normal-case tracking-normal">(optional for cash sales)</span></span>{customerId ? <span className="text-[10px] font-medium text-[#54735c]">Existing account</span> : null}</div>
@@ -322,7 +367,7 @@ export default function SalesPage() {
               </div> : null}
               {paymentMethod === "SPLIT" ? <div className="space-y-2"><p className="text-xs font-semibold uppercase tracking-widest text-[#69746c]">Split tender</p><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="First payment method" value={firstTenderMethod} onChange={(event) => setFirstTenderMethod(event.target.value as typeof firstTenderMethod)} className="border border-[#d6ddd6] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select><input aria-label="First payment amount in KES" type="number" min="1" max={Math.max(1, total - 1)} step="1" required value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} className="w-full border border-[#d6ddd6] px-2 py-2 text-sm" /></div><div className="grid grid-cols-[1fr_1fr] gap-2"><select aria-label="Second payment method" value={secondTenderMethod} onChange={(event) => setSecondTenderMethod(event.target.value as typeof secondTenderMethod)} className="border border-[#d6ddd6] bg-white px-2 py-2 text-xs"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="CARD">Card</option></select><p className="border border-[#e5e9e5] bg-[#f8faf7] px-2 py-2 text-sm">{money(Math.max(0, total - Number(paidAmount || 0)))}</p></div>{firstTenderMethod === secondTenderMethod ? <p role="alert" className="text-xs text-red-700">Choose two different payment methods.</p> : null}</div> : null}
               <div className="rounded-xl bg-[#f3f8f3] px-3.5 py-3"><div className="flex items-center justify-between"><span className="text-xs font-medium text-[#708076]">Total due</span><span className="text-xl font-bold tracking-[-.04em] tabular-nums text-[#214c34]">{money(total)}</span></div><p className="mt-1.5 text-[10px] text-[#92a096]">Prices include all selected items</p></div>
-              <button type="submit" disabled={!cartItems.length || submitting || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < 1 || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod))} className="w-full rounded-xl bg-[#173a2b] px-4 py-3 text-sm font-semibold text-white shadow-[0_5px_16px_rgba(23,58,43,.13)] transition hover:bg-[#24513a] disabled:cursor-not-allowed disabled:bg-[#aab5ac]">{submitting ? "Recording sale…" : paymentMethod === "CREDIT" ? "Collect deposit & start plan" : paymentMethod === "PAY_LINK" ? "Record sale & text payer" : "Complete sale"}</button>
+              <button type="submit" disabled={!cartItems.length || submitting || devicesIncomplete || (paymentMethod === "CREDIT" && (!(customerId || (showNewCustomer && newCustomerReady)) || !creditDepositAmount || Number(creditDepositAmount) >= total || Number(creditDepositAmount) < 1 || (creditDepositMethod === "MPESA" && creditDepositReference.trim().length < 6))) || (paymentMethod === "PAY_LINK" && (!payerPhone.trim() || !payerConsent)) || (paymentMethod === "SPLIT" && (!paidAmount || Number(paidAmount) >= total || firstTenderMethod === secondTenderMethod))} className="w-full rounded-xl bg-[#173a2b] px-4 py-3 text-sm font-semibold text-white shadow-[0_5px_16px_rgba(23,58,43,.13)] transition hover:bg-[#24513a] disabled:cursor-not-allowed disabled:bg-[#aab5ac]">{submitting ? "Recording sale…" : paymentMethod === "CREDIT" ? "Collect deposit & start plan" : paymentMethod === "PAY_LINK" ? "Record sale & text payer" : "Complete sale"}</button>
               {paymentMethod === "CREDIT" ? <p className="flex items-center justify-center gap-1.5 text-[9px] text-[#93988d]"><ShieldCheck className="h-3 w-3"/>Sale, deposit, customer and schedule are recorded together</p> : null}
             </div>
           </form>
