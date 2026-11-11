@@ -34,7 +34,7 @@ Multi-branch retail operations app built with Next.js, Auth.js, Prisma, and Post
 
 For production, generate `NEXTAUTH_SECRET` with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Use the database provider's pooled connection URL for application traffic, enable TLS with `sslmode=require`, and retain a separate direct URL for schema deployment if the provider requires one.
 
-The seed creates one owner account only. Additional staff accounts should be created from the Staff screen. The sample product and opening stock are development data; replace them with verified business data before operational use.
+The seed creates the owner from `INITIAL_OWNER_EMAIL` and `INITIAL_OWNER_PASSWORD`, and stores the starting page and capability entitlements for owner, branch manager, cashier, and inventory lead. Re-seeding does not overwrite entitlements an owner has already edited. Outside production, the seed also creates local test accounts for the other three roles at `@gadgethub.test` addresses. Those accounts share `INITIAL_OWNER_PASSWORD` and are not created when `NODE_ENV` is `production` unless `SEED_DEMO_STAFF=true`. The sample product and opening stock are development data; replace them with verified business data before operational use. The owner edits role access at `/access`.
 
 ## Database
 

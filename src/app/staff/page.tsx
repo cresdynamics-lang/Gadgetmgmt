@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Plus, Search, ShieldCheck, UsersRound } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
@@ -121,11 +122,14 @@ export default function StaffPage() {
             <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#438061]"><ShieldCheck className="h-3.5 w-3.5"/>People make the difference</p>
             <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[#20382c] sm:text-[31px]">Meet your team</h2><p className="mt-1.5 text-sm text-[#6f8376]">A thoughtful team makes every customer visit better.</p>
           </div>
-          {canManage ? (
-            <button type="button" onClick={() => { setAdding((current) => !current); setError(""); }} className="relative inline-flex items-center gap-2 rounded-xl bg-[#174b37] px-4 py-3 text-sm font-semibold text-white shadow-[0_7px_18px_rgba(23,75,55,.16)] hover:bg-[#236347]">
-              <Plus className="h-4 w-4" /> Add a teammate <ArrowUpRight className="ml-1 h-4 w-4 text-white/60"/>
-            </button>
-          ) : null}
+          <div className="relative flex flex-wrap items-center gap-2">
+            {canManageAccess ? <Link href="/access" className="inline-flex items-center gap-2 rounded-xl border border-[#174b37] bg-white px-4 py-3 text-sm font-semibold text-[#174b37] hover:bg-[#f3faf6]">Role access</Link> : null}
+            {canManage ? (
+              <button type="button" onClick={() => { setAdding((current) => !current); setError(""); }} className="inline-flex items-center gap-2 rounded-xl bg-[#174b37] px-4 py-3 text-sm font-semibold text-white shadow-[0_7px_18px_rgba(23,75,55,.16)] hover:bg-[#236347]">
+                <Plus className="h-4 w-4" /> Add a teammate <ArrowUpRight className="ml-1 h-4 w-4 text-white/60"/>
+              </button>
+            ) : null}
+          </div>
         </div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#6a843f] bg-[#f2f6ec] px-4 py-3 text-sm text-[#31533a]">{notice}</p> : null}
@@ -146,7 +150,7 @@ export default function StaffPage() {
         </div>
 
         {adding && canManage ? (
-          <form onSubmit={createStaff} className="border border-[#dfe4df] bg-white p-4">
+          <form method="post" action="/staff" onSubmit={createStaff} className="border border-[#dfe4df] bg-white p-4">
             <div className="mb-4 flex items-center gap-2">
               <UsersRound className="h-4 w-4 text-[#315d3f]" />
               <h3 className="text-sm font-semibold">Create staff login</h3>

@@ -1,16 +1,40 @@
 import { auth } from "@/auth";
-import { canAccessPage } from "@/lib/access";
+import { canAccessPage, hasSensitiveQuery, isSensitiveQueryKey, safeInternalPath } from "@/lib/access";
+import { getAccessMap } from "@/lib/entitlements";
 
-export default auth((request) => {
+export default auth(async (request) => {
   const pathname = request.nextUrl.pathname;
+  if (hasSensitiveQuery(request.nextUrl.searchParams) || (request.nextUrl.searchParams.has("callbackUrl") && !safeInternalPath(request.nextUrl.searchParams.get("callbackUrl")))) {
+    const clean = request.nextUrl.clone();
+    for (const key of [...clean.searchParams.keys()]) {
+      if (isSensitiveQueryKey(key)) clean.searchParams.delete(key);
+    }
+    const callbackUrl = clean.searchParams.get("callbackUrl");
+    const safeCallback = safeInternalPath(callbackUrl);
+    if (callbackUrl && !safeCallback) clean.searchParams.delete("callbackUrl");
+    if (safeCallback) clean.searchParams.set("callbackUrl", safeCallback);
+    clean.search = clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : "";
+    return new Response(null, {
+      status: 303,
+      headers: { Location: clean.toString(), "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
+    });
+  }
+
   const publicCustomerPayment = pathname.startsWith("/pay/") || pathname.startsWith("/request/");
   if (!request.auth && pathname !== "/login" && !publicCustomerPayment) {
     const loginUrl = new URL("/login", request.nextUrl);
-    loginUrl.searchParams.set("callbackUrl", pathname);
+    const callbackUrl = safeInternalPath(pathname);
+    if (callbackUrl && callbackUrl !== "/login") loginUrl.searchParams.set("callbackUrl", callbackUrl);
     return Response.redirect(loginUrl);
   }
-  if (request.auth?.user && pathname !== "/login" && !publicCustomerPayment && !canAccessPage(request.auth.user.role, pathname)) {
-    return Response.redirect(new URL("/dashboard", request.nextUrl));
+  if (request.auth?.user && pathname !== "/login" && !publicCustomerPayment) {
+    const grants = await getAccessMap();
+    if (!canAccessPage(request.auth.user.role, pathname, grants)) {
+      if (pathname !== "/dashboard" && canAccessPage(request.auth.user.role, "/dashboard", grants)) {
+        return Response.redirect(new URL("/dashboard", request.nextUrl));
+      }
+      return new Response("Your role does not include this page.", { status: 403, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+    }
   }
 });
 

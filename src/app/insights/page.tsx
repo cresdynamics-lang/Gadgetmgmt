@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
 import { getBusinessInsights } from "@/lib/business-insights";
-import { canAccessPage } from "@/lib/access";
+import { canAccessPage } from "@/lib/entitlements";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, CalendarRange, CircleDollarSign, CreditCard, Sparkles } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { AiBriefing } from "./ai-briefing";
@@ -22,7 +22,8 @@ function Change({ value }: { value: number | null }) {
 export default async function InsightsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!canAccessPage(session.user.role, "/insights")) notFound();
+  if (!(await canAccessPage(session.user.role, "/insights"))) notFound();
+  if (session.user.role !== "OWNER" && session.user.role !== "BRANCH_MANAGER") notFound();
   const scope = session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" };
   const data = await getBusinessInsights(scope);
   const maxProductSales = Math.max(1, ...data.inventory.topProducts.map((item) => item.total));

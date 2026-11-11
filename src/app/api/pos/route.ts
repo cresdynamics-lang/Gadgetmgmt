@@ -4,16 +4,19 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { normalizeKenyanPhone } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "sales")) return NextResponse.json({ error: "Your role cannot access sales." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "sales"))) return NextResponse.json({ error: "Your role cannot access sales." }, { status: 403 });
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
@@ -107,9 +110,11 @@ const checkoutSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "sales")) return NextResponse.json({ error: "Your role cannot create sales." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "sales"))) return NextResponse.json({ error: "Your role cannot create sales." }, { status: 403 });
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 

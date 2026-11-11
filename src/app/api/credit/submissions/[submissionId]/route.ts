@@ -3,16 +3,19 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { recordCreditPayment } from "@/lib/credit-payment";
 import { prisma } from "@/lib/prisma";
 
 const reviewSchema = z.object({ decision: z.enum(["APPROVE", "REJECT"]) }).strict();
 
 export async function POST(request: Request, { params }: { params: Promise<{ submissionId: string }> }) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "credit")) return NextResponse.json({ error: "Your role cannot review credit payments." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot review credit payments." }, { status: 403 });
   if (!session.user.branchId && session.user.role !== "OWNER") return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   const parsed = reviewSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose approve or reject." }, { status: 400 });

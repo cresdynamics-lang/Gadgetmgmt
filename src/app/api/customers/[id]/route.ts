@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { prisma } from "@/lib/prisma";
 
 const customerUpdateSchema = z.object({
@@ -16,10 +17,12 @@ const customerUpdateSchema = z.object({
   whatsappRemindersEnabled: z.boolean().optional(),
 }).strict().refine((data) => Object.keys(data).length > 0);
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot access customer accounts." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot access customer accounts." }, { status: 403 });
   const { id } = await params;
   const customer = await prisma.customer.findFirst({
     where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) },
@@ -55,9 +58,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "customers")) return NextResponse.json({ error: "Your role cannot manage customer preferences." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot manage customer preferences." }, { status: 403 });
   const parsed = customerUpdateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter valid customer details or reminder preferences." }, { status: 400 });
   const profileFields = ["name", "phone", "email", "creditLimit", "status"] as const;
@@ -89,5 +94,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     },
     select: { id: true, name: true, phone: true, email: true, status: true, creditLimit: true, reliabilityScore: true, smsRemindersEnabled: true, emailRemindersEnabled: true, remindersConsentAt: true, whatsappRemindersEnabled: true, whatsappConsentAt: true },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json(updated, { headers: { "Cache-Control": "no-store" } });
 }
