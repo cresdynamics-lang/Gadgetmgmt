@@ -1,6 +1,36 @@
-version: "3.9"
-
 services:
+  notifications-worker:
+    profiles: ["notifications"]
+    build:
+      context: .
+      dockerfile: Dockerfile.notifications
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      DATABASE_URL: ${NOTIFICATIONS_DATABASE_URL:-postgresql://gadgethub:gadgethub@postgres:5432/gadgethub}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+    stop_grace_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -14,4 +44,5 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
+  redis_data:
   postgres_data:

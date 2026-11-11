@@ -21,6 +21,12 @@
     "test:money-allocation": "node --import tsx --test scripts/money-allocation.test.ts",
     "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts",
     "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts",
+    "notifications:worker": "node --env-file=.env --import tsx scripts/notifications-worker.ts",
+    "test:notifications": "node --import tsx --test scripts/notifications.test.ts",
+    "test:notifications:e2e": "node --env-file=.env --import tsx scripts/test-notifications-e2e.ts",
+    "notifications:setup-push": "node --env-file=.env --import tsx scripts/setup-notification-push.ts",
+    "predev": "npm run db:generate",
+    "prebuild": "npm run db:generate",
     "test:access": "node --import tsx --test scripts/access.test.ts",
     "test:device-units": "node --import tsx --test scripts/device-units.test.ts scripts/barcode-scanner.test.ts"
   },
@@ -32,7 +38,9 @@
     "@tanstack/react-table": "^9.2.8",
     "@zxing/library": "^0.21.3",
     "bcryptjs": "^3.0.0",
+    "bullmq": "^6.7.3",
     "clsx": "^2.1.1",
+    "ioredis": "^6.0.0",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.54.0",
     "next": "16.4.0",
@@ -41,14 +49,17 @@
     "react-dom": "19.3.0",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.0.0",
-    "zod": "^4.6.5"
+    "web-push": "^4.0.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/turbopack": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "prisma": "6.19.3",
@@ -62,5 +73,8 @@
     "prisma@6.19.3": true,
     "esbuild@0.28.2": true,
     "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
   }
 }

@@ -1,10 +1,11 @@
+import { getCompanyEmailSettings } from "./email-settings";
 import type { NotificationChannel } from "@prisma/client";
 
 export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string }) {
   if (input.channel === "EMAIL") {
     const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM;
-    if (!apiKey || !from) throw new Error("Email delivery needs RESEND_API_KEY and EMAIL_FROM.");
+    const { from } = await getCompanyEmailSettings();
+    if (!apiKey || !from) throw new Error("Configure the company sender in Messages & alerts and connect the email service.");
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },

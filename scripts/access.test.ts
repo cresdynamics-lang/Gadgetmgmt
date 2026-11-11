@@ -22,9 +22,9 @@ const root = path.resolve(import.meta.dirname, "..");
 test("keeps the original role entitlements as defaults", () => {
   const grants = defaultAccessMap();
   assert.deepEqual(grants.OWNER.pages, ["*"]);
-  assert.deepEqual(grants.CASHIER.pages, ["/dashboard", "/sales", "/customers", "/credit"]);
+  assert.deepEqual(grants.CASHIER.pages, ["/dashboard", "/sales", "/customers", "/credit", "/notifications"]);
   assert.deepEqual(grants.CASHIER.capabilities, ["sales", "customers", "credit"]);
-  assert.deepEqual(grants.INVENTORY_LEAD.pages, ["/dashboard", "/inventory"]);
+  assert.deepEqual(grants.INVENTORY_LEAD.pages, ["/dashboard", "/inventory", "/notifications"]);
   assert.equal(grants.BRANCH_MANAGER.capabilities.includes("layaway"), true);
   assert.equal(grants.BRANCH_MANAGER.pages.includes("/layaway"), false);
   assert.equal(canAccessPage("CASHIER", "/staff"), false);
@@ -37,7 +37,7 @@ test("keeps the original role entitlements as defaults", () => {
 });
 
 test("uses stored entitlements and still keeps role access with the owner", () => {
-  const grants = buildAccessMap([{ role: "CASHIER", pages: ["/dashboard", "/inventory"], capabilities: ["inventory"] }]);
+  const grants = buildAccessMap([{ role: "CASHIER", pages: ["/dashboard", "/inventory", "/notifications"], capabilities: ["inventory"] }]);
   assert.equal(canAccessPage("CASHIER", "/inventory", grants), true);
   assert.equal(canAccessPage("CASHIER", "/sales", grants), false);
   assert.equal(canUseCapability("CASHIER", "sales", grants), false);

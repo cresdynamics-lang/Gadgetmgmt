@@ -35,7 +35,7 @@ export const CAPABILITY_CATALOG = [
   { id: "notifications", label: "Notifications", detail: "Message delivery and alerts" },
 ] as const;
 
-export type AccessCapability = (typeof CAPABILITY_CATALOG)[number]["id"];
+export type AccessCapability = (typeof CAPABILITY_CATALOG)[number]["id"] | "companyEmailSettings";
 
 export type RoleGrant = {
   pages: string[];
@@ -57,11 +57,11 @@ export const defaultRoleGrants: Record<AppRole, { pages: readonly string[]; capa
     capabilities: ["sales", "inventory", "customers", "credit", "layaway", "staff", "branchSettings", "notifications"],
   },
   CASHIER: {
-    pages: ["/dashboard", "/sales", "/customers", "/credit"],
+    pages: ["/dashboard", "/sales", "/customers", "/credit", "/notifications"],
     capabilities: ["sales", "customers", "credit"],
   },
   INVENTORY_LEAD: {
-    pages: ["/dashboard", "/inventory"],
+    pages: ["/dashboard", "/inventory", "/notifications"],
     capabilities: ["inventory"],
   },
 };
@@ -152,6 +152,7 @@ export function canAccessPage(role: string, pathname: string, grants?: AccessMap
 }
 
 export function canUseCapability(role: string, capability: AccessCapability, grants?: AccessMap) {
+  if (capability === "companyEmailSettings") return role === "OWNER";
   const stored = grants && isAppRole(role) ? grants[role]?.capabilities : undefined;
   const capabilities = stored ?? (isAppRole(role) ? defaultRoleGrants[role].capabilities : []);
   return capabilities.includes(capability);

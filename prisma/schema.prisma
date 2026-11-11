@@ -170,6 +170,9 @@ model User {
   status                    UserStatus                @default(ACTIVE)
   branchId                  String?
   branch                    Branch?                   @relation(fields: [branchId], references: [id])
+  createdAlerts             StaffAlert[]              @relation("StaffAlertSender")
+  alerts                    StaffAlert[]
+  pushSubscriptions         PushSubscription[]
   sales                     Sale[]
   movements                 InventoryMovement[]
   layawayOrdersCreated      LayawayOrder[]            @relation("LayawayCreatedBy")
@@ -632,4 +635,65 @@ model ScheduledJobRun {
   finishedAt       DateTime?
 
   @@index([jobName, startedAt])
+}
+
+
+// Staff inbox is independent of customer reminder delivery and consent.
+model StaffAlert {
+  senderId    String?
+  sender      User?    @relation("StaffAlertSender", fields: [senderId], references: [id], onDelete: SetNull)
+  requestKey  String?  @unique
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  scheduledAt DateTime @default(now())
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+  deliveries  StaffAlertDelivery[]
+
+  @@index([senderId, createdAt])
+  @@index([userId, scheduledAt, readAt])
+}
+
+model StaffAlertDelivery {
+  id        String @id @default(cuid())
+  alertId   String
+  alert     StaffAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  channel   String
+  status    NotificationStatus @default(QUEUED)
+  attempts  Int @default(0)
+  lastError String?
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@unique([alertId, channel])
+  @@index([status, createdAt])
+}
+
+model PushSubscription {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model NotificationEmailSettings {
+  id          String   @id @default("company")
+  senderEmail String
+  senderName  String   @default("GadgetHub")
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+model NotificationRateLimit {
+  key         String   @id
+  windowStart DateTime
+  count       Int
 }

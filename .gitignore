@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Isolated notification browser verification
+/.next-notifications-e2e/
+
+# Private notification environment files (may contain live credentials).
+/.env.notifications.example
+/notifications.env.example

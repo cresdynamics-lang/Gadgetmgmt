@@ -62,6 +62,14 @@ The Prisma schema is in `prisma/schema.prisma`. `db:push` is intended for local 
 - Credit-plan refunds, inter-branch transfers, device serial tracking beyond the single optional Lipa IMEI, and password recovery are not implemented yet.
 - Configure HTTPS, strong secrets, backups, monitoring, migration automation, and deployment-specific access controls before production use.
 
+## Messages & Alerts
+
+`/notifications` provides an inbox for all active staff, with a bell panel, unread counts, and new-message toasts across workspace pages. These in-app notifications work in a normal browser and in the installed PWA without email or browser notification permission. Owners and branch managers can send immediately or schedule messages; managers are limited to their branch. In-app delivery is always included, with optional email through the shared company Resend sender and optional browser push. The notification screen includes an Install app action, device subscription controls, and a self-test. Run `npm run notifications:setup-push` once to create stable server push keys in local `.env`; retain them in production configuration. Push requires HTTPS (localhost is allowed for testing), and iOS requires installation to the Home Screen. Senders can review scheduled messages, read state, attempts and provider errors.
+
+Set `RESEND_API_KEY` on the server. From the email warning in Messages & Alerts, choose **Configure email** to save the company's dedicated sender address and display name. Only the company owner can change these settings; changes apply to staff and customer emails without restarting delivery. The sender domain must be verified in Resend. `EMAIL_FROM` remains an optional deployment fallback. The Resend account address is separate from the sender. Start Redis and the dedicated worker with `npm run notifications:worker`, or use the Compose `notifications` profile. Messages are persisted before enqueueing and recover after worker/Redis downtime. Email status SENT means provider acceptance, not confirmed inbox delivery.
+
+See [notification setup and deployment](docs/notifications.md) and [environment template](docs/notifications.env.example). Apply the reviewed notification migrations through your deployment process after reviewing the existing incremental migration baseline. Local development follows the `db:push` workflow above. Run `npm run test:notifications` for regression checks and `npm run test:notifications:e2e` for isolated browser/API/database/worker verification. The latter uses a captured email provider by default.
+
 ## Validation
 
 ```bash
