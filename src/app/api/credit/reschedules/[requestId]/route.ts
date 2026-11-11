@@ -3,15 +3,18 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]), reviewNote: z.string().trim().max(300).optional() }).strict();
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ requestId: string }> }) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role) || !canUseCapability(session.user.role, "credit")) return NextResponse.json({ error: "Only managers can review reschedule requests." }, { status: 403 });
+  if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role) || !(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Only managers can review reschedule requests." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose approve or reject." }, { status: 400 });
   const { requestId } = await params;
