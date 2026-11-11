@@ -1,32 +1,90 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { BellRing } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BellRing, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { notificationResponse } from "@/lib/notification-response";
+import { notifyInboxChanged, registerNotificationWorker } from "@/lib/notification-events";
+
+type Alert = { id: string; title: string; body: string; readAt: string | null; scheduledAt: string };
+type Feed = { unread: number; alerts: Alert[] };
 
 export function NotificationBell() {
   const { data: session } = useSession();
   const userId = session?.user.id;
-  const [state, setState] = useState<{ userId: string; unread: number } | null>(null);
+  const [state, setState] = useState<(Feed & { userId: string }) | null>(null);
+  const [open, setOpen] = useState(false);
+  const [toast, setToast] = useState<(Alert & { userId: string }) | null>(null);
+  const [error, setError] = useState("");
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!userId) return;
     const controller = new AbortController();
+    let seen: Set<string> | null = null;
+    let inFlight = false;
     async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const response = await fetch("/api/notifications/unread", { cache: "no-store", signal: controller.signal });
-        const result = await notificationResponse<{ unread: number }>(response);
-        if (!controller.signal.aborted && typeof result.unread === "number") setState({ userId: userId!, unread: result.unread });
-      } catch { /* A transient outage should not disrupt the current workspace. */ }
+        const result = await notificationResponse<Feed>(response);
+        if (controller.signal.aborted || !Array.isArray(result.alerts) || typeof result.unread !== "number") return;
+        const newest = seen ? result.alerts.find((alert) => !alert.readAt && !seen!.has(alert.id)) : undefined;
+        seen ??= new Set();
+        result.alerts.forEach((alert) => seen!.add(alert.id));
+        if (newest) setToast({ ...newest, userId: userId! });
+        setState({ ...result, userId: userId! });
+        setError("");
+      } catch { /* Keep the last loaded inbox available during a transient outage. */ }
+      finally { inFlight = false; }
     }
     const initial = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), 15_000);
+    const interval = window.setInterval(() => void refresh(), 10_000);
     const changed = () => void refresh();
+    const workerMessage = (event: MessageEvent) => { if (event.data?.type === "NOTIFICATIONS_CHANGED") void refresh(); };
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel("gadgethub-notifications") : null;
+    if (channel) channel.onmessage = changed;
+    if ("serviceWorker" in navigator && window.isSecureContext) {
+      void registerNotificationWorker().catch(() => undefined);
+      navigator.serviceWorker.addEventListener("message", workerMessage);
+    }
     window.addEventListener("notifications-changed", changed);
     window.addEventListener("focus", changed);
-    return () => { controller.abort(); window.clearTimeout(initial); window.clearInterval(interval); window.removeEventListener("notifications-changed", changed); window.removeEventListener("focus", changed); };
+    return () => {
+      controller.abort(); channel?.close(); window.clearTimeout(initial); window.clearInterval(interval);
+      window.removeEventListener("notifications-changed", changed); window.removeEventListener("focus", changed);
+      navigator.serviceWorker?.removeEventListener("message", workerMessage);
+    };
   }, [userId]);
-  const unread = state?.userId === userId ? state?.unread ?? 0 : 0;
-  return <Link href="/notifications" aria-label={`Messages and alerts, ${unread} unread`} className="relative grid h-9 w-9 place-items-center rounded-xl border border-[#dce6dd] text-[#365b43] hover:bg-[#f1f7f2]"><BellRing className="h-4 w-4" />{unread > 0 ? <span className="absolute -right-1 -top-1 rounded-full bg-[#183b2a] px-1.5 text-[10px] font-semibold leading-4 text-white">{unread > 99 ? "99+" : unread}</span> : null}</Link>;
+  useEffect(() => {
+    if (!open) return;
+    const click = (event: PointerEvent) => { if (!panel.current?.contains(event.target as Node)) setOpen(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", click); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", click); document.removeEventListener("keydown", key); };
+  }, [open]);
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+  const feed = state?.userId === userId ? state : null;
+  const unread = feed?.unread ?? 0;
+  const currentToast = toast?.userId === userId ? toast : null;
+  async function markRead(id: string) {
+    try {
+      const response = await fetch("/api/notifications/inbox", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      await notificationResponse<{ ok: boolean }>(response);
+      notifyInboxChanged();
+    } catch { setError("Could not mark the notification read. Please try again."); }
+  }
+  return <>
+    <div className="relative" ref={panel}>
+      <button type="button" aria-label={`Messages and alerts, ${unread} unread`} aria-busy={!feed} aria-expanded={open} aria-controls="recent-notifications" onClick={() => setOpen((value) => !value)} className="relative grid h-9 w-9 place-items-center rounded-xl border border-[#dce6dd] text-[#365b43] hover:bg-[#f1f7f2]"><BellRing className="h-4 w-4" />{unread > 0 ? <span className="absolute -right-1 -top-1 rounded-full bg-[#183b2a] px-1.5 text-[10px] font-semibold leading-4 text-white">{unread > 99 ? "99+" : unread}</span> : null}</button>
+      {open ? <section id="recent-notifications" aria-label="Recent notifications" className="absolute right-0 top-12 z-50 max-h-[70vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-xl border border-[#dce6dd] bg-white p-4 shadow-xl"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Notifications · {unread} unread</h3><button type="button" aria-label="Close notifications" onClick={() => setOpen(false)}><X className="h-4 w-4" /></button></div>{error ? <p role="alert" className="mt-2 text-xs text-red-700">{error}</p> : null}<div className="mt-3 divide-y divide-[#edf1ed]">{feed?.alerts.map((alert) => <article key={alert.id} className="py-3"><Link href="/notifications" onClick={() => setOpen(false)} className={`text-sm ${alert.readAt ? "text-[#69766c]" : "font-semibold text-[#20382d]"}`}>{alert.title}</Link><p className="mt-1 break-words text-xs text-[#69766c]">{alert.body.slice(0, 160)}</p>{!alert.readAt ? <button type="button" onClick={() => void markRead(alert.id)} className="mt-2 text-xs font-semibold text-[#365b43]">Mark read</button> : null}</article>)}{!feed?.alerts.length ? <p className="py-3 text-xs text-[#69766c]">{feed ? "No notifications yet." : "Loading notifications…"}</p> : null}</div><Link href="/notifications" onClick={() => setOpen(false)} className="mt-3 block border-t border-[#edf1ed] pt-3 text-xs font-semibold text-[#365b43]">Open Messages &amp; alerts</Link></section> : null}
+    </div>
+    {currentToast ? createPortal(<aside role="status" aria-label="New in-app notification" className="fixed bottom-5 right-5 z-[80] w-[min(360px,calc(100vw-2rem))] rounded-xl border border-[#b8cdbd] bg-white p-4 shadow-xl"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-[#60816b]">New notification</p><p className="mt-1 text-sm font-semibold text-[#20382d]">{currentToast.title}</p></div><button type="button" aria-label="Dismiss notification" onClick={() => setToast(null)}><X className="h-4 w-4" /></button></div><p className="mt-2 break-words text-xs text-[#69766c]">{currentToast.body.slice(0, 160)}</p><Link href="/notifications" onClick={() => setToast(null)} className="mt-3 inline-block text-xs font-semibold text-[#365b43]">View message</Link></aside>, document.body) : null}
+  </>;
 }

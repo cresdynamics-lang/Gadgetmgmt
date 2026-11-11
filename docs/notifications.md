@@ -45,7 +45,7 @@ An actual outbound test is opt-in: set `NOTIFICATION_LIVE_EMAIL` to an approved 
 
 ## Verified in this branch
 
-The isolated browser suite passed Send now from the real login/composition form, message persistence, duplicate request prevention, origin rejection, recipient read state, staff-only inbox access, cross-branch isolation, scheduled visibility, BullMQ email acceptance, retry after a transient failure, permanent provider rejection, and outbox recovery after restarting the worker. Email provider responses were captured fixtures, not external delivery. The production web build, TypeScript, targeted lint and six focused regression tests also passed. Company sender/domain verification, the actual production worker rollout, and real-device browser push remain environment checks. The Next.js upgrade is intentionally excluded from this branch.
+The isolated browser suite passed Send now from the real login/composition form, message persistence, duplicate request prevention, origin rejection, recipient read state, staff-only inbox access, cross-branch isolation, scheduled visibility, BullMQ email acceptance, retry after a transient failure, permanent provider rejection, and outbox recovery after restarting the worker. Email provider responses were captured fixtures, not external delivery. The production web build, TypeScript, targeted lint and eleven focused regression tests also passed. Company sender/domain verification, the actual production worker rollout, and real-device browser push remain environment checks. The Next.js upgrade is intentionally excluded from this branch.
 
 
 ## Resolve setup warnings in place
@@ -53,3 +53,19 @@ The isolated browser suite passed Send now from the real login/composition form,
 The owner can select **Configure email** directly in the email warning, enter the company's sender email/name, and save without leaving Messages & Alerts. **Edit email settings** remains available once configured. Non-owner managers see a clear instruction to ask the company owner. API keys stay in server configuration and are never returned to the browser. If the key is missing, the form explains that the server administrator must connect the email service, while still allowing the sender to be saved. The worker and customer-email helper read the saved identity for each delivery; environment changes or worker restarts are unnecessary when changing the sender.
 
 The worker warning includes **Check delivery status**. Starting a server service remains an administrator/deployment action. Queued delivery is separate from in-app availability; in-app messages can be read while the worker is offline.
+
+
+## Browser and installed-PWA notifications
+
+In-app delivery is independent of email, browser push permission and installation. Every staff user has a workspace bell panel with recent messages, unread counts and mark-read controls; new arrivals show an in-app toast on any workspace page. Updates poll every ten seconds and refresh immediately on focus, cross-tab read changes, and push messages from the service worker. The full inbox remains at `/notifications`.
+
+The device section offers **Install app**, **Enable browser notifications**, and **Send test notification** after subscribing. Browsers with an install prompt use it; other browsers receive direct menu instructions. iPhone/iPad require Add to Home Screen for push. Unsupported or insecure browser contexts get an explanation while in-app messages continue working.
+
+Run `npm run notifications:setup-push` once to create the local VAPID pair and administrator contact subject without printing private values. The command preserves complete existing pairs and rejects partial configuration rather than invalidating subscriptions. Load these settings in the web app and worker after initial setup; preserve the same pair across deployments. The push controls verify that a device subscription belongs to the signed-in account. A browser-only test can be requested by any staff member for their own account.
+
+The service worker caches only a generic public offline page and icons. It does not cache authenticated pages or API data. Push uses generic lock-screen content and refreshes open application tabs; clicking opens the authenticated inbox. Offline navigation shows a reconnect screen without exposing cached business records.
+
+The installed Web Push 4 library uses named exports. The worker and setup command use those exports; regression coverage exercises actual key generation, and integration coverage tests persisted subscriptions, cross-account ownership, a queued push self-test, normal-browser in-app toasts and bell mark-read, standalone display mode, the real service worker/offline screen and its public-only cache. Push-provider transport is captured during deterministic tests; real-device delivery still depends on HTTPS, permission and the device's push service.
+
+
+Browser verification also covers the actual Enable/Test/Disable push controls with a captured browser subscription and push transport, and the shared inbox under standalone display-mode emulation. The normal-browser toast/panel and real service-worker offline/cache checks passed. A real device's external push-service delivery must still be verified on the deployed HTTPS origin.

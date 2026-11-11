@@ -1,7 +1,8 @@
+import { pushTransport } from "../src/lib/push-transport";
 import { getCompanyEmailSettings } from "../src/lib/email-settings";
 import { Queue, Worker, UnrecoverableError } from "bullmq";
 import { prisma } from "../src/lib/prisma";
-import webpush from "web-push";
+import * as webpush from "web-push";
 import { deliveryJob, notificationConnection, notificationQueueName } from "../src/lib/notification-queue";
 
 const connection = notificationConnection();
@@ -67,7 +68,7 @@ const worker = new Worker(notificationQueueName, async (job) => {
       for (const subscription of alert.user.pushSubscriptions) {
         try {
           // Show generic lock-screen content; full message requires app authentication.
-          await webpush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({ title: "GadgetHub alert", body: "You have a new message. Open Messages & alerts to read it.", tag: alert.id }), { timeout: 15_000, TTL: 3600 });
+          await pushTransport.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({ title: "GadgetHub alert", body: "You have a new message. Open Messages & alerts to read it.", tag: alert.id }), { timeout: 15_000, TTL: 3600 });
           delivered += 1;
         } catch (error) {
           if (error instanceof webpush.WebPushError && [404, 410].includes(error.statusCode)) await prisma.pushSubscription.deleteMany({ where: { id: subscription.id } });

@@ -10,7 +10,7 @@ const endpoint = z.url().max(2048).refine((value) => {
   const url = new URL(value);
   // Push endpoints are fetched by the worker. Restrict them to browser push services.
   return url.protocol === "https:" && !url.username && !url.password && (!url.port || url.port === "443") &&
-    ["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com", "wns.windows.com"].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+    ["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com", "wns.windows.com", "notify.windows.com"].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
 });
 const schema = z.object({ endpoint, keys: z.object({ p256dh: z.string().regex(/^[A-Za-z0-9_-]{87}$/), auth: z.string().regex(/^[A-Za-z0-9_-]{22}$/) }) });
 
@@ -25,7 +25,7 @@ async function handle(request: Request, remove: boolean) {
   } else {
     const parsed = schema.safeParse(input);
     if (!parsed.success) return NextResponse.json({ error: "Invalid browser subscription" }, { status: 400 });
-    if (!process.env.VAPID_PRIVATE_KEY) return NextResponse.json({ error: "Browser push is not configured" }, { status: 503 });
+    if (!process.env.VAPID_PRIVATE_KEY || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_SUBJECT) return NextResponse.json({ error: "Browser push is not configured" }, { status: 503 });
     const data = { userId: session.user.id, p256dh: parsed.data.keys.p256dh, auth: parsed.data.keys.auth };
     await prisma.pushSubscription.upsert({ where: { endpoint: parsed.data.endpoint }, create: { endpoint: parsed.data.endpoint, ...data }, update: data });
   }
@@ -33,3 +33,16 @@ async function handle(request: Request, remove: boolean) {
 }
 export const POST = (request: Request) => notificationApi(() => handle(request, false));
 export const DELETE = (request: Request) => notificationApi(() => handle(request, true));
+
+export async function GET(request: Request) {
+  return notificationApi(async () => {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    if (!canAccessPage(session.user.role, "/notifications")) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    const value = new URL(request.url).searchParams.get("endpoint");
+    const subscribed = value && endpoint.safeParse(value).success
+      ? Boolean(await prisma.pushSubscription.findFirst({ where: { userId: session.user.id, endpoint: value }, select: { id: true } })) : false;
+    const publicKey = process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT ? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null : null;
+    return NextResponse.json({ subscribed: Boolean(subscribed), publicKey });
+  });
+}

@@ -1,5 +1,7 @@
 "use client";
 
+import { PwaControls } from "./pwa-controls";
+import { notifyInboxChanged } from "@/lib/notification-events";
 import { EmailSetup } from "./email-setup";
 import { notificationResponse } from "@/lib/notification-response";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -36,9 +38,6 @@ export function StaffInbox() {
   const [notice, setNotice] = useState("");
   const [timing, setTiming] = useState("now");
   const [busy, setBusy] = useState(false);
-  const [pushBusy, setPushBusy] = useState(false);
-  const [supported, setSupported] = useState(false);
-  const [subscribed, setSubscribed] = useState(false);
 
   async function refresh() {
     const result = await api("/api/notifications/inbox");
@@ -49,15 +48,15 @@ export function StaffInbox() {
   useEffect(() => {
     const initial = window.setTimeout(() => {
       void refresh().catch((cause) => setError(cause.message));
-      if ("serviceWorker" in navigator && "PushManager" in window && window.isSecureContext) {
-        setSupported(true);
-        void navigator.serviceWorker.getRegistration("/").then(async (registration) => {
-          setSubscribed(Boolean(await registration?.pushManager.getSubscription()));
-        }).catch(() => undefined);
-      }
+
     }, 0);
+    const changed = () => void refresh().catch(() => undefined);
+    const workerMessage = (event: MessageEvent) => { if (event.data?.type === "NOTIFICATIONS_CHANGED") changed(); };
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel("gadgethub-notifications") : null;
+    if (channel) channel.onmessage = changed;
+    navigator.serviceWorker?.addEventListener("message", workerMessage);
     const timer = window.setInterval(() => void refresh().catch(() => setError("Could not refresh notifications. Displaying the last loaded messages.")), 15_000);
-    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+    return () => { channel?.close(); navigator.serviceWorker?.removeEventListener("message", workerMessage); window.clearTimeout(initial); window.clearInterval(timer); };
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -75,38 +74,14 @@ export function StaffInbox() {
     finally { setBusy(false); }
   }
 
-  async function togglePush() {
-    setPushBusy(true); setError(""); setNotice("");
-    try {
-      const registration = await navigator.serviceWorker.register("/notifications-sw.js", { scope: "/", updateViaCache: "none" });
-      await navigator.serviceWorker.ready;
-      let subscription = await registration.pushManager.getSubscription();
-      if (subscribed && subscription) {
-        await api("/api/notifications/push", "DELETE", { endpoint: subscription.endpoint });
-        await subscription.unsubscribe(); setSubscribed(false);
-        setNotice("Browser notifications disabled on this device.");
-      } else {
-        if (!key) throw new Error("Browser push is not configured.");
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") throw new Error("Allow notifications in browser settings to enable push.");
-        const binary = atob(key.replace(/-/g, "+").replace(/_/g, "/"));
-        const applicationServerKey = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-        subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-        await api("/api/notifications/push", "POST", subscription.toJSON());
-        setSubscribed(true); setNotice("Browser notifications enabled for your account on this device.");
-      }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update browser notifications."); }
-    finally { setPushBusy(false); }
-  }
-
   async function markRead(id: string) {
-    try { await api("/api/notifications/inbox", "PATCH", { id }); await refresh(); }
+    try { await api("/api/notifications/inbox", "PATCH", { id }); await refresh(); notifyInboxChanged(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not mark alert read."); }
   }
 
   return <section className="space-y-4 rounded-2xl border border-[#e2e9e2] bg-white p-5" aria-labelledby="staff-inbox-heading">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 id="staff-inbox-heading" className="font-semibold text-[#304235]">Your inbox · {unread} unread</h3><p className="mt-1 text-xs text-[#7c897f]">Staff messages and scheduled alerts. Times use your device timezone.</p></div><button className={button} disabled={!supported || (!key && !subscribed) || pushBusy} onClick={() => void togglePush()}>{pushBusy ? "Updating…" : subscribed ? "Disable browser notifications" : "Enable browser notifications"}</button></div>
-    <p className="text-xs text-[#7c897f]">Browser notifications require HTTPS. On iPhone or iPad, add the app to your Home Screen first. Enable notifications for your account on each device you use.</p>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 id="staff-inbox-heading" className="font-semibold text-[#304235]">Your inbox · {unread} unread</h3><p className="mt-1 text-xs text-[#7c897f]">Staff messages and scheduled alerts. Times use your device timezone.</p></div></div>
+    <PwaControls />
     {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
     {notice ? <p role="status" className="text-sm text-green-800">{notice}</p> : null}
     {canManage ? <>
@@ -121,7 +96,7 @@ export function StaffInbox() {
       {timing === "scheduled" ? <label className="space-y-1 text-xs sm:col-span-2">Send at<input required name="scheduledAt" type="datetime-local" className={field} /></label> : null}
       <label className="space-y-1 text-xs sm:col-span-2">Title<input required name="title" maxLength={160} className={field} /></label>
       <label className="space-y-1 text-xs sm:col-span-2">Message<textarea required name="body" maxLength={4000} rows={3} className={field} /></label>
-      <div className="flex flex-wrap gap-4 text-xs sm:col-span-2"><span>Always delivered in app</span><label><input name="email" type="checkbox" disabled={!emailConfigured} /> Also email</label><label><input name="push" type="checkbox" disabled={!key} /> Also browser push</label></div>
+      <div className="flex flex-wrap gap-4 text-xs sm:col-span-2"><label><input type="checkbox" checked disabled /> In-app notification (always included)</label><label><input name="email" type="checkbox" disabled={!emailConfigured} /> Also email</label><label><input name="push" type="checkbox" disabled={!key} /> Also browser push</label></div>
       <button disabled={busy} className={button}>{busy ? "Saving…" : timing === "now" ? "Send now" : "Schedule message"}</button>
     </form></details>
     <details className="rounded-xl border border-[#e2e9e2] p-4"><summary className="cursor-pointer text-sm font-semibold text-[#365b43]">Sent &amp; scheduled messages ({sent.length})</summary><div className="divide-y divide-[#edf1ed]">{sent.map((message) => <article key={message.id} className="py-3"><p className="text-sm font-semibold">{message.title} · {message.user.name}</p><p className="mt-1 whitespace-pre-wrap break-words text-sm text-[#69766c]">{message.body}</p><p className="mt-1 text-xs text-[#7c897f]">{new Date(message.scheduledAt).getTime() > loadedAt ? "Scheduled for" : "Available in app since"} {new Date(message.scheduledAt).toLocaleString()} · {message.readAt ? "Read" : "Unread"}</p>{message.deliveries.map((delivery) => <p key={delivery.channel} className="mt-1 text-xs text-[#69766c]">{delivery.channel}: {delivery.status === "SENT" ? "Accepted by provider" : delivery.status.toLowerCase()} · {delivery.attempts} attempts{delivery.lastError ? ` · ${delivery.lastError}` : ""}</p>)}</article>)}{!sent.length ? <p className="py-3 text-sm text-[#69766c]">No sent messages yet.</p> : null}</div></details>

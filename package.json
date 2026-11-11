@@ -22,7 +22,10 @@
     "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts",
     "notifications:worker": "node --env-file=.env --import tsx scripts/notifications-worker.ts",
     "test:notifications": "node --import tsx --test scripts/notifications.test.ts",
-    "test:notifications:e2e": "node --env-file=.env --import tsx scripts/test-notifications-e2e.ts"
+    "test:notifications:e2e": "node --env-file=.env --import tsx scripts/test-notifications-e2e.ts",
+    "notifications:setup-push": "node --env-file=.env --import tsx scripts/setup-notification-push.ts",
+    "predev": "npm run db:generate",
+    "prebuild": "npm run db:generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

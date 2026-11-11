@@ -77,7 +77,7 @@ export default function NotificationsPage() {
 
   return <AppShell><div className="space-y-6">
     <div className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7">
-      <div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#60816b]">Customer communication</p><h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-[#20382d]">Messages &amp; alerts</h2><p className="mt-1.5 max-w-xl text-sm text-[#758279]">A live view of payment follow-ups, delivery health, and customer messages.</p></div>
+      <div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#60816b]">Messages &amp; notifications</p><h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-[#20382d]">Messages &amp; alerts</h2><p className="mt-1.5 max-w-xl text-sm text-[#758279]">Read in-app alerts, send messages, and manage email and device notifications.</p></div>
       {canManage ? <button type="button" onClick={() => void refresh().catch((cause) => setError(cause.message))} className="inline-flex items-center gap-2 rounded-xl border border-[#dce6dd] bg-[#fbfdfb] px-4 py-2.5 text-xs font-semibold text-[#365b43] transition hover:border-[#b8cdbd] hover:bg-[#f1f7f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#477c57]"><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />{refreshing ? "Refreshing" : "Refresh status"}</button> : null}
     </div>
     {error ? <p role="alert" className="flex items-center gap-2 rounded-xl border border-[#efd4cf] bg-[#fff8f6] px-4 py-3 text-sm text-[#954f43]"><AlertCircle className="h-4 w-4 shrink-0" />{error}</p> : null}

@@ -549,6 +549,7 @@ model ScheduledJobRun {
   @@index([jobName, startedAt])
 }
 
+
 // Staff inbox is independent of customer reminder delivery and consent.
 model StaffAlert {
   senderId    String?

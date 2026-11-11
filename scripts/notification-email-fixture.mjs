@@ -1,3 +1,4 @@
+import { pushTransport } from "../src/lib/push-transport.ts";
 // Loaded only by the isolated end-to-end test worker. Never used in production.
 import { appendFileSync } from "node:fs";
 const nativeFetch = globalThis.fetch;
@@ -12,4 +13,9 @@ globalThis.fetch = async (url, options) => {
   if (payload.subject === "Retry email" && attempt === 1) return Response.json({ name: "rate_limit_exceeded" }, { status: 429 });
   if (payload.subject === "Rejected email") return Response.json({ name: "validation_error" }, { status: 403 });
   return Response.json({ id: `fixture-${key}` });
+};
+
+pushTransport.sendNotification = async (subscription, payload) => {
+  appendFileSync(process.env.NOTIFICATION_EMAIL_CAPTURE, JSON.stringify({ kind: "push", endpoint: subscription.endpoint, payload: JSON.parse(payload) }) + "\n");
+  return { statusCode: 201, body: "", headers: {} };
 };

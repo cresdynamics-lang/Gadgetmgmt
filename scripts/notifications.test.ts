@@ -65,3 +65,57 @@ test("company sender settings reject invalid addresses and header injection", as
   assert.equal(emailSettingsInput.safeParse({ senderEmail: "not-an-email", senderName: "Company" }).success, false);
   assert.equal(emailSettingsInput.safeParse({ senderEmail: "alerts@company.test", senderName: "Company\r\nBcc: other@company.test" }).success, false);
 });
+
+test("push refreshes open clients and handles empty payloads", async () => {
+  const handlers: Record<string, (event: unknown) => void> = {};
+  const shown: string[] = [];
+  const messages: unknown[] = [];
+  runInNewContext(readFileSync("public/notifications-sw.js", "utf8"), { URL, self: {
+    location: { origin: "https://app.example" }, addEventListener: (name: string, handler: (event: unknown) => void) => { handlers[name] = handler; },
+    registration: { showNotification: async (title: string) => { shown.push(title); } },
+    clients: { matchAll: async () => [{ postMessage: (value: unknown) => { messages.push(value); } }] },
+  } });
+  let pending: Promise<unknown> | undefined;
+  handlers.push({ data: { json: () => null }, waitUntil(promise: Promise<unknown>) { pending = promise; } });
+  await pending;
+  assert.deepEqual(shown, ["GadgetHub alert"]);
+  assert.equal((messages[0] as { type: string }).type, "NOTIFICATIONS_CHANGED");
+});
+
+test("service worker never intercepts API fetches or caches authenticated navigation", async () => {
+  const handlers: Record<string, (event: unknown) => void> = {};
+  let intercepted = false;
+  runInNewContext(readFileSync("public/notifications-sw.js", "utf8"), { URL, self: {
+    location: { origin: "https://app.example" }, addEventListener: (name: string, handler: (event: unknown) => void) => { handlers[name] = handler; },
+  } });
+  handlers.fetch({ request: { mode: "cors", url: "https://app.example/api/notifications/inbox" }, respondWith() { intercepted = true; } });
+  assert.equal(intercepted, false);
+});
+
+test("installed Web Push exports generate a usable VAPID key pair", async () => {
+  const push = await import("web-push");
+  const keys = push.generateVAPIDKeys();
+  assert.equal(keys.publicKey.length, 87);
+  assert.equal(keys.privateKey.length, 43);
+  assert.doesNotThrow(() => push.setVapidDetails("mailto:admin@company.test", keys.publicKey, keys.privateKey));
+});
+
+test("public offline icons are served from cache", async () => {
+  const handlers: Record<string, (event: unknown) => void> = {};
+  const cached = new Response("public icon");
+  runInNewContext(readFileSync("public/notifications-sw.js", "utf8"), { URL, caches: { match: async () => cached }, self: {
+    location: { origin: "https://app.example" }, addEventListener: (name: string, handler: (event: unknown) => void) => { handlers[name] = handler; },
+  } });
+  let pending: Promise<Response> | undefined;
+  handlers.fetch({ request: { method: "GET", mode: "no-cors", url: "https://app.example/notifications-icon-192.png" }, respondWith(promise: Promise<Response>) { pending = promise; } });
+  assert.equal(await (await pending!).text(), "public icon");
+});
+
+test("Prisma schema and generated client retain the notification storage contract", async () => {
+  const { Prisma } = await import("@prisma/client");
+  const schema = readFileSync("prisma/schema.prisma", "utf8");
+  for (const name of ["StaffAlert", "StaffAlertDelivery", "PushSubscription", "NotificationEmailSettings"]) {
+    assert.ok(schema.includes(`model ${name} {`), `${name} must remain in the Prisma schema`);
+    assert.ok(Prisma.dmmf.datamodel.models.some((model) => model.name === name), `${name} must be present in the generated client; run npm run db:generate`);
+  }
+});

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createECDH, randomBytes, randomUUID } from "node:crypto";
 import { createWriteStream, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import * as webpush from "web-push";
 import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { chromium, expect, type BrowserContext } from "@playwright/test";
@@ -20,7 +21,8 @@ async function main() {
   const port = Number(process.env.NOTIFICATION_TEST_PORT || 3117);
   const base = `http://127.0.0.1:${port}`;
   const queueName = schema;
-  const env = { ...process.env, EMAIL_FROM: "", RESEND_API_KEY: process.env.NOTIFICATION_LIVE_EMAIL ? process.env.RESEND_API_KEY : "test-only", DATABASE_URL: url.href, APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base,
+  const vapid = webpush.generateVAPIDKeys();
+  const env = { ...process.env, NEXT_PUBLIC_VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:test@notifications.invalid", EMAIL_FROM: "", RESEND_API_KEY: process.env.NOTIFICATION_LIVE_EMAIL ? process.env.RESEND_API_KEY : "test-only", DATABASE_URL: url.href, APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base,
     NEXTAUTH_SECRET: randomUUID() + randomUUID(), NEXT_DIST_DIR: ".next-notifications-e2e", NOTIFICATION_QUEUE_NAME: queueName };
   const prisma = new PrismaClient({ datasourceUrl: url.href, log: [] });
   const queue = new Queue(queueName, { connection: notificationConnection() });
@@ -65,8 +67,16 @@ async function main() {
       } catch { return 0; }
     }, { timeout: 180_000, intervals: [1000] }).toBe(200);
     browser = await chromium.launch({ executablePath: chromium.executablePath(), headless: true, args: ["--no-sandbox"] });
-    const login = async (email: string) => {
+    const login = async (email: string, standalone = false) => {
       const context = await browser!.newContext();
+      if (standalone) await context.addInitScript(() => {
+        const original = window.matchMedia.bind(window);
+        window.matchMedia = (query) => {
+          const result = original(query);
+          if (query === "(display-mode: standalone)") Object.defineProperty(result, "matches", { value: true });
+          return result;
+        };
+      });
       const page = await context.newPage();
       await page.goto(base + "/login?callbackUrl=/notifications");
       await page.getByLabel("Work email").fill(email);
@@ -116,6 +126,45 @@ async function main() {
     assert.equal((await unrelated.json()).alerts.length, 0);
     console.log("PASS: recipient read state, staff access and cross-branch isolation");
 
+    // These notifications require no browser push permission or installed PWA.
+    await receiver.page.goto(base + "/customers");
+    await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
+    await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toHaveAttribute("aria-busy", "false");
+    const browserOnly = await post(sender.context, { requestId: randomUUID(), userId: cashier.id, title: "In-app without email or push", body: "Visible from any workspace page", sendNow: true });
+    const browserOnlyId = (await browserOnly.json()).id;
+    await receiver.page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(receiver.page.getByLabel("New in-app notification")).toContainText("In-app without email or push", { timeout: 20_000 });
+    await receiver.page.getByRole("button", { name: /Messages and alerts, 1 unread/ }).click();
+    const recent = receiver.page.getByRole("region", { name: "Recent notifications" });
+    await expect(recent).toContainText("In-app without email or push");
+    await recent.getByRole("button", { name: "Mark read" }).click();
+    await expect.poll(async () => Boolean((await prisma.staffAlert.findUnique({ where: { id: browserOnlyId } }))?.readAt)).toBe(true);
+    await expect(receiver.page.getByRole("button", { name: /Messages and alerts, 0 unread/ })).toBeVisible();
+    console.log("PASS: normal-browser in-app toast, workspace bell panel, and mark-read without email/push");
+
+    await receiver.page.evaluate(() => navigator.serviceWorker.ready);
+    await expect.poll(() => receiver.page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+    await receiver.context.setOffline(true);
+    await receiver.page.goto(base + "/notifications");
+    await expect(receiver.page.getByRole("heading", { name: "You're offline" })).toBeVisible();
+    await receiver.context.setOffline(false);
+    await receiver.page.goto(base + "/notifications");
+    await expect(receiver.page.getByRole("heading", { name: /Your inbox/ })).toBeVisible();
+    const cachedPaths = await receiver.page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (name) => (await (await caches.open(name)).keys()).map((request) => new URL(request.url).pathname)))).flat());
+    assert.ok(cachedPaths.length > 0 && cachedPaths.every((path) => ["/notifications-offline.html", "/notifications-icon-192.png", "/notifications-icon-512.png"].includes(path)));
+    const manifest = await (await fetch(base + "/manifest.webmanifest")).json();
+    assert.equal(manifest.display, "standalone");
+    assert.equal(manifest.scope, "/");
+    console.log("PASS: real PWA service worker, install manifest, safe offline screen and public-assets-only caching");
+
+    const installedReceiver = await login(outsider.email, true);
+    await expect(installedReceiver.page.getByText("App installed", { exact: true })).toBeVisible();
+    const standaloneAlert = await post(sender.context, { requestId: randomUUID(), userId: outsider.id, title: "Standalone in-app message", body: "The installed app shares the same inbox.", sendNow: true });
+    assert.equal(standaloneAlert.status(), 201);
+    await installedReceiver.page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(installedReceiver.page.getByRole("heading", { name: "Standalone in-app message", exact: true })).toBeVisible({ timeout: 20_000 });
+    console.log("PASS: standalone PWA display mode uses the same independent in-app inbox");
+
     const create = async (title: string, extra = {}) => {
       const response = await post(sender.context, { requestId: randomUUID(), userId: cashier.id, title, body: "Notification integration check", sendNow: true, ...extra });
       assert.equal(response.status(), 201);
@@ -130,9 +179,36 @@ async function main() {
     console.log("PASS: scheduled messages stay hidden until due and appear in the browser");
 
     const capture = join(directory, "email.jsonl");
-    const worker = start(["--import", "./scripts/notification-email-fixture.mjs", "--import", "tsx", "scripts/notifications-worker.ts"], { RESEND_API_KEY: "test-only", EMAIL_FROM: "Test <test@notifications.invalid>", NOTIFICATION_EMAIL_CAPTURE: capture });
+    const worker = start(["--import", "tsx", "--import", "./scripts/notification-email-fixture.mjs", "scripts/notifications-worker.ts"], { RESEND_API_KEY: "test-only", EMAIL_FROM: "Test <test@notifications.invalid>", NOTIFICATION_EMAIL_CAPTURE: capture });
     await expect.poll(async () => Boolean((await prisma.scheduledJobRun.findUnique({ where: { id: "staff-notifications-heartbeat" } }))?.finishedAt), { timeout: 45_000 }).toBe(true);
     const deliveryState = async (id: string) => (await prisma.staffAlertDelivery.findFirst({ where: { alertId: id } }))?.status;
+    const browserKeys = createECDH("prime256v1"); browserKeys.generateKeys();
+    const subscription = { endpoint: `https://fcm.googleapis.com/fcm/send/${randomUUID()}`, keys: { p256dh: browserKeys.getPublicKey().toString("base64url"), auth: randomBytes(16).toString("base64url") } };
+    await receiver.context.grantPermissions(["notifications"], { origin: base });
+    await receiver.page.evaluate(`(function(value) {
+      let current = null;
+      Object.defineProperty(PushManager.prototype, "getSubscription", { configurable: true, value: async function() { return current; } });
+      Object.defineProperty(PushManager.prototype, "subscribe", { configurable: true, value: async function() {
+        current = { endpoint: value.endpoint, toJSON: function() { return value; }, unsubscribe: async function() { current = null; return true; } };
+        return current;
+      } });
+    })(${JSON.stringify(subscription)})`);
+    await receiver.page.getByRole("button", { name: "Enable browser notifications", exact: true }).click();
+    await expect(receiver.page.getByRole("button", { name: "Disable browser notifications", exact: true })).toBeVisible();
+    const subscriptionStatus = await receiver.context.request.get(base + `/api/notifications/push?endpoint=${encodeURIComponent(subscription.endpoint)}`);
+    assert.equal((await subscriptionStatus.json()).subscribed, true);
+    const foreignStatus = await sender.context.request.get(base + `/api/notifications/push?endpoint=${encodeURIComponent(subscription.endpoint)}`);
+    assert.equal((await foreignStatus.json()).subscribed, false);
+    const pushResponse = receiver.page.waitForResponse((response) => response.url().endsWith("/api/notifications/push/test") && response.request().method() === "POST");
+    await receiver.page.getByRole("button", { name: "Send test notification", exact: true }).click();
+    const pushTest = await pushResponse;
+    assert.equal(pushTest.status(), 201);
+    const pushId = (await pushTest.json()).id;
+    await expect.poll(() => deliveryState(pushId), { timeout: 30_000 }).toBe("SENT");
+    await receiver.page.getByRole("button", { name: "Disable browser notifications", exact: true }).click();
+    await expect(receiver.page.getByRole("button", { name: "Enable browser notifications", exact: true })).toBeVisible();
+    assert.equal(await prisma.pushSubscription.count({ where: { userId: cashier.id } }), 0);
+    console.log("PASS: enable/test/disable push controls, account ownership and real BullMQ push delivery (device subscription and transport mocked)");
     const email = await create("Email integration message", { email: true });
     await expect.poll(() => deliveryState(email), { timeout: 45_000 }).toBe("SENT");
     const changedSender = await sender.context.request.put(base + "/api/notifications/email-settings", { data: { senderEmail: "updated@notifications.invalid", senderName: "Updated Company" }, headers: { Origin: base } });
@@ -145,7 +221,7 @@ async function main() {
     const recovered = await create("Outbox recovery email", { email: true, sendNow: false, scheduledAt: new Date(Date.now() + 2000).toISOString() });
     await delay(2500);
     assert.equal(await deliveryState(recovered), "QUEUED");
-    const worker2 = start(["--import", "./scripts/notification-email-fixture.mjs", "--import", "tsx", "scripts/notifications-worker.ts"], { RESEND_API_KEY: "test-only", EMAIL_FROM: "Test <test@notifications.invalid>", NOTIFICATION_EMAIL_CAPTURE: capture });
+    const worker2 = start(["--import", "tsx", "--import", "./scripts/notification-email-fixture.mjs", "scripts/notifications-worker.ts"], { RESEND_API_KEY: "test-only", EMAIL_FROM: "Test <test@notifications.invalid>", NOTIFICATION_EMAIL_CAPTURE: capture });
     await expect.poll(() => deliveryState(recovered), { timeout: 30_000 }).toBe("SENT");
     const captured = readFileSync(capture, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(captured.filter((entry) => entry.subject === "Retry email").length, 2);
