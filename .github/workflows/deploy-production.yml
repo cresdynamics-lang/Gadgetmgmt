@@ -1,0 +1,196 @@
+# Install the public key in the VPC user's authorized_keys, and store the
+# device private key as the DEPLOY_SSH_KEY secret.
+
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Queue production deploys. Cancelling an in-progress copy would leave a partial tree.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    name: Build and copy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Private key: secret only. Host, user, path, and host key may be secrets or variables.
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER || vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS || vars.DEPLOY_SSH_KNOWN_HOSTS }}
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          # auth.ts refuses to load under NODE_ENV=production unless this is set.
+          # Created for this build step only. It is not the server secret and is
+          # not written into the compiled output.
+          export NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+          npm run build
+          unset NEXTAUTH_SECRET
+
+      - name: Assemble production bundle
+        run: |
+          set -euo pipefail
+          stage="${RUNNER_TEMP}/deploy-bundle"
+          rm -rf "$stage"
+          mkdir -p "$stage/.next" "$stage/public" "$stage/prisma"
+          cp package.json package-lock.json next.config.ts tsconfig.json "$stage/"
+          cp -a .next/. "$stage/.next/"
+          rm -rf "$stage/.next/cache"
+          cp -a public/. "$stage/public/"
+          cp -a prisma/. "$stage/prisma/"
+          (cd "$stage" && npm ci --omit=dev)
+          (cd "$stage" && "${GITHUB_WORKSPACE}/node_modules/.bin/prisma" generate)
+          test -d "$stage/node_modules/@prisma/client"
+          test -d "$stage/node_modules/.prisma/client"
+          find "$stage/node_modules/.prisma/client" -name 'libquery_engine-*' -print -quit | grep -q .
+
+      - name: Install rsync
+        run: |
+          set -euo pipefail
+          if ! command -v rsync >/dev/null 2>&1 || ! command -v ssh >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends rsync openssh-client
+          fi
+
+      - name: Copy bundle to production
+        run: |
+          set -euo pipefail
+
+          missing=0
+          [ -n "${DEPLOY_SSH_KEY-}" ] || { echo "Missing required deploy setting: DEPLOY_SSH_KEY"; missing=1; }
+          [ -n "${DEPLOY_HOST-}" ] || { echo "Missing required deploy setting: DEPLOY_HOST"; missing=1; }
+          [ -n "${DEPLOY_USER-}" ] || { echo "Missing required deploy setting: DEPLOY_USER"; missing=1; }
+          [ -n "${DEPLOY_PATH-}" ] || { echo "Missing required deploy setting: DEPLOY_PATH"; missing=1; }
+          [ -n "${DEPLOY_SSH_KNOWN_HOSTS-}" ] || { echo "Missing required deploy setting: DEPLOY_SSH_KNOWN_HOSTS"; missing=1; }
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+          if ! printf '%s' "$DEPLOY_USER" | grep -Eq '^[A-Za-z_][A-Za-z0-9._-]{0,31}$'; then
+            echo "DEPLOY_USER must be a plain SSH username."
+            exit 1
+          fi
+          if ! printf '%s' "$DEPLOY_HOST" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:-]*$'; then
+            echo "DEPLOY_HOST must be a hostname or address, with no spaces."
+            exit 1
+          fi
+          if ! printf '%s' "$DEPLOY_PATH" | grep -Eq '^/[A-Za-z0-9._/-]+$'; then
+            echo "DEPLOY_PATH must be an absolute directory path."
+            exit 1
+          fi
+          case "$DEPLOY_PATH" in
+            /|/root|/home|/usr|/etc|/var|/bin|/sbin)
+              echo "DEPLOY_PATH is too broad to receive a deploy."
+              exit 1
+              ;;
+          esac
+
+          ssh_dir="${RUNNER_TEMP}/deploy-ssh"
+          rm -rf "$ssh_dir"
+          install -d -m 700 "$ssh_dir"
+          key_file="${ssh_dir}/id"
+          known_hosts="${ssh_dir}/known_hosts"
+          cleanup() {
+            rm -rf "$ssh_dir"
+          }
+          trap cleanup EXIT
+
+          umask 077
+          # Store the secret with real line breaks. Do not collapse it to one line.
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          unset DEPLOY_SSH_KEY
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$known_hosts"
+          chmod 600 "$known_hosts"
+
+          mode="$(stat -c '%a' "$key_file")"
+          if [ "$mode" != "600" ]; then
+            echo "Refusing to use a deploy key that is not mode 600."
+            exit 1
+          fi
+          if ! grep -q 'PRIVATE KEY' "$key_file"; then
+            echo "DEPLOY_SSH_KEY does not look like an OpenSSH private key."
+            exit 1
+          fi
+          if ! grep -Eq '(^|[[:space:]])(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com)([[:space:]]|$)' "$known_hosts"; then
+            echo "DEPLOY_SSH_KNOWN_HOSTS must contain an OpenSSH host key."
+            exit 1
+          fi
+
+          # Public-key authentication only. No passwords and no agent keys.
+          ssh_base() {
+            ssh \
+              -i "$key_file" \
+              -o IdentitiesOnly=yes \
+              -o PreferredAuthentications=publickey \
+              -o PasswordAuthentication=no \
+              -o KbdInteractiveAuthentication=no \
+              -o PubkeyAuthentication=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$known_hosts" \
+              -o GlobalKnownHostsFile=/dev/null \
+              -o BatchMode=yes \
+              -o ConnectTimeout=30 \
+              "$@"
+          }
+
+          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
+          quoted_path="$(printf '%q' "$DEPLOY_PATH")"
+          # A failed login or a failed copy ends the job. The trap removes the key.
+          ssh_base "$remote" "mkdir -p -- ${quoted_path}"
+
+          quoted_key="$(printf '%q' "$key_file")"
+          quoted_known="$(printf '%q' "$known_hosts")"
+          rsync_ssh="ssh -i ${quoted_key} -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o PubkeyAuthentication=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${quoted_known} -o GlobalKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=30"
+          stage="${RUNNER_TEMP}/deploy-bundle"
+
+          # Replace build output and dependencies. Leave the server .env in place
+          # by never syncing the deploy root with --delete.
+          rsync -az --delete -e "$rsync_ssh" "${stage}/.next/" "${remote}:${DEPLOY_PATH}/.next/"
+          rsync -az --delete -e "$rsync_ssh" "${stage}/node_modules/" "${remote}:${DEPLOY_PATH}/node_modules/"
+          rsync -az -e "$rsync_ssh" "${stage}/public/" "${remote}:${DEPLOY_PATH}/public/"
+          rsync -az -e "$rsync_ssh" "${stage}/prisma/" "${remote}:${DEPLOY_PATH}/prisma/"
+          rsync -az -e "$rsync_ssh" \
+            "${stage}/package.json" \
+            "${stage}/package-lock.json" \
+            "${stage}/next.config.ts" \
+            "${stage}/tsconfig.json" \
+            "${remote}:${DEPLOY_PATH}/"
+
+      - name: Delete the deploy key
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/deploy-ssh"
