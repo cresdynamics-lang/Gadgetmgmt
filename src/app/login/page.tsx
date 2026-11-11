@@ -1,14 +1,26 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Boxes, ChartNoAxesCombined, Package, ShieldCheck } from "lucide-react";
+
+import { hasSensitiveQuery, safeInternalPath } from "@/lib/access";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    const current = new URL(window.location.href);
+    const callbackUrl = current.searchParams.get("callbackUrl");
+    const safeCallback = safeInternalPath(callbackUrl);
+    if (!hasSensitiveQuery(current.searchParams) && (callbackUrl === null || callbackUrl === safeCallback)) return;
+    const next = new URL("/login", window.location.origin);
+    if (safeCallback && safeCallback !== "/login") next.searchParams.set("callbackUrl", safeCallback);
+    window.history.replaceState(null, "", `${next.pathname}${next.search}`);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,7 +40,7 @@ export default function LoginPage() {
       return;
     }
 
-    const callbackUrl = new URLSearchParams(window.location.search).get("callbackUrl");
+    const callbackUrl = safeInternalPath(new URLSearchParams(window.location.search).get("callbackUrl"));
     router.replace(callbackUrl || "/dashboard");
     router.refresh();
   }
@@ -59,7 +71,7 @@ export default function LoginPage() {
           <h2 className="mt-4 text-[29px] font-semibold tracking-[-.05em] text-[#1c3022]">Welcome back.</h2>
           <p className="mt-2 text-sm text-[#69746c]">Use your registered work email and password.</p>
 
-          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+          <form method="post" action="/login" className="mt-8 space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-2">
               <label htmlFor="email" className="text-xs font-semibold text-[#465a4a]">Work email</label>
               <input id="email" name="email" type="email" autoComplete="username" required placeholder="you@company.com" className="w-full rounded-xl border border-[#dfe8e1] bg-[#fcfdfc] px-3.5 py-3 text-sm outline-none transition placeholder:text-[#abb6ad] focus:border-[#83b596] focus:bg-white focus:ring-4 focus:ring-[#d7ecdc]" />

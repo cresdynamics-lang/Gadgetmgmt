@@ -2,7 +2,7 @@
 
 import { notificationResponse } from "@/lib/notification-response";
 import { useSession } from "next-auth/react";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability, sessionGrants } from "@/lib/access";
 import { useEffect, useState } from "react";
 import { Activity, AlertCircle, ArrowUpRight, Check, CheckCircle2, Clock3, Mail, MessageCircle, RefreshCw, Smartphone, Wallet } from "lucide-react";
 import { StaffInbox } from "./staff-inbox";
@@ -18,7 +18,7 @@ const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
 
 export default function NotificationsPage() {
   const { data: session } = useSession();
-  const canManage = canUseCapability(session?.user.role ?? "", "notifications");
+  const canManage = canUseCapability(session?.user.role ?? "", "notifications", sessionGrants(session?.user.role ?? "", session?.user.pages, session?.user.capabilities));
   const [messages, setMessages] = useState<Notification[]>([]);
   const [counts, setCounts] = useState({ queued: 0, sent: 0, failed: 0 });
   const [paymentReviews, setPaymentReviews] = useState<PaymentReview[]>([]);

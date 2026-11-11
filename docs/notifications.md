@@ -88,3 +88,43 @@ The full Messages & Alerts page presents received-message history immediately be
 
 
 Successful mark-read actions update the bell badge immediately in the current window and other tabs. Read IDs are broadcast so duplicate events cannot decrement twice. A refresh already in flight is followed by another refresh, and responses captured before a read event cannot overwrite the updated badge. Tests cover reading from the full inbox and bell panel, cross-tab updates, and a deliberately delayed feed response.
+
+
+## Security review (issue #3)
+
+Notification endpoints check authentication and current stored role grants on the server.
+Company sender configuration is always owner-only, including when role grants change.
+Recipient inbox reads and read updates are scoped to the authenticated user; managers
+can send only within their branch. Customer delivery history and reconciliation records
+are returned only to owners because reminder text and amounts can contain financial data.
+Browser push carries a generic prompt, never the message body or financial fields.
+Push subscription URLs are restricted to HTTPS browser push services at registration
+and again at delivery to prevent SSRF.
+Mutation requests require an explicitly trusted origin. Prisma validates storage access,
+input schemas constrain messages and sender settings, and client rendering escapes text.
+The service worker caches only public offline resources. Live secrets belong in ignored
+runtime environment files; committed templates contain no credentials.
+
+The notification tests cover role and branch isolation, origin protection, independent
+email/in-app delivery, private push content, and owner-only email configuration.
+This feature review does not complete the repository-wide OWASP release checklist:
+production TLS and full CSP, dependency scanning/SBOM, application-wide abuse limits, MFA/device
+revocation and other application-wide controls still require separate verification.
+The Next.js upgrade remains outside this branch as requested. Issue #3's production
+release gate remains in effect until its requirements or owner-approved exceptions are met.
+
+Notification mutations accept JSON bodies up to 16 KiB. PostgreSQL counters atomically
+limit each account to 30 sends, 5 push tests, 30 subscription changes and 10 sender
+configuration changes per minute, across all app instances. Exceeding a limit returns
+429 with Retry-After. These counters do not depend on Redis, so a delivery outage does
+not prevent saving inbox messages. Apply the notification_rate_limits migration before
+starting this version. API responses use private, no-store caching and reject sensitive
+query parameters. Subscriptions cannot be reassigned to another user by replaying their
+endpoint and keys. Shared-device users must reset their browser subscription to switch
+accounts. Production release remains subject to issue #3's full checklist.
+
+Zod is pinned to 4.6.7 and deepmerge-ts is overridden to 8.0.2 to resolve the audit
+findings affecting validation and Prisma configuration without a Prisma major upgrade.
+Production responses include HSTS; HTTPS/TLS termination must still be configured by
+hosting. The known Next.js advisory is deferred to the separate upgrade branch and
+continues to block a production release under issue #3.

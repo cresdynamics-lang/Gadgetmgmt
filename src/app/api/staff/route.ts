@@ -3,13 +3,17 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canAssignStaffRole, hasAnyQuery } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+const noStore = { "Cache-Control": "no-store" };
+
+export async function GET(request: Request) {
+  if (hasAnyQuery(request.url)) return NextResponse.json({ error: "Staff requests do not accept account details or other query parameters." }, { status: 400, headers: noStore });
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "staff")) return NextResponse.json({ error: "Your role cannot view staff accounts." }, { status: 403 });
+  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "staff"))) return NextResponse.json({ error: "Your role cannot view staff accounts." }, { status: 403, headers: noStore });
 
   const users = await prisma.user.findMany({
     where: session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" },
@@ -26,7 +30,7 @@ export async function GET() {
     orderBy: [{ status: "asc" }, { name: "asc" }],
   });
 
-  return NextResponse.json(users);
+  return NextResponse.json(users, { headers: noStore });
 }
 
 const staffSchema = z.object({
@@ -38,14 +42,18 @@ const staffSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (hasAnyQuery(request.url)) return NextResponse.json({ error: "Staff requests do not accept account details or other query parameters." }, { status: 400, headers: noStore });
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "staff")) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403 });
+  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "staff"))) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403, headers: noStore });
 
   const parsed = staffSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400 });
-  if (session.user.role === "BRANCH_MANAGER" && parsed.data.role !== "CASHIER" && parsed.data.role !== "INVENTORY_LEAD") {
-    return NextResponse.json({ error: "Branch managers can create cashier or inventory lead accounts only." }, { status: 403 });
+  if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400, headers: noStore });
+  if (!canAssignStaffRole(session.user.role, parsed.data.role)) {
+    const message = session.user.role === "BRANCH_MANAGER"
+      ? "Branch managers can create cashier or inventory lead accounts only."
+      : "Only the Gadgethub owner can create an owner or branch manager account.";
+    return NextResponse.json({ error: message }, { status: 403, headers: noStore });
   }
 
   const branchId = session.user.role === "OWNER" ? parsed.data.branchId ?? session.user.branchId : session.user.branchId;
@@ -59,12 +67,12 @@ export async function POST(request: Request) {
       data: { name: parsed.data.name, email: parsed.data.email, passwordHash, role: parsed.data.role, branchId },
       select: { id: true, name: true, email: true, role: true, status: true, branch: { select: { id: true, name: true, code: true } } },
     });
-    return NextResponse.json(user, { status: 201 });
+    return NextResponse.json(user, { status: 201, headers: noStore });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
       return NextResponse.json({ error: "An account already exists for this email." }, { status: 409 });
     }
-    console.error("Staff account creation failed", error);
+    console.error("Staff account creation failed.");
     return NextResponse.json({ error: "Staff account could not be created." }, { status: 500 });
   }
 }

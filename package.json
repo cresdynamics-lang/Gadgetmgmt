@@ -25,7 +25,8 @@
     "test:notifications:e2e": "node --env-file=.env --import tsx scripts/test-notifications-e2e.ts",
     "notifications:setup-push": "node --env-file=.env --import tsx scripts/setup-notification-push.ts",
     "predev": "npm run db:generate",
-    "prebuild": "npm run db:generate"
+    "prebuild": "npm run db:generate",
+    "test:access": "node --import tsx --test scripts/access.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -46,7 +47,7 @@
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.0.0",
     "web-push": "^4.0.0",
-    "zod": "^4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
@@ -69,5 +70,8 @@
     "prisma@6.19.3": true,
     "esbuild@0.28.2": true,
     "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
   }
 }

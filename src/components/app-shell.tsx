@@ -4,12 +4,12 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { ArrowDown, ArrowUpRight, Boxes, ChevronDown, CreditCard, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShoppingBag, Sparkles, UserRound, UsersRound, X, BellRing, CornerDownLeft } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Boxes, ChevronDown, CreditCard, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, UserRound, UsersRound, Wallet, X, BellRing, CornerDownLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { NotificationBell } from "@/components/notification-bell";
 import { navItems } from "@/lib/navigation";
-import { canAccessPage } from "@/lib/access";
+import { canAccessPage, sessionGrants, type AccessMap } from "@/lib/access";
 
 const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/dashboard": LayoutDashboard,
@@ -17,16 +17,18 @@ const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/inventory": Boxes,
   "/customers": UsersRound,
   "/credit": CreditCard,
+  "/layaway": Wallet,
   "/staff": UserRound,
   "/insights": Sparkles,
   "/notifications": BellRing,
   "/settings": Settings2,
+  "/access": ShieldCheck,
 };
 
-function Navigation({ pathname, role, close }: { pathname: string; role: string; close?: () => void }) {
+function Navigation({ pathname, role, grants, close }: { pathname: string; role: string; grants?: AccessMap; close?: () => void }) {
   return <nav aria-label="Main navigation" className="space-y-1.5">
     <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">Workspace</p>
-    {navItems.filter(({ href }) => canAccessPage(role, href)).map(({ label, href }) => {
+    {navItems.filter(({ href }) => canAccessPage(role, href, grants)).map(({ label, href }) => {
       const Icon = iconByHref[href] ?? Package;
       const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
       return <Link key={href} href={href} onClick={close} aria-current={active ? "page" : undefined} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200 ${active ? "bg-white text-[#12362e] shadow-[0_8px_24px_rgba(0,0,0,.15)]" : "text-white/65 hover:bg-white/[.08] hover:text-white"}`}>
@@ -51,10 +53,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const displayName = session?.user?.name ?? "Team member";
   const initials = displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   const role = session?.user.role ?? "";
+  const grants = sessionGrants(role, session?.user.pages, session?.user.capabilities);
   const commands = useMemo(() => navItems
-    .filter(({ href }) => canAccessPage(role, href))
+    .filter(({ href }) => canAccessPage(role, href, grants))
     .map((item) => ({ ...item, keywords: `${item.label} ${item.href}`.toLowerCase() }))
-    .filter((item) => item.keywords.includes(launcherQuery.trim().toLowerCase())), [role, launcherQuery]);
+    .filter((item) => item.keywords.includes(launcherQuery.trim().toLowerCase())), [role, grants, launcherQuery]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -85,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return <div className="min-h-screen bg-[#f5f4ee] text-[#202820] lg:p-3">
     <div className="mx-auto flex min-h-screen max-w-[1800px] overflow-hidden bg-[#fffefa] shadow-[0_12px_45px_rgba(38,42,31,.07)] lg:min-h-[calc(100vh-24px)] lg:rounded-[20px] lg:border lg:border-[#e9e6dc]">
-      {menuOpen && <div className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#071a16]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full w-[290px] max-w-[85vw] flex-col justify-between bg-[#102d27] p-4 text-white shadow-2xl"><div><div className="mb-8 flex items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#c7f2df] text-[#12362e]"><Package className="h-5 w-5"/></span><span className="text-base font-semibold">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><Navigation pathname={pathname} role={role} close={() => setMenuOpen(false)}/></div><div className="flex items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void signOut({ redirectTo: "/login" })} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
+      {menuOpen && <div className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#071a16]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full w-[290px] max-w-[85vw] flex-col justify-between bg-[#102d27] p-4 text-white shadow-2xl"><div><div className="mb-8 flex items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#c7f2df] text-[#12362e]"><Package className="h-5 w-5"/></span><span className="text-base font-semibold">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><Navigation pathname={pathname} role={role} grants={grants} close={() => setMenuOpen(false)}/></div><div className="flex items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void signOut({ redirectTo: "/login" })} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[var(--border)] bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-9">

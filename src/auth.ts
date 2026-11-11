@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { z } from "zod";
 
+import { readStoredGrant } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 
 if (process.env.NODE_ENV === "production") {
@@ -51,24 +52,26 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.userId = user.id;
         token.role = user.role;
         token.branchId = user.branchId;
         token.branchName = user.branchName;
       } else if (typeof token.userId === "string" && token.userId) {
-        return prisma.user.findUnique({
+        const currentUser = await prisma.user.findUnique({
           where: { id: token.userId },
           select: { role: true, status: true, branchId: true, branch: { select: { name: true } } },
-        }).then((currentUser) => {
-          if (!currentUser || currentUser.status !== "ACTIVE") return null;
-          token.role = currentUser.role;
-          token.branchId = currentUser.branchId;
-          token.branchName = currentUser.branch?.name ?? null;
-          return token;
         });
+        if (!currentUser || currentUser.status !== "ACTIVE") return null;
+        token.role = currentUser.role;
+        token.branchId = currentUser.branchId;
+        token.branchName = currentUser.branch?.name ?? null;
       }
+      const role = typeof token.role === "string" ? token.role : "";
+      const grant = await readStoredGrant(role);
+      token.pages = grant.pages;
+      token.capabilities = grant.capabilities;
       return token;
     },
     session({ session, token }) {
@@ -77,6 +80,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.role = typeof token.role === "string" ? token.role : "CASHIER";
         session.user.branchId = typeof token.branchId === "string" ? token.branchId : null;
         session.user.branchName = typeof token.branchName === "string" ? token.branchName : null;
+        session.user.pages = Array.isArray(token.pages) ? token.pages.filter((page): page is string => typeof page === "string") : [];
+        session.user.capabilities = Array.isArray(token.capabilities) ? token.capabilities.filter((capability): capability is string => typeof capability === "string") : [];
       }
       return session;
     },

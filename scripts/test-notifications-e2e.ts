@@ -263,6 +263,12 @@ async function main() {
     assert.equal((await subscriptionStatus.json()).subscribed, true);
     const foreignStatus = await sender.context.request.get(base + `/api/notifications/push?endpoint=${encodeURIComponent(subscription.endpoint)}`);
     assert.equal((await foreignStatus.json()).subscribed, false);
+    const stolen = await sender.context.request.post(base + "/api/notifications/push", { headers: { Origin: base }, data: subscription });
+    assert.equal(stolen.status(), 409);
+    assert.equal((await prisma.pushSubscription.findUnique({ where: { endpoint: subscription.endpoint } }))?.userId, cashier.id);
+    for (const endpoint of ["http://127.0.0.1/private", "https://169.254.169.254/latest/meta-data", "https://fcm.googleapis.com.evil.invalid/push"]) {
+      assert.equal((await sender.context.request.post(base + "/api/notifications/push", { headers: { Origin: base }, data: { ...subscription, endpoint } })).status(), 400);
+    }
     const pushResponse = receiver.page.waitForResponse((response) => response.url().endsWith("/api/notifications/push/test") && response.request().method() === "POST");
     await receiver.page.getByRole("button", { name: "Send test notification", exact: true }).click();
     const pushTest = await pushResponse;
@@ -305,6 +311,27 @@ async function main() {
     console.log("PASS: worker picks up sender changes without a restart; managers cannot change company settings");
     console.log("PASS: real BullMQ worker, email acceptance, retry, terminal failure and restart recovery (provider mocked)");
     await stop(worker2);
+    const privateFeed = await managerSession.context.request.get(base + "/api/notifications");
+    assert.equal(privateFeed.status(), 200);
+    const privateHistory = await privateFeed.json();
+    assert.deepEqual(privateHistory.messages, []);
+    assert.deepEqual(privateHistory.paymentReviews, []);
+    assert.match(privateFeed.headers()["cache-control"], /no-store/);
+    assert.equal((await sender.context.request.get(base + "/api/notifications/inbox?email=private@example.invalid")).status(), 400);
+    const oversized = await sender.context.request.post(base + "/api/notifications/inbox", { headers: { Origin: base, "Content-Type": "application/json" }, data: JSON.stringify({ title: "x".repeat(17000) }) });
+    assert.equal(oversized.status(), 413);
+    const malformed = await sender.context.request.post(base + "/api/notifications/inbox", { headers: { Origin: base, "Content-Type": "application/json" }, data: "{" });
+    assert.equal(malformed.status(), 400);
+    await prisma.notificationRateLimit.upsert({ where: { key: `send:${owner.id}` }, create: { key: `send:${owner.id}`, windowStart: new Date(Math.floor(Date.now() / 60000) * 60000), count: 29 }, update: { windowStart: new Date(Math.floor(Date.now() / 60000) * 60000), count: 29 } });
+    const limited = await Promise.all([1, 2].map(() => post(sender.context, { requestId: randomUUID(), userId: cashier.id, title: "Rate limit", body: "Concurrent limit check", sendNow: true })));
+    assert.deepEqual(limited.map((response) => response.status()).sort(), [201, 429]);
+    assert.ok(Number(limited.find((response) => response.status() === 429)!.headers()["retry-after"]) > 0);
+    await prisma.notificationRateLimit.deleteMany();
+    await prisma.roleEntitlement.create({ data: { role: "CASHIER", pages: ["/dashboard"], capabilities: [] } });
+    assert.equal((await receiver.context.request.get(base + "/api/notifications/inbox")).status(), 403);
+    assert.equal((await receiver.context.request.get(base + "/api/notifications/unread")).status(), 403);
+    await prisma.roleEntitlement.deleteMany({ where: { role: "CASHIER" } });
+    console.log("PASS: OWASP finance isolation, private responses, URL/body validation, concurrent rate limits, SSRF protection, subscription ownership and stored-grant revocation");
     if (process.env.NOTIFICATION_LIVE_EMAIL) {
       assert.ok(process.env.EMAIL_FROM, "Configure the actual company EMAIL_FROM before live testing");
       const companyFrom = process.env.EMAIL_FROM!;

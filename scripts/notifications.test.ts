@@ -146,3 +146,20 @@ test("notification writes accept an explicit LAN origin without trusting arbitra
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }
 });
+
+
+test("company email remains owner-only even when stored grants are manipulated", async () => {
+  const { canUseCapability } = await import("../src/lib/access");
+  assert.equal(canUseCapability("CASHIER", "companyEmailSettings", { CASHIER: { pages: ["/notifications"], capabilities: ["companyEmailSettings"] } }), false);
+  assert.equal(canUseCapability("OWNER", "companyEmailSettings", { OWNER: { pages: [], capabilities: [] } }), true);
+});
+
+test("notification history guards finance before querying and push payloads contain no message content", () => {
+  const route = readFileSync("src/app/api/notifications/route.ts", "utf8");
+  const guard = route.indexOf('if (session.user.role !== "OWNER")');
+  assert.ok(guard > 0 && guard < route.indexOf("prisma.customerNotification.findMany"));
+  const worker = readFileSync("scripts/notifications-worker.ts", "utf8");
+  const payload = worker.match(/JSON.stringify\((\{ title: "GadgetHub alert".*?\})\)/)?.[1];
+  assert.ok(payload);
+  assert.doesNotMatch(payload, /alert\.(?:body|title)|amount|profit|margin|recipient/);
+});

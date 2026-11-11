@@ -1,3 +1,4 @@
+import { pushEndpoint } from "../src/lib/push-endpoint";
 import { pushTransport } from "../src/lib/push-transport";
 import { getCompanyEmailSettings } from "../src/lib/email-settings";
 import { Queue, Worker, UnrecoverableError } from "bullmq";
@@ -67,6 +68,7 @@ const worker = new Worker(notificationQueueName, async (job) => {
       let delivered = 0;
       for (const subscription of alert.user.pushSubscriptions) {
         try {
+          if (!pushEndpoint.safeParse(subscription.endpoint).success) throw new Error("Invalid browser push endpoint");
           // Show generic lock-screen content; full message requires app authentication.
           await pushTransport.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({ title: "GadgetHub alert", body: "You have a new message. Open Messages & alerts to read it.", tag: alert.id }), { timeout: 15_000, TTL: 3600 });
           delivered += 1;

@@ -3,13 +3,19 @@ import { notificationApi } from "@/lib/notification-api";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { prisma } from "@/lib/prisma";
 
-async function handleGET() {
+async function handleGET(request: Request) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!canUseCapability(session.user.role, "notifications")) return NextResponse.json({ error: "Your role cannot access message delivery." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "notifications"))) return NextResponse.json({ error: "Your role cannot access message delivery." }, { status: 403 });
+  // Customer reminders and reconciliation records contain owner-only financial data.
+  // Staff messaging remains available through the independently authorized inbox.
+  if (session.user.role !== "OWNER") return NextResponse.json({ messages: [], paymentReviews: [], counts: { queued: 0, sent: 0, failed: 0 }, jobRuns: [], automation: null, jobHealthFresh: false });
   const scope = session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" };
   const [messages, queued, sent, failed, jobRuns] = await Promise.all([
     prisma.customerNotification.findMany({ where: scope, orderBy: { createdAt: "desc" }, take: 100 }),
@@ -47,4 +53,4 @@ async function handleGET() {
   return NextResponse.json({ messages, paymentReviews, counts: { queued, sent, failed }, jobRuns: visibleJobRuns, automation, jobHealthFresh });
 }
 
-export async function GET() { return notificationApi(() => handleGET()); }
+export async function GET(request: Request) { return notificationApi(() => handleGET(request), request); }

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { hasAnyQuery } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 const accessSchema = z.object({
@@ -10,10 +11,13 @@ const accessSchema = z.object({
   status: z.enum(["ACTIVE", "OFF_SHIFT", "SUSPENDED"]).optional(),
 }).refine((data) => data.role !== undefined || data.status !== undefined);
 
+const noStore = { "Cache-Control": "no-store" };
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (hasAnyQuery(request.url)) return NextResponse.json({ error: "Staff requests do not accept account details or other query parameters." }, { status: 400, headers: noStore });
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (session.user.role !== "OWNER") return NextResponse.json({ error: "Only an administrator can change account access." }, { status: 403 });
+  if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
+  if (session.user.role !== "OWNER") return NextResponse.json({ error: "Only an administrator can change account access." }, { status: 403, headers: noStore });
 
   const parsed = accessSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid role or account status." }, { status: 400 });
@@ -49,7 +53,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
       return NextResponse.json({ error: "Another administrator changed account access. Refresh and retry." }, { status: 409 });
     }
-    console.error("Staff access update failed", error);
+    console.error("Staff access update failed.");
     return NextResponse.json({ error: "Staff access could not be updated." }, { status: 500 });
   }
 }

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { canUseCapability } from "@/lib/access";
+import { canUseCapability } from "@/lib/entitlements";
+import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { prisma } from "@/lib/prisma";
 
 const policySchema = z.object({
@@ -16,21 +17,25 @@ const policySchema = z.object({
   ownerEscalationDays: z.number().int().min(1).max(90),
 }).strict().refine((policy) => policy.ownerEscalationDays >= policy.managerEscalationDays, { path: ["ownerEscalationDays"], message: "Owner escalation must be on or after manager escalation." });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can view Lipa policy." }, { status: 403 });
-  if (!canUseCapability(session.user.role, "credit")) return NextResponse.json({ error: "Your role cannot view Lipa policy." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot view Lipa policy." }, { status: 403 });
   const branches = await prisma.branch.findMany({ where: session.user.role === "OWNER" ? { isActive: true } : { id: session.user.branchId ?? "" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const policies = await prisma.creditPolicy.findMany({ where: { branchId: { in: branches.map((branch) => branch.id) } } });
   return NextResponse.json({ branches, policies });
 }
 
 export async function PUT(request: Request) {
+  const rejected = rejectSensitiveQuery(request);
+  if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can change Lipa policy." }, { status: 403 });
-  if (!canUseCapability(session.user.role, "credit")) return NextResponse.json({ error: "Your role cannot change Lipa policy." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot change Lipa policy." }, { status: 403 });
   const parsed = policySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter valid policy values." }, { status: 400 });
   const { branchId, ...data } = parsed.data;
