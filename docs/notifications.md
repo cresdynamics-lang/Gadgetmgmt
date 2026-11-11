@@ -128,3 +128,9 @@ findings affecting validation and Prisma configuration without a Prisma major up
 Production responses include HSTS; HTTPS/TLS termination must still be configured by
 hosting. The known Next.js advisory is deferred to the separate upgrade branch and
 continues to block a production release under issue #3.
+
+The production deployment workflow runs the access/notification regression checks and
+blocks high/critical production dependency advisories before building or copying files.
+Deploy SSH credentials are scoped to the copy step, away from package installation and
+build scripts. Until the separate Next.js security upgrade lands, the audit gate is
+expected to block production deployment even though the feature may be merged to main.
