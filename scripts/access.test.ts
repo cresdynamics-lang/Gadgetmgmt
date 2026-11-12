@@ -138,6 +138,9 @@ test("auth redirects use the public host and Compose clears localhost auth URLs"
   assert.match(compose, /AUTH_URL:\s*""/);
   const start = readFileSync(path.join(root, "scripts/production-remote-start.sh"), "utf8");
   assert.match(start, /wait_for_nodejs_ready/);
+  assert.match(start, /existing_base/);
+  assert.match(start, /desired_base/);
+  assert.match(start, /Skip recreate when a previous deploy/);
 });
 
 test("each editable page is refused on the server when it is not granted", () => {
