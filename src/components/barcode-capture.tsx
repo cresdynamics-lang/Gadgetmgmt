@@ -249,14 +249,14 @@ export function BarcodeCapture({ onDetected, variant = "buffer" }: { onDetected?
   }
 
   return (
-    <section aria-label="Barcode image capture" className="mb-5 space-y-3 rounded-xl border border-[#dfe4df] p-4">
+    <section aria-label="Barcode image capture" className="mb-5 space-y-3 rounded-xl border border-[#e6e6e2] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h4 className="text-sm font-semibold">{field ? "Scan a code" : "Barcode camera"}</h4><p className="mt-1 text-xs text-[#69746c]">{field ? "Point at a barcode or QR code. The serial number or IMEI is filled in." : "Capture a barcode or QR code. A serial number is read automatically."}</p></div>
-        <button type="button" onClick={() => { setReady(false); setError(""); lastDetectedRef.current = ""; setOpen(!open); }} className="inline-flex items-center gap-2 rounded-lg bg-[#173a2b] px-3.5 py-2.5 text-sm font-semibold text-white"><ScanBarcode className="h-4 w-4" />{open ? "Close camera" : "Scan code"}</button>
+        <div><h4 className="text-sm font-semibold">{field ? "Scan a code" : "Barcode camera"}</h4><p className="mt-1 text-xs text-[#111111]">{field ? "Point at a barcode or QR code. The serial number or IMEI is filled in." : "Capture a barcode or QR code. A serial number is read automatically."}</p></div>
+        <button type="button" onClick={() => { setReady(false); setError(""); lastDetectedRef.current = ""; setOpen(!open); }} className="inline-flex items-center gap-2 rounded-lg bg-[#0a0a0a] px-3.5 py-2.5 text-sm font-semibold text-white"><ScanBarcode className="h-4 w-4" />{open ? "Close camera" : "Scan code"}</button>
       </div>
       {open ? <div className="space-y-3">
         {devices.length > 1 ? <label className="block text-xs font-medium">Camera
-          <select value={deviceId} onChange={(event) => { setReady(false); setError(""); setDeviceId(event.target.value); }} className="ml-2 rounded border border-[#cbd5cc] bg-white p-2">
+          <select value={deviceId} onChange={(event) => { setReady(false); setError(""); setDeviceId(event.target.value); }} className="ml-2 rounded border border-[#e6e6e2] bg-white p-2">
             <option value="">Automatic (prefer rear camera)</option>
             {devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
           </select>
@@ -264,8 +264,8 @@ export function BarcodeCapture({ onDetected, variant = "buffer" }: { onDetected?
         <div className="relative overflow-hidden rounded-lg bg-black">
           <video ref={videoRef} autoPlay muted playsInline aria-label="Live barcode camera preview" className="block h-64 w-full object-cover sm:h-80" />
           {ready ? <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div style={{ width: "72%", aspectRatio: "1" }} className={`relative max-h-[86%] rounded-lg border-2 ${capturing ? "border-emerald-300" : "border-white/90"} shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]`}>
-              <div className="absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.9)]" />
+            <div style={{ width: "72%", aspectRatio: "1" }} className={`relative max-h-[86%] rounded-lg border-2 ${capturing ? "border-emerald-300" : "border-white/90"} shadow-[0_0_0_9999px_rgb(0_0_0/0.35)]`}>
+              <div className="absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 bg-red-400 shadow-[0_0_10px_rgb(179 38 30 / 0.9)]" />
             </div>
           </div> : null}
           {!ready ? <p role="status" className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-white">{error || "Starting camera… Allow camera access when prompted."}</p> : null}
@@ -283,35 +283,35 @@ export function BarcodeCapture({ onDetected, variant = "buffer" }: { onDetected?
             const detail = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
             setError(`Video playback failed — ${detail}`);
           }
-        }} className="mr-4 text-xs font-semibold text-[#284a34]">Start preview</button> : null}
-        <button type="button" onClick={() => { setReady(false); setError(""); setAttempt((current) => current + 1); }} className="text-xs font-semibold text-[#284a34]">Retry camera</button>
-        <p role="status" className="text-xs text-[#69746c]">{captures.length >= MAX_CAPTURES && !field ? "Buffer full. Remove images to continue scanning." : ready ? scanStatus : "Center a barcode or QR code in the square. A serial number is filled in automatically."}</p>
-        {field ? null : <button type="button" onClick={() => void captureImage()} disabled={!ready || capturing || captures.length >= MAX_CAPTURES} className="inline-flex items-center gap-2 rounded-lg border border-[#cbd5cc] px-3.5 py-2 text-sm font-semibold disabled:opacity-40"><Camera className="h-4 w-4" />{capturing ? "Capturing…" : "Capture image"}</button>}
+        }} className="mr-4 text-xs font-semibold text-[#111111]">Start preview</button> : null}
+        <button type="button" onClick={() => { setReady(false); setError(""); setAttempt((current) => current + 1); }} className="text-xs font-semibold text-[#111111]">Retry camera</button>
+        <p role="status" className="text-xs text-[#111111]">{captures.length >= MAX_CAPTURES && !field ? "Buffer full. Remove images to continue scanning." : ready ? scanStatus : "Center a barcode or QR code in the square. A serial number is filled in automatically."}</p>
+        {field ? null : <button type="button" onClick={() => void captureImage()} disabled={!ready || capturing || captures.length >= MAX_CAPTURES} className="inline-flex items-center gap-2 rounded-lg border border-[#e6e6e2] px-3.5 py-2 text-sm font-semibold disabled:opacity-40"><Camera className="h-4 w-4" />{capturing ? "Capturing…" : "Capture image"}</button>}
       </div> : null}
       {field ? null : <label
         onDragOver={(event) => { event.preventDefault(); if (!capturing && captures.length < MAX_CAPTURES) setDragging(true); }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
         onDrop={(event) => { event.preventDefault(); setDragging(false); if (!capturing) addPhotos(event.dataTransfer.files); }}
-        className={`relative flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition focus-within:ring-2 focus-within:ring-[#5d9275] ${capturing || captures.length >= MAX_CAPTURES ? "cursor-not-allowed border-[#d6ddd6] bg-[#f7f8f5] opacity-50" : dragging ? "cursor-pointer border-[#397a67] bg-[#e7f1e9]" : "cursor-pointer border-[#cbd5cc] bg-[#f7faf6] hover:border-[#397a67] hover:bg-[#edf4ef]"}`}
+        className={`relative flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition focus-within:ring-2 focus-within:ring-[#6b6b66] ${capturing || captures.length >= MAX_CAPTURES ? "cursor-not-allowed border-[#e6e6e2] bg-[#f4f4f2] opacity-50" : dragging ? "cursor-pointer border-[#0a7d56] bg-[#e6e6e2]" : "cursor-pointer border-[#e6e6e2] bg-[#f4f4f2] hover:border-[#0a7d56] hover:bg-[#f4f4f2]"}`}
       >
-        <Upload aria-hidden="true" className="h-6 w-6 text-[#45755d]" />
-        <span className="text-sm font-semibold text-[#284a34]">Drop files here</span>
-        <span className="text-xs text-[#69746c]">or click to browse · Images only · Up to {MAX_CAPTURES} images</span>
+        <Upload aria-hidden="true" className="h-6 w-6 text-[#111111]" />
+        <span className="text-sm font-semibold text-[#111111]">Drop files here</span>
+        <span className="text-xs text-[#111111]">or click to browse · Images only · Up to {MAX_CAPTURES} images</span>
         <input type="file" accept="image/*" multiple aria-label="Choose barcode images" disabled={captures.length >= MAX_CAPTURES || capturing} onChange={(event) => { addPhotos(event.target.files); event.target.value = ""; }} className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" />
       </label>}
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
-      {field ? null : <p role="status" className="text-xs text-[#69746c]">{captures.length}/{MAX_CAPTURES} images buffered · {(captures.reduce((bytes, capture) => bytes + capture.file.size, 0) / 1024 / 1024).toFixed(1)} MB. Images stay in memory until removed or this form is closed.</p>}
+      {field ? null : <p role="status" className="text-xs text-[#111111]">{captures.length}/{MAX_CAPTURES} images buffered · {(captures.reduce((bytes, capture) => bytes + capture.file.size, 0) / 1024 / 1024).toFixed(1)} MB. Images stay in memory until removed or this form is closed.</p>}
       {!field && captures.length ? <>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {captures.map((capture, index) => <div key={capture.previewUrl} className="space-y-2 rounded-lg border border-[#dfe4df] p-2">
+          {captures.map((capture, index) => <div key={capture.previewUrl} className="space-y-2 rounded-lg border border-[#e6e6e2] p-2">
             {/* Object URLs refer to local, temporary camera captures. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={capture.previewUrl} alt={`Buffered barcode capture ${index + 1}`} className="h-24 w-full rounded object-contain" />
-            {capture.barcode ? <p className="break-all font-mono text-xs text-[#284a34]">{capture.barcode.value}</p> : null}
+            {capture.barcode ? <p className="break-all font-mono text-xs text-[#111111]">{capture.barcode.value}</p> : null}
             <button type="button" onClick={() => removeCapture(capture)} aria-label={`Remove barcode capture ${index + 1}`} className="text-xs font-medium text-red-700">Remove image</button>
           </div>)}
         </div>
-        <button type="button" onClick={() => removeCapture()} className="text-xs font-semibold text-[#284a34]">Clear buffer</button>
+        <button type="button" onClick={() => removeCapture()} className="text-xs font-semibold text-[#111111]">Clear buffer</button>
       </> : null}
     </section>
   );

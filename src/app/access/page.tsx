@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
-import { AppShell } from "@/components/app-shell";
 import { EntitlementEditor } from "./entitlement-editor";
 
 export const instant = false;
@@ -12,8 +11,6 @@ export default async function AccessPage() {
   if (session.user.role !== "OWNER") notFound();
 
   return (
-    <AppShell>
-      <EntitlementEditor />
-    </AppShell>
+    <EntitlementEditor />
   );
 }

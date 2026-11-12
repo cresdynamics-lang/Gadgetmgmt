@@ -22,9 +22,14 @@ const root = path.resolve(import.meta.dirname, "..");
 test("keeps the original role entitlements as defaults", () => {
   const grants = defaultAccessMap();
   assert.deepEqual(grants.OWNER.pages, ["*"]);
-  assert.deepEqual(grants.CASHIER.pages, ["/dashboard", "/sales", "/customers", "/credit", "/notifications"]);
+  assert.deepEqual(grants.CASHIER.pages, ["/dashboard", "/sales", "/deliveries", "/devices", "/repairs", "/customers", "/credit", "/performance", "/assistant", "/notifications"]);
   assert.deepEqual(grants.CASHIER.capabilities, ["sales", "customers", "credit"]);
-  assert.deepEqual(grants.INVENTORY_LEAD.pages, ["/dashboard", "/inventory", "/notifications"]);
+  assert.deepEqual(grants.INVENTORY_LEAD.pages, ["/dashboard", "/inventory", "/planner", "/devices", "/repairs", "/assistant", "/notifications"]);
+  assert.equal(canAccessPage("CASHIER", "/finance"), false);
+  assert.equal(canAccessPage("OWNER", "/finance"), true);
+  assert.equal(canAccessPage("CASHIER", "/deliveries"), true);
+  assert.equal(canAccessPage("INVENTORY_LEAD", "/planner"), true);
+  assert.deepEqual(buildAccessMap([{ role: "CASHIER", pages: ["/dashboard", "/sales", "/customers", "/credit", "/notifications"], capabilities: ["sales", "customers", "credit"] }]).CASHIER.pages, grants.CASHIER.pages);
   assert.equal(grants.BRANCH_MANAGER.capabilities.includes("layaway"), true);
   assert.equal(grants.BRANCH_MANAGER.pages.includes("/layaway"), false);
   assert.equal(canAccessPage("CASHIER", "/staff"), false);
@@ -73,6 +78,11 @@ test("rejects entitlement updates that widen owner-only access", () => {
     CASHIER: { pages: ["/dashboard", "/insights"], capabilities: ["sales"] },
   });
   assert.equal(insights.ok, false);
+  const finance = assertEntitlementFloors({
+    ...baseline,
+    CASHIER: { pages: ["/dashboard", "/finance"], capabilities: ["sales"] },
+  });
+  assert.equal(finance.ok, false);
 
   const unknown = parseEntitlementUpdate({
     grants: Object.entries(baseline).map(([role, grant]) => ({ role, pages: [...grant.pages, "/secret"], capabilities: [...grant.capabilities] })),
@@ -93,6 +103,8 @@ test("keeps staff role assignment from escalating", () => {
 test("rejects passwords and user details in urls", () => {
   assert.equal(hasSensitiveQuery(new URLSearchParams("callbackUrl=/dashboard")), false);
   assert.equal(hasSensitiveQuery(new URLSearchParams("branchId=cm123")), false);
+  assert.equal(hasSensitiveQuery(new URLSearchParams("customer=cm123")), true);
+  assert.equal(hasSensitiveQuery(new URLSearchParams("account=cm123")), true);
   assert.equal(hasSensitiveQuery(new URLSearchParams("password=secret")), true);
   assert.equal(hasSensitiveQuery(new URLSearchParams("Email=person@example.com")), true);
   assert.equal(hasSensitiveQuery(new URLSearchParams("user_id=123")), true);
@@ -110,7 +122,7 @@ test("rejects passwords and user details in urls", () => {
 });
 
 test("each editable page is refused on the server when it is not granted", () => {
-  const pages = ["/dashboard", "/sales", "/inventory", "/customers", "/credit", "/layaway", "/staff", "/insights", "/notifications", "/settings", "/access"];
+  const pages = ["/dashboard", "/sales", "/deliveries", "/inventory", "/planner", "/devices", "/repairs", "/partners", "/customers", "/credit", "/layaway", "/finance", "/expenses", "/performance", "/assistant", "/insights", "/staff", "/activity", "/notifications", "/settings", "/access"];
   for (const page of pages) {
     const layout = readFileSync(path.join(root, "src/app", page.slice(1), "layout.tsx"), "utf8");
     assert.match(layout, new RegExp(`requirePage\\("${page}"\\)`));

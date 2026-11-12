@@ -6,7 +6,7 @@ import { notifyInboxChanged, registerNotificationWorker } from "@/lib/notificati
 
 type InstallPrompt = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 type PushState = { subscribed: boolean; publicKey: string | null };
-const button = "rounded-lg border border-[#dce6dd] px-3 py-2 text-xs font-semibold text-[#365b43] disabled:opacity-50";
+const button = "rounded-lg border border-[#e6e6e2] px-3 py-2 text-xs font-semibold text-[#111111] disabled:opacity-50";
 
 export function PwaControls() {
   const [install, setInstall] = useState<InstallPrompt | null>(null);
@@ -90,10 +90,10 @@ export function PwaControls() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not send a test notification."); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded-xl border border-[#dce6dd] bg-[#f8fbf8] p-4" aria-labelledby="device-notifications-heading">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 id="device-notifications-heading" className="text-sm font-semibold text-[#304235]">In-app &amp; device notifications</h4><p className="mt-1 text-xs text-[#69766c]">In-app notifications are always on: use the bell on any page. No email or installation is required.</p></div>{installed ? <span className="text-xs font-semibold text-[#365b43]">App installed</span> : <button type="button" onClick={() => void installApp().catch(() => setError("Could not open installation. Use your browser's Install app menu."))} className={button}>Install app</button>}</div>
-    <p className="text-xs text-[#69766c]">{reason}</p>
+  return <section className="space-y-3 rounded-xl border border-[#e6e6e2] bg-[#ffffff] p-4" aria-labelledby="device-notifications-heading">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 id="device-notifications-heading" className="text-sm font-semibold text-[#111111]">In-app &amp; device notifications</h4><p className="mt-1 text-xs text-[#111111]">In-app notifications are always on: use the bell on any page. No email or installation is required.</p></div>{installed ? <span className="text-xs font-semibold text-[#111111]">App installed</span> : <button type="button" onClick={() => void installApp().catch(() => setError("Could not open installation. Use your browser's Install app menu."))} className={button}>Install app</button>}</div>
+    <p className="text-xs text-[#111111]">{reason}</p>
     <div className="flex flex-wrap gap-2"><button type="button" disabled={!supported || !push.publicKey || busy} onClick={() => void togglePush()} className={button}>{busy ? "Updating…" : push.subscribed ? "Disable browser notifications" : "Enable browser notifications"}</button>{push.subscribed ? <button type="button" disabled={busy} onClick={() => void testPush()} className={button}>Send test notification</button> : null}</div>
-    {message ? <p role="status" className="text-xs text-[#365b43]">{message}</p> : null}{error ? <p role="alert" className="text-xs text-red-700">{error}</p> : null}
+    {message ? <p role="status" className="text-xs text-[#111111]">{message}</p> : null}{error ? <p role="alert" className="text-xs text-red-700">{error}</p> : null}
   </section>;
 }

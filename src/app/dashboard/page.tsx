@@ -1,7 +1,6 @@
-import { AppShell } from "@/components/app-shell";
 import { MetricCard } from "@/components/metric-card";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CirclePlus, CreditCard, PackageCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, BellRing, CalendarDays, CirclePlus, CreditCard, PackageCheck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { canAccessPage } from "@/lib/access";
 import { getAccessMap } from "@/lib/entitlements";
@@ -17,6 +16,7 @@ export default async function DashboardPage() {
   const session = await requirePage("/dashboard");
   const grants = await getAccessMap();
   const role = session?.user.role ?? "";
+  const finance = role === "OWNER";
   const branchId = session?.user.branchId;
   const scope = session?.user.role === "OWNER" ? {} : { branchId: branchId ?? "" };
   const now = new Date();
@@ -83,21 +83,30 @@ export default async function DashboardPage() {
       label: day.toLocaleDateString("en-KE", { weekday: "short", timeZone: "Africa/Nairobi" }),
       isToday: dateKey(day) === dateKey(now),
       total: currentWeekSales.filter((sale) => sale.createdAt >= day && sale.createdAt < nextDay).reduce((sum, sale) => sum + sale.total, 0),
+      count: currentWeekSales.filter((sale) => sale.createdAt >= day && sale.createdAt < nextDay).length,
     };
   });
   const maxDaily = Math.max(1, ...dailyTotals.map((day) => day.total));
   const weekChange = previousTotal ? `${Math.round(((weekTotal - previousTotal) / previousTotal) * 100)}% vs prior week` : "No prior-week baseline";
   const formattedDate = now.toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Nairobi" });
+  const branchLabel = session?.user.branchName ?? (session?.user.role === "OWNER" ? "All branches" : "Branch not assigned");
+  const nextSteps = [
+    canAccessPage(role, "/notifications", grants) && paymentReviewCount > 0 ? { href: "/notifications", title: `${paymentReviewCount} payment ${paymentReviewCount === 1 ? "check" : "checks"} to review`, detail: "Match the M-Pesa receipts before they are applied." } : null,
+    canAccessPage(role, "/credit", grants) && overduePlanCount > 0 ? { href: "/credit", title: `${overduePlanCount} overdue Lipa ${overduePlanCount === 1 ? "plan" : "plans"}`, detail: "Open the collection board and record a payment or place a call." } : null,
+    canAccessPage(role, "/inventory", grants) && lowStock.length > 0 ? { href: "/inventory", title: `${lowStock.length} stock ${lowStock.length === 1 ? "item needs" : "items need"} a reorder`, detail: `${lowStock[0].product.name} is the thinnest on hand.` } : null,
+  ].filter((step) => step !== null);
+  const nextStep = nextSteps[0] ?? (canAccessPage(role, "/sales", grants) ? { href: "/sales", title: todaySales.length ? `${todaySales.length} ${todaySales.length === 1 ? "sale" : "sales"} recorded today` : "No sales yet today", detail: finance && todayTotal ? `${money(todayTotal)} so far. Start the next sale.` : "Start the next sale." } : null);
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
-        <section className="dashboard-welcome relative overflow-hidden rounded-[24px] bg-[#12372d] px-6 py-7 text-white shadow-[0_18px_42px_rgba(18,55,45,.17)] sm:px-8 sm:py-8">
-          <div className="pointer-events-none absolute -right-14 -top-36 h-[390px] w-[390px] rounded-full border border-[#d4c29d]/[.12]"/><div className="pointer-events-none absolute -right-2 -top-24 h-[300px] w-[300px] rounded-full border border-white/[.08]"/>
-          <div className="relative flex flex-wrap items-end justify-between gap-6">
-            <div className="max-w-xl"><h2 className="mt-4 text-[28px] font-semibold leading-tight tracking-[-.045em] sm:text-[34px]">A good day to make<br className="hidden sm:block"/> good things happen.</h2><p className="mt-2 text-sm text-white/60">{session?.user.branchName ?? (session?.user.role === "OWNER" ? "All branches" : "Branch not assigned")} <span className="mx-1.5 text-white/30">·</span> {todaySales.length} sales captured today</p></div>
-            <div className="flex flex-wrap items-center gap-3"><time dateTime={now.toISOString()} className="inline-flex items-center gap-2 rounded-xl border border-white/[.12] bg-white/[.06] px-3.5 py-2.5 text-xs font-medium text-white/75"><CalendarDays className="h-4 w-4 text-[#9bd5b2]"/>{formattedDate}</time>{canAccessPage(role, "/sales", grants) ? <Link href="/sales" className="inline-flex items-center gap-2 rounded-xl bg-[#c8f0d8] px-4 py-2.5 text-xs font-semibold text-[#163a2c] shadow-sm transition hover:bg-white"><CirclePlus className="h-4 w-4"/>Open point of sale<ArrowUpRight className="h-3.5 w-3.5"/></Link> : null}</div>
+        <section className="dashboard-welcome flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e6e6e2] bg-white px-4 py-3 sm:px-5" aria-label="Next step">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#6b6b66]"><time dateTime={now.toISOString()}>{formattedDate}</time> · {branchLabel}</p>
+            <h2 className="mt-1 text-base font-semibold text-[#111111]">{nextStep?.title ?? "Nothing is waiting"}</h2>
+            <p className="mt-0.5 text-xs text-[#6b6b66]">{nextStep?.detail ?? "The stock, Lipa, and payment checks you can open are clear."}{nextSteps.length > 1 ? ` ${nextSteps.length - 1} more ${nextSteps.length === 2 ? "item is" : "items are"} on the action desk.` : ""}</p>
           </div>
+          {nextStep ? <Link href={nextStep.href} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[#0a7d56] px-4 py-2.5 text-xs font-semibold text-white">{nextStep.href === "/sales" ? "Start a sale" : "Open"}<ArrowRight className="h-3.5 w-3.5"/></Link> : null}
         </section>
 
         <section aria-label="Quick actions" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -106,62 +115,62 @@ export default async function DashboardPage() {
             { href: "/inventory", icon: PackageCheck, title: "Receive stock", detail: "Add goods to a branch" },
             { href: "/customers", icon: CreditCard, title: "Customer accounts", detail: "Find a customer or Lipa plan" },
             { href: "/credit", icon: CalendarDays, title: "Collect a payment", detail: "Open the Lipa collection board" },
-          ].filter(({ href }) => canAccessPage(role, href, grants)).map(({ href, icon: Icon, title, detail }) => <Link key={href} href={href} className="dashboard-shortcut group flex min-h-24 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-md"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] transition group-hover:scale-105"><Icon className="h-5 w-5"/></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#20242b]">{title}</span><span className="mt-1 block text-xs text-[var(--muted)]">{detail}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#a3a9b1] transition group-hover:translate-x-1 group-hover:text-[var(--accent)]"/></Link>)}
+          ].filter(({ href }) => canAccessPage(role, href, grants)).map(({ href, icon: Icon, title, detail }) => <Link key={href} href={href} className="dashboard-shortcut group flex min-h-24 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-md"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] transition group-hover:scale-105"><Icon className="h-5 w-5"/></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#0a0a0a]">{title}</span><span className="mt-1 block text-xs text-[var(--muted)]">{detail}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#6b6b66] transition group-hover:translate-x-1 group-hover:text-[var(--accent)]"/></Link>)}
         </section>
 
         <div className="dashboard-metrics grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Sales today" value={money(todayTotal)} delta={`${todaySales.length} transactions`} tone="green" />
-          <MetricCard label="Sales · 7 days" value={money(weekTotal)} delta={weekChange} tone={weekTotal >= previousTotal ? "green" : "amber"} />
+          <MetricCard label="Sales today" value={finance ? money(todayTotal) : String(todaySales.length)} delta={finance ? `${todaySales.length} transactions` : "Transactions · revenue stays with the owner"} tone="green" />
+          <MetricCard label="Sales · 7 days" value={finance ? money(weekTotal) : String(currentWeekSales.length)} delta={finance ? weekChange : "Transaction count · revenue stays with the owner"} tone={weekTotal >= previousTotal ? "green" : "amber"} />
           <MetricCard label="Units on hand" value={units.toLocaleString("en-KE")} delta={`${inventory.length} stocked products`} tone="neutral" />
           <MetricCard label="Reorder attention" value={String(lowStock.length)} delta={`${monitoredStockCount} products have a reorder point`} tone={lowStock.length ? "amber" : "green"} />
         </div>
 
-        <section aria-labelledby="action-desk-heading" className="dashboard-action-desk overflow-hidden rounded-[18px] border border-[#e6e8df] bg-white shadow-[0_3px_14px_rgba(42,46,34,.03)]">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#edf0e9] px-4 py-3.5 sm:px-5"><div><p className="text-[9px] font-semibold uppercase tracking-[.17em] text-[#839084]">A clear next step</p><h3 id="action-desk-heading" className="mt-1 text-sm font-semibold text-[#2e4034]">Today’s action desk</h3></div><span className="rounded-full bg-[#f5f7f2] px-2.5 py-1 text-[9px] font-medium text-[#7b877d]">Live from this branch</span></div>
-          <div className="grid divide-y divide-[#edf0e9] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3">
-            {canAccessPage(role, "/inventory", grants) ? <Link href="/inventory" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${lowStock.length ? "bg-[#fff2e8] text-[#a15d3d]" : "bg-[#eaf4eb] text-[#477452]"}`}>{lowStock.length ? <AlertTriangle className="h-4 w-4"/> : <PackageCheck className="h-4 w-4"/>}</span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 text-xs font-semibold text-[#344638]">{lowStock.length ? `${lowStock.length} stock items need attention` : "No configured reorder alerts"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{lowStock.length ? "Review quantities and reorder points" : `${monitoredStockCount} products monitored · set a reorder point in inventory`}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link> : null}
-            {canAccessPage(role, "/credit", grants) ? <Link href="/credit" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${overduePlanCount ? "bg-[#fff0e8] text-[#a15d3d]" : "bg-[#f3f3eb] text-[#81764f]"}`}><CreditCard className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#344638]">{overduePlanCount ? `${overduePlanCount} overdue Lipa plans` : "Collections are on track"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{overduePlanCount ? "Review balances and follow-up status" : "Open Lipa Mdogo Mdogo"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link> : null}
-            {canAccessPage(role, "/notifications", grants) ? <Link href="/notifications" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#fafbf8] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${paymentReviewCount ? "bg-[#fff0e8] text-[#a15d3d]" : "bg-[#edf3f1] text-[#55746a]"}`}><BellRing className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#344638]">{paymentReviewCount ? `${paymentReviewCount} payment checks need review` : "Payment messages are clear"}</span><span className="mt-1 block text-[10px] text-[#828b81]">{paymentReviewCount ? "Resolve unmatched M-Pesa confirmations" : "Open messages and delivery activity"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#9aa69d] transition group-hover:translate-x-0.5 group-hover:text-[#39724f]"/></Link> : null}
+        <section aria-labelledby="action-desk-heading" className="dashboard-action-desk overflow-hidden rounded-[18px] border border-[#e6e6e2] bg-white shadow-[0_3px_14px_rgb(0_0_0/.03)]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e6e6e2] px-4 py-3.5 sm:px-5"><div><p className="text-[9px] font-semibold uppercase tracking-[.17em] text-[#6b6b66]">A clear next step</p><h3 id="action-desk-heading" className="mt-1 text-sm font-semibold text-[#111111]">Today’s action desk</h3></div><span className="rounded-full bg-[#f4f4f2] px-2.5 py-1 text-[9px] font-medium text-[#6b6b66]">Live from this branch</span></div>
+          <div className="grid divide-y divide-[#e6e6e2] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-3">
+            {canAccessPage(role, "/inventory", grants) ? <Link href="/inventory" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#ffffff] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${lowStock.length ? "bg-[#fdf3df] text-[#8a5a12]" : "bg-[#e5f5ee] text-[#111111]"}`}>{lowStock.length ? <AlertTriangle className="h-4 w-4"/> : <PackageCheck className="h-4 w-4"/>}</span><span className="min-w-0 flex-1"><span className="flex items-center gap-2 text-xs font-semibold text-[#111111]">{lowStock.length ? `${lowStock.length} stock items need attention` : "No configured reorder alerts"}</span><span className="mt-1 block text-[10px] text-[#6b6b66]">{lowStock.length ? "Review quantities and reorder points" : `${monitoredStockCount} products monitored · set a reorder point in inventory`}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#6b6b66] transition group-hover:translate-x-0.5 group-hover:text-[#0a7d56]"/></Link> : null}
+            {canAccessPage(role, "/credit", grants) ? <Link href="/credit" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#ffffff] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${overduePlanCount ? "bg-[#fdf3df] text-[#8a5a12]" : "bg-[#f4f4f2] text-[#8a5a12]"}`}><CreditCard className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#111111]">{overduePlanCount ? `${overduePlanCount} overdue Lipa plans` : "Collections are on track"}</span><span className="mt-1 block text-[10px] text-[#6b6b66]">{overduePlanCount ? "Review balances and follow-up status" : "Open Lipa Mdogo Mdogo"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#6b6b66] transition group-hover:translate-x-0.5 group-hover:text-[#0a7d56]"/></Link> : null}
+            {canAccessPage(role, "/notifications", grants) ? <Link href="/notifications" className="group flex items-center gap-3 px-4 py-4 transition hover:bg-[#ffffff] sm:px-5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${paymentReviewCount ? "bg-[#fdf3df] text-[#8a5a12]" : "bg-[#f4f4f2] text-[#111111]"}`}><BellRing className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#111111]">{paymentReviewCount ? `${paymentReviewCount} payment checks need review` : "Payment messages are clear"}</span><span className="mt-1 block text-[10px] text-[#6b6b66]">{paymentReviewCount ? "Resolve unmatched M-Pesa confirmations" : "Open messages and delivery activity"}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-[#6b6b66] transition group-hover:translate-x-0.5 group-hover:text-[#0a7d56]"/></Link> : null}
           </div>
         </section>
 
-        <AiBriefing configured={Boolean(process.env.OPENAI_API_KEY)} />
+        {role === "OWNER" || role === "BRANCH_MANAGER" ? <AiBriefing configured={Boolean(process.env.OPENAI_API_KEY)} /> : null}
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
           <section className="dashboard-panel dashboard-chart">
-            <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><div><h3 className="text-sm font-semibold">Sales activity</h3><p className="mt-1 text-xs text-[#69746c]">Daily revenue · last 7 days</p></div><span className="text-sm font-semibold">{money(weekTotal)}</span></div>
+            <div className="flex items-center justify-between border-b border-[#e6e6e2] px-4 py-3.5"><div><h3 className="text-sm font-semibold">Sales activity</h3><p className="mt-1 text-xs text-[#111111]">{finance ? "Daily revenue · last 7 days" : "Daily transactions · last 7 days"}</p></div><span className="text-sm font-semibold">{finance ? money(weekTotal) : currentWeekSales.length}</span></div>
             <div className="grid h-52 grid-cols-7 gap-3 px-5 pb-4 pt-5 sm:gap-5">
-              {dailyTotals.map((day) => <div key={day.label} className="group flex min-w-0 flex-col items-center justify-end gap-2"><span className={`truncate text-[10px] tabular-nums ${day.isToday ? "font-bold text-[#347c52]" : "text-[#9aa59d]"}`}>{day.total ? money(day.total).replace("KES ", "") : "—"}</span><div className="flex h-32 w-full items-end overflow-hidden rounded-t-md bg-[#f4f7f4]"><div title={money(day.total)} className={`w-full rounded-t-md transition-all duration-500 group-hover:brightness-110 ${day.isToday ? "bg-gradient-to-t from-[#347c52] to-[#78bf8c]" : "bg-gradient-to-t from-[#b7d5bf] to-[#d6e9d9]"}`} style={{ height: `${Math.max(4, (day.total / maxDaily) * 100)}%` }} /></div><span className={`grid h-6 min-w-8 place-items-center rounded-full px-2 text-[10px] font-semibold ${day.isToday ? "bg-[#e8f5eb] text-[#347c52]" : "text-[#87948c]"}`}>{day.label}</span></div>)}
+              {dailyTotals.map((day) => <div key={day.label} className="group flex min-w-0 flex-col items-center justify-end gap-2"><span className={`truncate text-[10px] tabular-nums ${day.isToday ? "font-bold text-[#0a7d56]" : "text-[#6b6b66]"}`}>{finance ? (day.total ? money(day.total).replace("KES ", "") : "—") : (day.count || "—")}</span><div className="flex h-32 w-full items-end overflow-hidden rounded-t-md bg-[#f4f4f2]"><div title={finance ? money(day.total) : `${day.count} sales`} className={`w-full rounded-t-md transition-all duration-500 group-hover:brightness-110 ${day.isToday ? "bg-gradient-to-t from-[#0a7d56] to-[#0fa36e]" : "bg-gradient-to-t from-[#6b6b66] to-[#e5f5ee]"}`} style={{ height: `${Math.max(4, ((finance ? day.total : day.count) / (finance ? maxDaily : Math.max(1, ...dailyTotals.map((item) => item.count)))) * 100)}%` }} /></div><span className={`grid h-6 min-w-8 place-items-center rounded-full px-2 text-[10px] font-semibold ${day.isToday ? "bg-[#e5f5ee] text-[#0a7d56]" : "text-[#6b6b66]"}`}>{day.label}</span></div>)}
             </div>
           </section>
 
           <section className="dashboard-panel dashboard-stock">
-            <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Reorder attention</h3><span className="text-xs text-[#69746c]">{lowStock.length} items</span></div>
-            <div className="divide-y divide-[#edf0ed]">
-              {lowStock.slice(0, 5).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{item.product.name}</p><p className="mt-1 text-xs text-[#69746c]">{item.product.sku} · {item.branch.name}</p></div><span className="shrink-0 text-sm font-semibold text-[#995338]">{item.stockOnHand - item.reservedStock} left</span></div>)}
-              {!lowStock.length ? <p className="px-4 py-6 text-sm text-[#69746c]">No stock is at or below its reorder level.</p> : null}
+            <div className="flex items-center justify-between border-b border-[#e6e6e2] px-4 py-3.5"><h3 className="text-sm font-semibold">Reorder attention</h3><span className="text-xs text-[#111111]">{lowStock.length} items</span></div>
+            <div className="divide-y divide-[#f4f4f2]">
+              {lowStock.slice(0, 5).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{item.product.name}</p><p className="mt-1 text-xs text-[#111111]">{item.product.sku} · {item.branch.name}</p></div><span className="shrink-0 text-sm font-semibold text-[#d93025]">{item.stockOnHand - item.reservedStock} left</span></div>)}
+              {!lowStock.length ? <p className="px-4 py-6 text-sm text-[#111111]">No stock is at or below its reorder level.</p> : null}
             </div>
           </section>
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
           <section className="dashboard-panel dashboard-sales">
-            <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent sales</h3><span className="text-xs text-[#69746c]">Latest 8</span></div>
-            <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Invoice</th><th className="px-4 py-3 font-medium">Time</th><th className="px-4 py-3 font-medium">Branch</th><th className="px-4 py-3 font-medium">Cashier</th><th className="px-4 py-3 text-right font-medium">Total</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-[#edf0ed]">
-              {recentSales.map((sale) => <tr key={sale.id}><td className="px-4 py-3 font-mono text-[11px] font-semibold text-[#435b4b]">{sale.invoiceNumber}</td><td className="px-4 py-3 text-[#69746c]">{sale.createdAt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3">{sale.branch.name}</td><td className="px-4 py-3">{sale.cashier.name}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-[#263b2e]">{money(sale.total)}</td><td className="px-4 py-3 text-xs"><span className="rounded-full bg-[#eaf6ed] px-2.5 py-1 text-[10px] font-semibold text-[#367d50]">{sale.status}</span></td></tr>)}
-              {!recentSales.length ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-[#69746c]">No completed sales have been recorded in this period.</td></tr> : null}
+            <div className="flex items-center justify-between border-b border-[#e6e6e2] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent sales</h3><span className="text-xs text-[#111111]">Latest 8</span></div>
+            <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e6e6e2] bg-[#f4f4f2] text-xs text-[#111111]"><tr><th className="px-4 py-3 font-medium">Invoice</th><th className="px-4 py-3 font-medium">Time</th><th className="px-4 py-3 font-medium">Branch</th><th className="px-4 py-3 font-medium">Cashier</th>{finance ? <th className="px-4 py-3 text-right font-medium">Total</th> : null}<th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-[#f4f4f2]">
+              {recentSales.map((sale) => <tr key={sale.id}><td className="px-4 py-3 font-mono text-[11px] font-semibold text-[#111111]">{sale.invoiceNumber}</td><td className="px-4 py-3 text-[#111111]">{sale.createdAt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3">{sale.branch.name}</td><td className="px-4 py-3">{sale.cashier.name}</td>{finance ? <td className="px-4 py-3 text-right font-semibold tabular-nums text-[#111111]">{money(sale.total)}</td> : null}<td className="px-4 py-3 text-xs"><span className="rounded-full bg-[#e5f5ee] px-2.5 py-1 text-[10px] font-semibold text-[#0a7d56]">{sale.status}</span></td></tr>)}
+              {!recentSales.length ? <tr><td colSpan={finance ? 6 : 5} className="px-4 py-8 text-center text-sm text-[#111111]">No completed sales have been recorded in this period.</td></tr> : null}
             </tbody></table></div>
           </section>
 
           <section className="dashboard-panel dashboard-credit">
-            <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Credit plans due</h3><span className="text-xs text-[#69746c]">Next 7 days</span></div>
-            <div className="divide-y divide-[#edf0ed]">
-              {duePlans.map((plan) => <div key={plan.id} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{plan.customer.name}</p><p className="mt-1 text-xs text-[#69746c]">{plan.branch.name} · Due {plan.nextDueDate.toLocaleDateString("en-KE", { day: "numeric", month: "short" })}</p></div><span className="shrink-0 text-sm font-semibold tabular-nums">{money(plan.balance)}</span></div>)}
-              {!duePlans.length ? <p className="px-4 py-6 text-sm text-[#69746c]">No active credit installments due this week.</p> : null}
+            <div className="flex items-center justify-between border-b border-[#e6e6e2] px-4 py-3.5"><h3 className="text-sm font-semibold">Credit plans due</h3><span className="text-xs text-[#111111]">Next 7 days</span></div>
+            <div className="divide-y divide-[#f4f4f2]">
+              {duePlans.map((plan) => <div key={plan.id} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{plan.customer.name}</p><p className="mt-1 text-xs text-[#111111]">{plan.branch.name} · Due {plan.nextDueDate.toLocaleDateString("en-KE", { day: "numeric", month: "short" })}</p></div>{finance ? <span className="shrink-0 text-sm font-semibold tabular-nums">{money(plan.balance)}</span> : <span className="shrink-0 text-xs font-semibold text-[#111111]">Collect</span>}</div>)}
+              {!duePlans.length ? <p className="px-4 py-6 text-sm text-[#111111]">No active credit installments due this week.</p> : null}
             </div>
           </section>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

@@ -29,9 +29,17 @@ function toState(grant: GrantResponse): GrantState {
   };
 }
 
+function pageLock(role: AppRole, path: string, allPages: boolean) {
+  if (role === "OWNER" && allPages) return "Included while every screen is on. Turn that off to choose screens one by one.";
+  if (path === "/insights" && role !== "OWNER" && role !== "BRANCH_MANAGER") return "Only the owner and a branch manager can open insights.";
+  if ((path === "/finance" || path === "/expenses" || path === "/activity") && role !== "OWNER") return "Only the owner can open this.";
+  return "";
+}
+
 export function EntitlementEditor() {
   const { update } = useSession();
   const [grants, setGrants] = useState<GrantState[]>([]);
+  const [roleId, setRoleId] = useState<AppRole>("OWNER");
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,7 +83,7 @@ export function EntitlementEditor() {
         body: JSON.stringify({
           grants: grants.map((grant) => ({
             role: grant.role,
-            pages: grant.role === "OWNER" && grant.allPages ? ["*"] : grant.pages.filter((page) => page !== "*" && (page !== "/insights" || grant.role === "OWNER" || grant.role === "BRANCH_MANAGER")),
+            pages: grant.role === "OWNER" && grant.allPages ? ["*"] : grant.pages.filter((page) => page !== "*" && (page !== "/insights" || grant.role === "OWNER" || grant.role === "BRANCH_MANAGER") && (grant.role === "OWNER" || (page !== "/finance" && page !== "/expenses" && page !== "/activity"))),
             capabilities: grant.capabilities,
           })),
         }),
@@ -88,7 +96,7 @@ export function EntitlementEditor() {
       }
       setGrants(ROLE_IDS.map((role) => toState(rows.find((row) => row.role === role) ?? { role, pages: [], capabilities: [] })));
       await update();
-      setNotice("Role entitlements saved. Staff already signed in pick this up on their next session check.");
+      setNotice("Role access saved. Staff already signed in pick this up on their next session check.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Role entitlements could not be saved.");
     } finally {
@@ -96,130 +104,125 @@ export function EntitlementEditor() {
     }
   }
 
+  const selected = ROLE_CATALOG.find((role) => role.id === roleId) ?? ROLE_CATALOG[0];
+  const grant = grants.find((item) => item.role === roleId);
+  const busy = loading || saving || !ready || !grant;
+  const screenCount = grant ? (grant.allPages ? PAGE_CATALOG.length : grant.pages.length) : 0;
+
   return (
     <form method="post" action="/access" onSubmit={save} className="space-y-5">
-      <section className="relative overflow-hidden rounded-[22px] border border-[#dcebe0] bg-[linear-gradient(115deg,#e8f5ec_0%,#f6faf6_55%,#eef6f1_100%)] px-6 py-6 sm:px-7">
-        <div className="pointer-events-none absolute -right-8 -top-20 h-60 w-60 rounded-full border border-[#d2e8d8]" />
-        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#438061]"><ShieldCheck className="h-3.5 w-3.5" />Owner only</p>
-        <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[#20382c] sm:text-[31px]">Role access</h2>
-        <p className="mt-1.5 max-w-2xl text-sm text-[#6f8376]">Choose the pages and actions for each role. Both are saved together and checked on the server. Only the Gadgethub owner can open or change this screen. All-pages access stays with the owner, and business insights stay with the owner and branch managers.</p>
+      <section className="relative overflow-hidden rounded-[22px] border border-[#e6e6e2] bg-[linear-gradient(115deg,#e5f5ee_0%,#f4f4f2_55%,#e5f5ee_100%)] px-6 py-6 sm:px-7">
+        <div className="pointer-events-none absolute -right-8 -top-20 h-60 w-60 rounded-full border border-[#e5f5ee]" />
+        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#0a7d56]"><ShieldCheck className="h-3.5 w-3.5" />Owner only</p>
+        <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[#111111] sm:text-[31px]">Role access</h2>
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#111111]">Choose one role, then the screens it can open and the work it can do. Both are saved together and checked on the server. This screen stays with the owner.</p>
       </section>
 
       {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
-      {notice ? <p role="status" className="border-l-2 border-[#6a843f] bg-[#f2f6ec] px-4 py-3 text-sm text-[#31533a]">{notice}</p> : null}
+      {notice ? <p role="status" className="border-l-2 border-[#0a7d56] bg-[#e5f5ee] px-4 py-3 text-sm text-[#111111]">{notice}</p> : null}
 
-      <section className="overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_5px_22px_rgba(24,54,37,.035)]">
-        <div className="border-b border-[#e8ebe8] px-4 py-4 sm:px-5">
-          <h3 className="text-sm font-semibold text-[#23372b]">Pages</h3>
-          <p className="mt-1 text-xs text-[#819087]">These are the screens each role can open. Saving stores them with the capabilities below. The server refuses a screen that is not checked, including when someone types the address. All pages includes current and future screens and stays with the owner. This role-access screen stays with the owner and is not listed here.</p>
+      <div role="tablist" aria-label="Roles" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {ROLE_CATALOG.map((role) => {
+          const row = grants.find((item) => item.role === role.id);
+          const count = row ? (row.allPages ? PAGE_CATALOG.length : row.pages.length) : 0;
+          const active = role.id === roleId;
+          return (
+            <button key={role.id} type="button" role="tab" aria-selected={active} disabled={loading || !ready} onClick={() => setRoleId(role.id)} className={`min-h-16 rounded-2xl border px-3 py-3 text-left transition ${active ? "border-[#0a7d56] bg-[#0a7d56] text-white shadow-[0_8px_18px_rgb(0_0_0/.16)]" : "border-[#e6e6e2] bg-white text-[#111111] hover:border-[#6b6b66]"} disabled:opacity-60`}>
+              <span className="block text-sm font-semibold">{role.label}</span>
+              <span className={`mt-1 block text-[11px] ${active ? "text-white/75" : "text-[#111111]"}`}>{role.detail}</span>
+              <span className={`mt-2 block text-[10px] font-semibold uppercase tracking-[.12em] ${active ? "text-[#e5f5ee]" : "text-[#0a7d56]"}`}>{loading ? "Loading" : row ? `${count} screens` : "Unavailable"}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {loading ? (
+        <div className="space-y-3" aria-live="polite" aria-busy="true">
+          <p className="text-sm text-[#111111]">Loading role access…</p>
+          <div className="h-28 animate-pulse rounded-2xl bg-[#e6e6e2]" />
+          <div className="h-64 animate-pulse rounded-2xl bg-[#e6e6e2]" />
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]">
-              <tr>
-                <th className="px-4 py-3 font-medium">Page</th>
-                {ROLE_CATALOG.map((role) => <th key={role.id} className="px-4 py-3 font-medium">{role.label}</th>)}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#edf0ed]">
-              <tr>
-                <td className="px-4 py-3 font-medium text-[#263b2e]">All pages</td>
-                {grants.map((grant) => (
-                  <td key={grant.role} className="px-4 py-3">
+      ) : grant ? (
+        <>
+          <section className="overflow-hidden rounded-2xl border border-[#e6e6e2] bg-white shadow-[0_5px_22px_rgb(0_0_0/.035)]" aria-labelledby="role-screens-heading">
+            <div className="border-b border-[#e6e6e2] px-4 py-4 sm:px-5">
+              <h3 id="role-screens-heading" className="text-sm font-semibold text-[#111111]">Screens {selected.label} can open</h3>
+              <p className="mt-1 text-xs leading-5 text-[#6b6b66]">{screenCount} of {PAGE_CATALOG.length} screens. A screen that is off is refused on the server, including when someone types the address. This role-access screen is not in the list.</p>
+            </div>
+            <div className="divide-y divide-[#f4f4f2]">
+              {grant.role === "OWNER" ? (
+                <label className="flex min-h-14 items-start gap-3 px-4 py-3 sm:px-5">
+                  <input type="checkbox" className="mt-1 h-4 w-4 accent-[#0a7d56]" checked={grant.allPages} disabled={busy} aria-label="All screens for Owner" onChange={(event) => updateGrant(grant.role, (current) => ({ ...current, allPages: event.target.checked, pages: event.target.checked ? PAGE_CATALOG.map((page) => page.path) : current.pages }))} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-[#111111]">Every screen</span>
+                    <span className="mt-0.5 block text-[11px] leading-5 text-[#6b6b66]">Includes screens added later. This stays with the owner.</span>
+                  </span>
+                </label>
+              ) : (
+                <p className="px-4 py-3 text-[11px] leading-5 text-[#6b6b66] sm:px-5">Every screen, including ones added later, stays with the owner.</p>
+              )}
+              {PAGE_CATALOG.map((page) => {
+                const lock = pageLock(grant.role, page.path, grant.allPages);
+                const checked = grant.allPages || grant.pages.includes(page.path);
+                return (
+                  <label key={page.path} className={`flex min-h-14 items-start gap-3 px-4 py-3 sm:px-5 ${lock ? "bg-[#ffffff]" : ""}`}>
                     <input
                       type="checkbox"
-                      checked={grant.allPages}
-                      disabled={loading || saving || !ready || grant.role !== "OWNER"}
-                      aria-label={`All pages for ${ROLE_CATALOG.find((role) => role.id === grant.role)?.label ?? grant.role}`}
-                      onChange={(event) => updateGrant(grant.role, (current) => ({ ...current, allPages: event.target.checked, pages: event.target.checked ? PAGE_CATALOG.map((page) => page.path) : current.pages }))}
+                      className="mt-1 h-4 w-4 accent-[#0a7d56]"
+                      checked={checked}
+                      disabled={busy || Boolean(lock)}
+                      aria-label={`${page.label} for ${selected.label}`}
+                      onChange={(event) => updateGrant(grant.role, (current) => ({
+                        ...current,
+                        pages: event.target.checked ? [...current.pages, page.path] : current.pages.filter((item) => item !== page.path),
+                      }))}
                     />
-                  </td>
-                ))}
-              </tr>
-              {PAGE_CATALOG.map((page) => (
-                <tr key={page.path}>
-                  <td className="px-4 py-3 text-[#263b2e]">{page.label}</td>
-                  {grants.map((grant) => {
-                    const ownerWide = grant.role === "OWNER" && grant.allPages;
-                    const checked = ownerWide || grant.pages.includes(page.path);
-                    return (
-                      <td key={grant.role} className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={loading || saving || !ready || ownerWide || (page.path === "/insights" && grant.role !== "OWNER" && grant.role !== "BRANCH_MANAGER")}
-                          aria-label={`${page.label} for ${ROLE_CATALOG.find((role) => role.id === grant.role)?.label ?? grant.role}`}
-                          onChange={(event) => updateGrant(grant.role, (current) => ({
-                            ...current,
-                            pages: event.target.checked ? [...current.pages, page.path] : current.pages.filter((item) => item !== page.path),
-                          }))}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-[#111111]">{page.label}</span>
+                      {lock ? <span className="mt-0.5 block text-[11px] leading-5 text-[#6b6b66]">{lock}</span> : null}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
 
-      <section className="overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_5px_22px_rgba(24,54,37,.035)]">
-        <div className="border-b border-[#e8ebe8] px-4 py-4 sm:px-5">
-          <h3 className="text-sm font-semibold text-[#23372b]">Capabilities</h3>
-          <p className="mt-1 text-xs text-[#819087]">APIs check these on the server. Existing limits, such as branch scoping and who may change a staff role, still apply.</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]">
-              <tr>
-                <th className="px-4 py-3 font-medium">Capability</th>
-                {ROLE_CATALOG.map((role) => <th key={role.id} className="px-4 py-3 font-medium">{role.label}</th>)}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#edf0ed]">
+          <section className="overflow-hidden rounded-2xl border border-[#e6e6e2] bg-white shadow-[0_5px_22px_rgb(0_0_0/.035)]" aria-labelledby="role-actions-heading">
+            <div className="border-b border-[#e6e6e2] px-4 py-4 sm:px-5">
+              <h3 id="role-actions-heading" className="text-sm font-semibold text-[#111111]">What {selected.label} can do</h3>
+              <p className="mt-1 text-xs leading-5 text-[#6b6b66]">These are checked on the server. Branch limits, and who may change a staff role, still apply. {grant.capabilities.length} of {CAPABILITY_CATALOG.length} actions are on.</p>
+            </div>
+            <div className="divide-y divide-[#f4f4f2]">
               {CAPABILITY_CATALOG.map((capability) => (
-                <tr key={capability.id}>
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-[#263b2e]">{capability.label}</p>
-                    <p className="mt-1 text-[11px] text-[#87948c]">{capability.detail}</p>
-                  </td>
-                  {grants.map((grant) => (
-                    <td key={grant.role} className="px-4 py-3 align-top">
-                      <input
-                        type="checkbox"
-                        checked={grant.capabilities.includes(capability.id)}
-                        disabled={loading || saving || !ready}
-                        aria-label={`${capability.label} for ${ROLE_CATALOG.find((role) => role.id === grant.role)?.label ?? grant.role}`}
-                        onChange={(event) => updateGrant(grant.role, (current) => ({
-                          ...current,
-                          capabilities: event.target.checked
-                            ? [...current.capabilities, capability.id]
-                            : current.capabilities.filter((item) => item !== capability.id),
-                        }))}
-                      />
-                    </td>
-                  ))}
-                </tr>
+                <label key={capability.id} className="flex min-h-14 items-start gap-3 px-4 py-3 sm:px-5">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 accent-[#0a7d56]"
+                    checked={grant.capabilities.includes(capability.id)}
+                    disabled={busy}
+                    aria-label={`${capability.label} for ${selected.label}`}
+                    onChange={(event) => updateGrant(grant.role, (current) => ({
+                      ...current,
+                      capabilities: event.target.checked
+                        ? [...current.capabilities, capability.id]
+                        : current.capabilities.filter((item) => item !== capability.id),
+                    }))}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-[#111111]">{capability.label}</span>
+                    <span className="mt-0.5 block text-[11px] leading-5 text-[#6b6b66]">{capability.detail}</span>
+                  </span>
+                </label>
               ))}
-              {!loading && !grants.length ? (
-                <tr>
-                  <td colSpan={ROLE_CATALOG.length + 1} className="px-4 py-8 text-center text-sm text-[#69746c]">Role entitlements could not be shown.</td>
-                </tr>
-              ) : null}
-              {loading ? (
-                <tr>
-                  <td colSpan={ROLE_CATALOG.length + 1} className="px-4 py-8 text-center text-sm text-[#69746c]">Loading role entitlements…</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e8eee8] bg-[#fbfdfb] px-4 py-4 sm:px-5">
-          <p className="max-w-xl text-xs text-[#69746c]">Passwords and account details are not sent in the page address. Saving uses the signed-in session.</p>
-          <button disabled={loading || saving || !ready} className="rounded-xl bg-[#174b37] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#236347] disabled:opacity-60">{saving ? "Saving…" : "Save entitlements"}</button>
-        </div>
-      </section>
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      <div className="sticky bottom-[4.75rem] z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e6e6e2] bg-[#ffffff]/95 px-4 py-3 shadow-[0_8px_24px_rgb(0_0_0/.06)] backdrop-blur lg:bottom-4 sm:px-5">
+        <p className="max-w-xl text-xs leading-5 text-[#111111]">Switching roles keeps your edits. Save writes all four roles together. Passwords and account details stay out of the page address.</p>
+        <button disabled={busy} className="min-h-11 rounded-xl bg-[#0a7d56] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0a7d56] disabled:opacity-60">{saving ? "Saving…" : "Save role access"}</button>
+      </div>
     </form>
   );
 }

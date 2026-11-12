@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   icons: { apple: "/notifications-icon-192.png" },
 };
 
-export const viewport: Viewport = { themeColor: "#183b2a" };
+export const viewport: Viewport = { themeColor: "#0a0a0a" };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
-      <body className="min-h-full bg-[#f5f4ee] text-[#202820]"><AuthProvider>{children}</AuthProvider></body>
+    <html lang="en" className="h-full antialiased" data-scroll-behavior="auto">
+      <body className="min-h-full bg-[#f4f4f2] text-[#0a0a0a]"><AuthProvider>{children}</AuthProvider></body>
     </html>
   );
 }
