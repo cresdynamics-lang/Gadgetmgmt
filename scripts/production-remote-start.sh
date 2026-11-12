@@ -80,14 +80,22 @@ if [ -f bin/cloudflared.new ]; then
 fi
 chmod 755 bin/cloudflared
 
-# Leave the existing listener on port 3000 alone. Serve this app on 3001.
-port="3001"
-origin="http://127.0.0.1:${port}"
-port_hex="$(printf '%04X' "$port")"
-if awk -v hex="$port_hex" 'NR > 1 && $4 == "0A" { split($2, addr, ":"); if (toupper(addr[2]) == hex) found=1 } END { exit(found ? 0 : 1) }' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
-  echo "Blocker: port ${port} is already in use. The listener on port 3000 was left alone."
+# Leave the existing listener on port 3000 alone. Use the first free port from 3001 up.
+port=""
+for candidate in 3001 3002 3003 3004 3005 3006 3007 3008 3009 3010; do
+  port_hex="$(printf '%04X' "$candidate")"
+  if awk -v hex="$port_hex" 'NR > 1 && $4 == "0A" { split($2, addr, ":"); if (toupper(addr[2]) == hex) found=1 } END { exit(found ? 0 : 1) }' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+    echo "Port ${candidate} is already in use."
+    continue
+  fi
+  port="$candidate"
+  break
+done
+if [ -z "$port" ]; then
+  echo "Blocker: ports 3001 through 3010 are already in use. The listener on port 3000 was left alone."
   exit 1
 fi
+origin="http://127.0.0.1:${port}"
 echo "Starting the app on ${origin}."
 
 umask 077
