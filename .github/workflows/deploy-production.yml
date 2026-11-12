@@ -252,14 +252,25 @@ jobs:
               -o ConnectTimeout=30 \
               "$@"
           }
+          echo "Creating the remote directory"
           ssh_base "$remote" "mkdir -p -- ${quoted_path}/bin"
+          echo "Copying the tunnel client"
           scp_base "$cf_bin" "${remote}:${DEPLOY_PATH}/bin/cloudflared"
           scp_base "$token_file" "${remote}:${DEPLOY_PATH}/.tunnel-token"
           rm -f "$token_file"
-
           scp_base scripts/production-remote-start.sh "${remote}:${DEPLOY_PATH}/bin/production-remote-start.sh"
-          remote_status="$(ssh_base "$remote" bash "${DEPLOY_PATH}/bin/production-remote-start.sh" "$DEPLOY_PATH")"
+          echo "Checking Node.js and the server environment file"
+          ssh_base "$remote" "if command -v node >/dev/null 2>&1; then node -v; else echo NO_NODE; fi; if [ -f ${quoted_path}/.env ]; then echo HAS_ENV; else echo NO_ENV; fi"
+          echo "Starting the app and tunnel"
+          set +e
+          remote_status="$(ssh_base "$remote" bash "${DEPLOY_PATH}/bin/production-remote-start.sh" "$DEPLOY_PATH" 2>&1)"
+          remote_code=$?
+          set -e
           printf '%s\n' "$remote_status"
+          if [ "$remote_code" -ne 0 ]; then
+            echo "The server start command failed."
+            exit "$remote_code"
+          fi
           local_code="$(printf '%s\n' "$remote_status" | sed -n 's/^local_login_http=//p' | head -n 1)"
           public_host="$(printf '%s\n' "$remote_status" | sed -n 's/^public_host=//p' | head -n 1)"
           if [ "$local_code" != "200" ]; then
