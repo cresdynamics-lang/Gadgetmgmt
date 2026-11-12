@@ -1,7 +1,8 @@
 #!/bin/bash
-# Start the copied Next.js app and the Cloudflare tunnel on the server.
-# The tunnel token is already a mode-600 file at DEPLOY_PATH/.tunnel-token.
-# This script never prints that file.
+# Start the Next.js service and the Cloudflare tunnel on one Docker network.
+# The tunnel token is a mode-600 file at DEPLOY_PATH/.tunnel-token.
+# NEXTAUTH_SECRET is a mode-600 file at DEPLOY_PATH/.nextauth-secret.
+# This script never prints either file.
 set -euo pipefail
 
 deploy_path="${1:?deploy path required}"
@@ -32,9 +33,14 @@ if [ ! -f .env ]; then
   done
 fi
 if [ ! -f .env ]; then
-  echo "Blocker: no .env in the deploy directory, and none in the home directory. The app needs DATABASE_URL and NEXTAUTH_SECRET there. This workflow does not create that file."
+  echo "Blocker: no .env in the deploy directory, and none in the home directory. The app needs DATABASE_URL there. This workflow does not create that file."
   exit 1
 fi
+if [ ! -f .nextauth-secret ]; then
+  echo "Blocker: NEXTAUTH_SECRET was not provided to the deploy."
+  exit 1
+fi
+chmod 600 .nextauth-secret
 
 stop_pid() {
   local file="$1"
@@ -50,11 +56,27 @@ stop_pid() {
   fi
 }
 
+compose() {
+  if docker info >/dev/null 2>&1; then
+    docker compose "$@"
+    return
+  fi
+  if sudo -n docker info >/dev/null 2>&1; then
+    sudo -n docker compose "$@"
+    return
+  fi
+  echo "Blocker: Docker is not available to this user, and sudo is not usable without a password."
+  exit 1
+}
+
 stop_pid .cloudflared.pid
 stop_pid .next-start.pid
 
-# A previous cloudflared can outlive its pid file. Stop only this deploy's copy
-# before replacing the binary it is running.
+if docker info >/dev/null 2>&1 || sudo -n docker info >/dev/null 2>&1; then
+  compose down --remove-orphans >/dev/null 2>&1 || true
+fi
+
+# A previous host cloudflared can outlive its pid file. Stop only this deploy's copy.
 old_pids=""
 for proc in /proc/[0-9]*; do
   pid="${proc##*/}"
@@ -80,68 +102,56 @@ if [ -f bin/cloudflared.new ]; then
 fi
 chmod 755 bin/cloudflared
 
-# Leave the existing listener on port 3000 alone. Use the first free port from 3001 up.
-port=""
-for candidate in 3001 3002 3003 3004 3005 3006 3007 3008 3009 3010; do
-  port_hex="$(printf '%04X' "$candidate")"
-  if awk -v hex="$port_hex" 'NR > 1 && $4 == "0A" { split($2, addr, ":"); if (toupper(addr[2]) == hex) found=1 } END { exit(found ? 0 : 1) }' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
-    echo "Port ${candidate} is already in use."
-    continue
-  fi
-  port="$candidate"
-  break
-done
-if [ -z "$port" ]; then
-  echo "Blocker: ports 3001 through 3010 are already in use. The listener on port 3000 was left alone."
-  exit 1
-fi
-origin="http://127.0.0.1:${port}"
-echo "Starting the app on ${origin}."
-
 umask 077
-nohup node --env-file=.env ./node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$port" > .next-start.log 2>&1 &
-echo $! > .next-start.pid
+printf 'NEXTAUTH_SECRET=%s\n' "$(tr -d '\r\n' < .nextauth-secret)" > .nextauth.env
+chmod 600 .nextauth.env
+
+rm -rf .web-context
+mkdir -p .web-context
+cp Dockerfile.web .web-context/Dockerfile
+cp package.json package-lock.json next.config.ts tsconfig.json .web-context/
+cp -a public prisma .next node_modules .web-context/
+
+export HOST_UID="$(id -u)"
+export HOST_GID="$(id -g)"
+
+echo "Starting the nodejs service and the tunnel. Tunnel target is http://nodejs:3005."
+compose up -d --build --force-recreate
+
 ready=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
-  if grep -q 'Ready' .next-start.log 2>/dev/null; then
+  if compose logs --no-color --tail 80 nodejs 2>/dev/null | grep -q 'Ready'; then
     ready=1
-    break
-  fi
-  if ! kill -0 "$(cat .next-start.pid)" 2>/dev/null; then
     break
   fi
   sleep 1
 done
 if [ "$ready" -ne 1 ]; then
   echo "next start did not become ready."
-  sed -E 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' .next-start.log | tail -n 40
+  compose logs --no-color --tail 40 nodejs 2>/dev/null | sed -E \
+    -e 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' \
+    -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' || true
   exit 1
 fi
 
-code="$(node -e 'const port=process.argv[1]; const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15000); fetch("http://127.0.0.1:"+port+"/login",{signal:controller.signal,redirect:"manual"}).then((response)=>{clearTimeout(timer); process.stdout.write(String(response.status)); process.exit(response.status===200?0:1);}).catch(()=>{process.stdout.write("000"); process.exit(1);});' "$port" || true)"
+code="$(compose exec -T nodejs node -e 'const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15000); fetch("http://127.0.0.1:3005/login",{signal:controller.signal,redirect:"manual"}).then((response)=>{clearTimeout(timer); process.stdout.write(String(response.status)); process.exit(response.status===200?0:1);}).catch(()=>{process.stdout.write("000"); process.exit(1);});' || true)"
 echo "local_login_http=${code}"
-echo "local_origin=${origin}"
+echo "local_origin=http://127.0.0.1:3005"
+echo "tunnel_origin=http://nodejs:3005"
 if [ "$code" != "200" ]; then
   echo "The app did not return 200 for /login on the server."
-  sed -E \
+  compose logs --no-color --tail 40 nodejs 2>/dev/null | sed -E \
     -e 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' \
-    -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' \
-    .next-start.log | tail -n 40
+    -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' || true
   exit 1
 fi
 
-# Start the tunnel only after Next is listening, and aim this client at that origin.
-# A remotely managed tunnel can replace this with the dashboard ingress after it connects.
-nohup ./bin/cloudflared tunnel --no-autoupdate --url "$origin" run --token-file "$deploy_path/.tunnel-token" > .cloudflared.log 2>&1 &
-echo $! > .cloudflared.pid
-
+compose logs --no-color --tail 200 cloudflared > .cloudflared.log 2>/dev/null || true
 connected=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  compose logs --no-color --tail 200 cloudflared > .cloudflared.log 2>/dev/null || true
   if grep -q 'Registered tunnel connection' .cloudflared.log 2>/dev/null; then
     connected=1
-    break
-  fi
-  if ! kill -0 "$(cat .cloudflared.pid)" 2>/dev/null; then
     break
   fi
   sleep 1
@@ -153,9 +163,9 @@ if [ "$connected" -ne 1 ]; then
   exit 1
 fi
 
-# Give the edge a moment to push the ingress that actually receives public traffic.
-tunnel_info=""
+origin="http://nodejs:3005"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
+  compose logs --no-color --tail 200 cloudflared > .cloudflared.log 2>/dev/null || true
   if grep -q 'Updated to new configuration' .cloudflared.log 2>/dev/null; then
     break
   fi
@@ -202,7 +212,7 @@ while read -r kind value; do
     service)
       saw_service=1
       case "$value" in
-        "http://127.0.0.1:${port}"|"http://localhost:${port}"|"https://127.0.0.1:${port}"|"https://localhost:${port}")
+        "http://nodejs:3005"|"https://nodejs:3005")
           points_at_next=1
           ;;
         http_status:*)
