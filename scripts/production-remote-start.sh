@@ -105,6 +105,17 @@ chmod 755 bin/cloudflared
 umask 077
 printf 'NEXTAUTH_SECRET=%s\n' "$(tr -d '\r\n' < .nextauth-secret)" > .nextauth.env
 chmod 600 .nextauth.env
+# Compose always loads this file. It starts empty and is filled with the public
+# APP_BASE_URL once the tunnel hostname is known.
+: > .public-url.env
+chmod 600 .public-url.env
+
+# Auth.js treats NEXTAUTH_URL/AUTH_URL as the request origin. A localhost value
+# in .env would send login redirects and the authjs.callback-url cookie off the
+# tunnel. Compose clears those two variables; keep APP_BASE_URL for callbacks.
+if grep -Eq '^(NEXTAUTH_URL|AUTH_URL)=https?://(localhost|127\.0\.0\.1)(:[0-9]+)?/?$' .env 2>/dev/null; then
+  echo "Ignoring localhost NEXTAUTH_URL/AUTH_URL from .env. The public host comes from the tunnel request."
+fi
 
 rm -rf .web-context
 mkdir -p .web-context
@@ -251,6 +262,17 @@ case "$host" in
 esac
 if [ -n "$host" ]; then
   echo "public_host=${host}"
+  # Point APP_BASE_URL at the public host when .env still has a loopback origin.
+  if grep -Eq '^APP_BASE_URL=https?://(localhost|127\.0\.0\.1)(:[0-9]+)?/?$' .env 2>/dev/null \
+    || ! grep -Eq '^APP_BASE_URL=https://' .env 2>/dev/null; then
+    umask 077
+    printf 'APP_BASE_URL=https://%s\n' "$host" > .public-url.env
+    chmod 600 .public-url.env
+    # Recreate only the app so receipt and payment links use the public host.
+    # Auth URLs stay cleared in compose.yaml so login redirects keep using the request host.
+    compose up -d --no-deps --force-recreate nodejs >/dev/null
+    echo "app_base_url=https://${host}"
+  fi
 else
   echo "public_host="
 fi
