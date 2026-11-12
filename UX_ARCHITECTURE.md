@@ -8,6 +8,8 @@ From the `lg` breakpoint the existing navigation sits in a persistent dark sideb
 
 The shell lives in each page layout, so the sidebar and header stay up while a `loading.tsx` skeleton stands in for the server data. Dashboard and insights still read their figures on the server. The rest of the till already loads its lists in the browser after the shell is on screen.
 
+Role access is one role at a time. The owner picks Owner, Branch manager, Cashier, or Inventory lead, then turns screens and actions on for that role. Every screen stays with the owner. Insights stays with the owner and branch managers. Save still writes all four roles together, and the server still refuses a screen that is off.
+
 ## Sell
 
 The catalogue, the scan field, and checkout stay on one screen. A scan or an Enter in search runs `matchSaleScan` against the in-stock devices already returned by the till, then against the SKU. An unknown code or a device with no available unit is refused. A matching device fills an empty identifier or adds the next unit. A second scan of the same identifier is refused.
