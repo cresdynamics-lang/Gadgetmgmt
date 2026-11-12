@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getBusinessInsights } from "@/lib/business-insights";
+import { presentBusinessInsights } from "@/lib/finance-visibility";
 import { z } from "zod";
 
 const insightSchema = z.object({
@@ -70,7 +71,7 @@ export async function POST() {
 
   try {
     const scope = role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" };
-    const metrics = await getBusinessInsights(scope);
+    const metrics = presentBusinessInsights(await getBusinessInsights(scope), role);
     const model = process.env.AI_INSIGHTS_MODEL || "gpt-4.1-mini";
     const modelResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -84,6 +85,7 @@ export async function POST() {
           "You are Gadget Hub's business analyst. Give a concise, practical briefing in plain English for an electronics retailer in Nairobi.",
           "Use only the supplied aggregate data. Never invent causes, targets, events, or numbers. If there is no meaningful prior-period baseline, say so plainly.",
           "Estimated gross profit uses only line items with a recorded unit cost. Check costCoveragePercent before discussing it, and disclose incomplete coverage.",
+          "If financeVisible is false, revenue, profit, collected money and Lipa balances were removed on purpose. Do not estimate, reconstruct, or mention those figures.",
           "Use KES when discussing money. A stock item with no recent sales has unknown days of cover, not infinite cover.",
           "Prioritize no more than four useful findings. Every finding must state what happened, the comparison, why it matters, and one practical next step.",
           "Give every finding exactly one destination from /sales, /inventory, /credit, /customers, /notifications that opens the most relevant existing workspace for that next step. Never invent a route.",

@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { needsReorder, reorderThreshold } from "../src/lib/stock-levels";
+import { needsReorder, reorderThreshold, stockAttentionRank } from "../src/lib/stock-levels";
 
 test("zero reorder points do not create alerts for untracked catalog rows", () => {
   assert.equal(reorderThreshold(0, 0), 0);
   assert.equal(needsReorder(0, 0, 0), false);
+});
+
+test("reorder and empty rows rank ahead of healthy stock", () => {
+  assert.equal(stockAttentionRank(1, 4, 0), 0);
+  assert.equal(stockAttentionRank(0, 0, 0), 1);
+  assert.equal(stockAttentionRank(6, 2, 0), 2);
 });
 
 test("configured branch and product thresholds alert at or below their effective minimum", () => {

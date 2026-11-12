@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ArrowRight, AlertCircle, CalendarClock, ChevronLeft, ChevronRight, CreditCard, Mail, Pencil, Phone, Plus, Search, UserRoundPlus } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { creditProgress } from "@/lib/credit-progress";
+import { rememberLipaAccount, rememberSaleCustomer } from "@/lib/workflow-handoff";
 
 type Customer = {
   id: string;
@@ -63,6 +64,7 @@ const nairobiDay = (value: Date | string) => new Intl.DateTimeFormat("en-CA", { 
 
 export default function CustomersPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, attention: 0 });
   const [pagination, setPagination] = useState({ page: 1, pageSize: 30, total: 0, pages: 1 });
@@ -278,7 +280,7 @@ export default function CustomersPage() {
                   {selected.email ? <a href={`mailto:${selected.email}`} aria-label={`Email ${selected.name}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e0e7e0] px-3 text-[11px] font-semibold text-[#42614a] hover:bg-[#f2f7f2]"><Mail className="h-3.5 w-3.5"/>Email</a> : null}
                   {selected.whatsappRemindersEnabled && selected.whatsappConsentAt ? <a href={`https://wa.me/${selected.phone.replace(/\D/g, "").replace(/^0/, "254")}`} target="_blank" rel="noreferrer" aria-label={`Open WhatsApp chat with ${selected.name}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d8e8dc] bg-[#f4faf5] px-3 text-[11px] font-semibold text-[#356346] hover:bg-[#eaf4ec]">WhatsApp</a> : null}
                   {selected.activePlanCount > 0 ? <a href="#customer-lipa-heading" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d8e8dc] bg-[#f4faf5] px-3 text-[11px] font-semibold text-[#356346] hover:bg-[#eaf4ec]">Lipa accounts</a> : null}
-                  <Link href={`/sales?customer=${selected.id}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#315843] px-3 text-[11px] font-semibold text-white hover:bg-[#244632]"><Plus className="h-3.5 w-3.5"/>Start sale</Link>
+                  <button type="button" onClick={() => { rememberSaleCustomer(selected.id); router.push("/sales"); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#315843] px-3 text-[11px] font-semibold text-white hover:bg-[#244632]"><Plus className="h-3.5 w-3.5"/>Start sale</button>
                   {(session?.user.role === "OWNER" || session?.user.role === "BRANCH_MANAGER") ? <button type="button" onClick={() => setEditingProfile((value) => !value)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e0e7e0] px-3 text-[11px] font-semibold text-[#42614a] hover:bg-[#f2f7f2]"><Pencil className="h-3.5 w-3.5"/>{editingProfile ? "Close" : "Edit"}</button> : null}
                 </div>
               </div>
@@ -313,7 +315,7 @@ export default function CustomersPage() {
                       <div className="px-4 py-3.5">
                         <div className="flex items-center justify-between gap-3 text-[10px]"><span className="font-medium text-[#637267]">{money(repaid)} paid of {money(totalObligation)}{account.lateFeeAmount ? ` · includes ${money(account.lateFeeAmount)} late fee` : ""}</span><span className="text-[#879187]">{paidInstallments} / {account.installmentCount} installments</span></div>
                         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf1eb]"><div className="h-full rounded-full bg-[#65a475] transition-all" style={{ width: `${progressPercent}%` }}/></div>
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="inline-flex items-center gap-1.5 text-[10px] text-[#758177]"><CalendarClock className="h-3.5 w-3.5"/>{account.status === "PAID_OFF" ? "No balance due" : `Next due ${new Date(account.nextDueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}`}</p><Link href={`/credit?account=${account.id}`} className="inline-flex items-center gap-1 rounded-lg border border-[#dfe8df] bg-[#fafcf9] px-2.5 py-1.5 text-[10px] font-semibold text-[#3d684a] hover:bg-[#eff6ef]">Open account in Lipa<ArrowRight className="h-3 w-3"/></Link></div>
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="inline-flex items-center gap-1.5 text-[10px] text-[#758177]"><CalendarClock className="h-3.5 w-3.5"/>{account.status === "PAID_OFF" ? "No balance due" : `Next due ${new Date(account.nextDueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}`}</p><button type="button" onClick={() => { rememberLipaAccount(account.id); router.push("/credit"); }} className="inline-flex items-center gap-1 rounded-lg border border-[#dfe8df] bg-[#fafcf9] px-2.5 py-1.5 text-[10px] font-semibold text-[#3d684a] hover:bg-[#eff6ef]">Open account in Lipa<ArrowRight className="h-3 w-3"/></button></div>
                       </div>
                       <div className="grid border-t border-[#edf0eb] lg:grid-cols-2">
                         <div className="border-b border-[#edf0eb] p-4 lg:border-b-0 lg:border-r"><p className="mb-2 text-[9px] font-semibold uppercase tracking-[.13em] text-[#88948a]">Installment schedule</p><div className="max-h-44 space-y-1 overflow-y-auto">{account.installments.map((installment) => <div key={installment.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#fafbf8] px-2.5 py-2"><span className="min-w-0"><span className="block text-[10px] font-medium text-[#45564a]">Payment {installment.sequence} · {new Date(installment.dueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}</span>{installment.paidAmount > 0 && installment.paidAmount < installment.amount ? <span className="mt-0.5 block text-[9px] text-[#829087]">Part paid: {money(installment.paidAmount)}</span> : null}</span><span className={`shrink-0 text-[10px] font-semibold ${installment.paidAt ? "text-[#39724f]" : new Date(installment.dueDate) < new Date() ? "text-[#a35442]" : "text-[#69766c]"}`}>{installment.paidAt ? "Paid" : money(installment.amount - installment.paidAmount)}</span></div>)}</div></div>

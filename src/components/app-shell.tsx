@@ -4,12 +4,28 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { ArrowDown, ArrowUpRight, Boxes, ChevronDown, CreditCard, LayoutDashboard, LogOut, Menu, Package, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, UserRound, UsersRound, Wallet, X, BellRing, CornerDownLeft } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUpRight, Boxes, CreditCard, LayoutDashboard, LogOut, Menu, MoreHorizontal, Package, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, UserRound, UsersRound, Wallet, X, BellRing, CornerDownLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { NotificationBell } from "@/components/notification-bell";
 import { navItems } from "@/lib/navigation";
 import { canAccessPage, sessionGrants, type AccessMap } from "@/lib/access";
+
+const primaryTabOrder: Record<string, string[]> = {
+  OWNER: ["/dashboard", "/sales", "/inventory", "/notifications"],
+  BRANCH_MANAGER: ["/dashboard", "/sales", "/inventory", "/credit"],
+  CASHIER: ["/dashboard", "/sales", "/credit", "/customers"],
+  INVENTORY_LEAD: ["/dashboard", "/inventory", "/notifications"],
+};
+
+const primaryTabLabel: Record<string, string> = {
+  "/dashboard": "Today",
+  "/sales": "Sell",
+  "/inventory": "Stock",
+  "/credit": "Lipa",
+  "/customers": "Clients",
+  "/notifications": "Alerts",
+};
 
 const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/dashboard": LayoutDashboard,
@@ -54,10 +70,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const initials = displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   const role = session?.user.role ?? "";
   const grants = sessionGrants(role, session?.user.pages, session?.user.capabilities);
-  const commands = useMemo(() => navItems
+  const primaryTabs = (primaryTabOrder[role] ?? primaryTabOrder.OWNER).filter((href) => canAccessPage(role, href, grants));
+  const launcherNeedle = launcherQuery.trim().toLowerCase();
+  const commands = navItems
     .filter(({ href }) => canAccessPage(role, href, grants))
     .map((item) => ({ ...item, keywords: `${item.label} ${item.href}`.toLowerCase() }))
-    .filter((item) => item.keywords.includes(launcherQuery.trim().toLowerCase())), [role, grants, launcherQuery]);
+    .filter((item) => item.keywords.includes(launcherNeedle));
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -88,17 +106,35 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return <div className="min-h-screen bg-[#f5f4ee] text-[#202820] lg:p-3">
     <div className="mx-auto flex min-h-screen max-w-[1800px] overflow-hidden bg-[#fffefa] shadow-[0_12px_45px_rgba(38,42,31,.07)] lg:min-h-[calc(100vh-24px)] lg:rounded-[20px] lg:border lg:border-[#e9e6dc]">
+      <aside className="hidden w-[248px] shrink-0 flex-col justify-between bg-[#102d27] p-4 text-white lg:flex">
+        <div>
+          <Link href="/dashboard" className="mb-8 flex items-center gap-3 px-2"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#c7f2df] text-[#12362e]"><Package className="h-5 w-5"/></span><span className="text-base font-semibold">GadgetHub</span></Link>
+          <Navigation pathname={pathname} role={role} grants={grants}/>
+        </div>
+        <div className="flex items-center justify-between border-t border-white/10 px-2 pt-4">
+          <div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div>
+          <button type="button" onClick={() => void signOut({ redirectTo: "/login" })} aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button>
+        </div>
+      </aside>
       {menuOpen && <div className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#071a16]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full w-[290px] max-w-[85vw] flex-col justify-between bg-[#102d27] p-4 text-white shadow-2xl"><div><div className="mb-8 flex items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#c7f2df] text-[#12362e]"><Package className="h-5 w-5"/></span><span className="text-base font-semibold">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><Navigation pathname={pathname} role={role} grants={grants} close={() => setMenuOpen(false)}/></div><div className="flex items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void signOut({ redirectTo: "/login" })} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-w-0 flex-1 flex-col pb-[4.75rem] lg:pb-0">
         <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[var(--border)] bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-9">
-          <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e9eeea] bg-white text-[#52665c] shadow-sm transition hover:bg-[#f4f8f5]"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#94a39a] sm:flex"><span>GadgetHub</span><span className="text-[#c6d0c9]">/</span><span className="text-[#5c796b]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#1b2c24] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
-          <div className="flex items-center gap-2 sm:gap-3"><NotificationBell /><button type="button" onClick={() => { setActiveCommand(0); setLauncherOpen(true); setLauncherQuery(""); }} aria-label="Open quick navigation" className="flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-2.5 text-[#59616e] transition hover:border-[var(--signal)] hover:bg-[#f8f9ff] sm:px-3"><Search className="h-3.5 w-3.5"/><span className="hidden text-[11px] font-medium sm:inline">Jump to anything</span><kbd className="hidden rounded-md border border-[var(--border)] bg-[#f7f8fa] px-1.5 py-0.5 text-[9px] font-semibold text-[#737983] sm:inline">⌘ K</kbd></button><div className="hidden items-center gap-2 rounded-full border border-[var(--border)] bg-[#f8f9fb] px-3 py-2 text-[11px] font-medium text-[#59616e] md:flex"><span className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]"/>{session?.user.branchName ?? (role === "OWNER" ? "All branches" : "Branch not assigned")}</div><div className="hidden h-8 w-px bg-[var(--border)] sm:block"/><div className="flex items-center gap-2 sm:hidden"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span></div><button type="button" onClick={() => void signOut({ redirectTo: "/login" })} className="hidden items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition hover:bg-[#f5f6f8] sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span><span className="hidden max-w-28 truncate text-xs font-semibold text-[#343941] xl:block">{displayName}</span><ChevronDown className="h-3.5 w-3.5 text-[#95a39a]"/></button></div>
+          <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e9eeea] bg-white text-[#52665c] shadow-sm transition hover:bg-[#f4f8f5] lg:hidden"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#94a39a] sm:flex"><span>GadgetHub</span><span className="text-[#c6d0c9]">/</span><span className="text-[#5c796b]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#1b2c24] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
+          <div className="flex items-center gap-2 sm:gap-3"><NotificationBell /><button type="button" onClick={() => { setActiveCommand(0); setLauncherOpen(true); setLauncherQuery(""); }} aria-label="Open quick navigation" className="flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-2.5 text-[#59616e] transition hover:border-[var(--signal)] hover:bg-[#f8f9ff] sm:px-3"><Search className="h-3.5 w-3.5"/><span className="hidden text-[11px] font-medium sm:inline">Jump to anything</span><kbd className="hidden rounded-md border border-[var(--border)] bg-[#f7f8fa] px-1.5 py-0.5 text-[9px] font-semibold text-[#737983] sm:inline">⌘ K</kbd></button><div className="hidden items-center gap-2 rounded-full border border-[var(--border)] bg-[#f8f9fb] px-3 py-2 text-[11px] font-medium text-[#59616e] md:flex"><span className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]"/>{session?.user.branchName ?? (role === "OWNER" ? "All branches" : "Branch not assigned")}</div><div className="hidden h-8 w-px bg-[var(--border)] sm:block"/><div className="flex items-center gap-2 sm:hidden"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span></div><div className="hidden items-center gap-2 sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span><span className="hidden max-w-28 truncate text-xs font-semibold text-[#343941] xl:block">{displayName}</span><button type="button" onClick={() => void signOut({ redirectTo: "/login" })} aria-label={`Sign out ${displayName}`} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold text-[#52665c] transition hover:bg-[#f5f6f8]"><LogOut className="h-3.5 w-3.5"/>Sign out</button></div></div>
         </header>
         <div className="workspace-content flex-1 px-4 py-6 sm:px-6 sm:py-7 lg:px-9 lg:py-8">{children}</div>
         <footer className="flex items-center justify-between border-t border-[#edf1ee] px-4 py-3.5 text-[10px] text-[#99a69e] sm:px-6 lg:px-9"><span>GadgetHub · Retail operations</span><span className="flex items-center gap-1.5">A clearer view of every day <ArrowUpRight className="h-3 w-3"/></span></footer>
       </main>
     </div>
+    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#e5eae5] bg-white/95 px-1 pt-1 shadow-[0_-8px_24px_rgba(23,42,32,.06)] backdrop-blur-xl lg:hidden" style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}>
+      {primaryTabs.map((href) => {
+        const Icon = iconByHref[href] ?? Package;
+        const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+        return <Link key={href} href={href} aria-current={active ? "page" : undefined} className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold ${active ? "text-[#16856d]" : "text-[#6d7c74]"}`}><Icon className="h-4 w-4" strokeWidth={1.8}/>{primaryTabLabel[href] ?? "Open"}</Link>;
+      })}
+      <button type="button" onClick={() => setMenuOpen(true)} className="flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold text-[#6d7c74]"><MoreHorizontal className="h-4 w-4"/>More</button>
+    </nav>
     {launcherOpen ? <div className="fixed inset-0 z-[100] flex items-start justify-center bg-[#0b201b]/45 px-4 pt-[12vh] backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) setLauncherOpen(false); }}>
       <section role="dialog" aria-modal="true" aria-label="Quick navigation" className="w-full max-w-xl overflow-hidden rounded-2xl border border-[#e5ebe5] bg-[#fffefa] shadow-[0_28px_100px_rgba(11,32,27,.28)]">
         <div className="flex items-center gap-3 border-b border-[#edf0eb] px-4"><Search className="h-4 w-4 shrink-0 text-[#819087]"/><input ref={launcherInput} value={launcherQuery} onChange={(event) => setLauncherQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setActiveCommand((index) => Math.min(index + 1, commands.length - 1)); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveCommand((index) => Math.max(index - 1, 0)); } else if (event.key === "Enter" && commands[activeCommand]) { event.preventDefault(); chooseCommand(commands[activeCommand].href); } }} placeholder="Search a page or workflow..." aria-label="Search pages and workflows" className="h-14 min-w-0 flex-1 bg-transparent text-sm text-[#263a30] outline-none placeholder:text-[#a1aaa2]"/><kbd className="rounded-md border border-[#e5e9e4] bg-[#f8f9f6] px-1.5 py-1 text-[9px] text-[#8a958c]">ESC</kbd></div>

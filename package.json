@@ -28,6 +28,7 @@
     "predev": "npm run db:generate",
     "prebuild": "npm run db:generate",
     "test:access": "node --import tsx --test scripts/access.test.ts",
+    "test:workflows": "node --import tsx --test scripts/sale-scan.test.ts scripts/finance-visibility.test.ts scripts/lipa-queue.test.ts scripts/stock-levels.test.ts scripts/stanbic-sales.test.ts",
     "test:device-units": "node --import tsx --test scripts/device-units.test.ts scripts/barcode-scanner.test.ts"
   },
   "dependencies": {

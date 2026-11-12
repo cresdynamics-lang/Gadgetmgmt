@@ -8,6 +8,8 @@ import { tracksUnits } from "@/lib/device-units";
 import { canUseCapability } from "@/lib/entitlements";
 import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { claimDevicesForSale, StockUnitError } from "@/lib/stock-units";
+import { omitSaleCost } from "@/lib/finance-visibility";
+import { stanbicSalesStatus } from "@/lib/stanbic";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { normalizeKenyanPhone } from "@/lib/mpesa";
@@ -60,6 +62,7 @@ export async function GET(request: Request) {
     })),
     customers,
     creditPolicy: creditPolicy ?? { minimumDepositPercent: 20, defaultCreditLimit: 0 },
+    stanbic: stanbicSalesStatus(),
   });
 }
 
@@ -89,7 +92,12 @@ const checkoutSchema = z.object({
   creditDepositMethod: z.enum(["CASH", "MPESA", "CARD"]).optional(),
   creditDepositReference: z.string().trim().toUpperCase().min(6).max(32).optional(),
   imei: z.string().trim().regex(/^\d{14,16}$/).optional(),
-  paymentBreakdown: z.array(z.object({ method: z.enum(["CASH", "MPESA", "CARD"]), amount: z.number().int().positive().max(2_000_000_000) })).min(2).max(3).optional(),
+  paymentReference: z.string().trim().toUpperCase().min(6).max(32).optional(),
+  paymentBreakdown: z.array(z.object({
+    method: z.enum(["CASH", "MPESA", "CARD"]),
+    amount: z.number().int().positive().max(2_000_000_000),
+    reference: z.string().trim().toUpperCase().min(6).max(32).optional(),
+  }).strict()).min(2).max(3).optional(),
   discountAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
   taxAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
 }).strict().superRefine((data, context) => {
@@ -98,6 +106,22 @@ const checkoutSchema = z.object({
   }
   if (data.paymentMethod === "SPLIT" && !data.paymentBreakdown) {
     context.addIssue({ code: "custom", path: ["paymentBreakdown"], message: "Split tenders require a payment breakdown." });
+  }
+  if (data.paymentMethod === "MPESA" && !data.paymentReference) {
+    context.addIssue({ code: "custom", path: ["paymentReference"], message: "Enter the M-Pesa confirmation code before recording the sale." });
+  }
+  if (data.paymentMethod !== "MPESA" && data.paymentReference) {
+    context.addIssue({ code: "custom", path: ["paymentReference"], message: "An M-Pesa confirmation code is only valid for an M-Pesa payment." });
+  }
+  if (data.paymentMethod === "SPLIT") {
+    for (const [index, payment] of (data.paymentBreakdown ?? []).entries()) {
+      if (payment.method === "MPESA" && !payment.reference) {
+        context.addIssue({ code: "custom", path: ["paymentBreakdown", index, "reference"], message: "Enter the M-Pesa confirmation code for that part of the payment." });
+      }
+      if (payment.method !== "MPESA" && payment.reference) {
+        context.addIssue({ code: "custom", path: ["paymentBreakdown", index, "reference"], message: "A confirmation code is only recorded for M-Pesa." });
+      }
+    }
   }
   if (data.paymentMethod !== "SPLIT" && data.paymentBreakdown) {
     context.addIssue({ code: "custom", path: ["paymentBreakdown"], message: "Payment breakdown is only valid for split tenders." });
@@ -293,7 +317,7 @@ export async function POST(request: Request) {
               ? parsed.data.paymentBreakdown!
               : parsed.data.paymentMethod === "CREDIT"
                 ? [{ amount: paidAmount, method: parsed.data.creditDepositMethod!, reference: parsed.data.creditDepositReference || null }]
-                : [{ amount: total, method: parsed.data.paymentMethod }],
+                : [{ amount: total, method: parsed.data.paymentMethod, ...(parsed.data.paymentReference ? { reference: parsed.data.paymentReference } : {}) }],
           } }),
         },
         include: {
@@ -465,7 +489,7 @@ export async function POST(request: Request) {
         console.error("Payment link was created, but immediate SMS delivery could not be recorded", sale.payerNotificationId, deliveryError instanceof Error ? deliveryError.message : "unknown error");
       }
     }
-    return NextResponse.json({ ...sale.sale, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage }, { status: 201 });
+    return NextResponse.json({ ...omitSaleCost(sale.sale, session.user.role), creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
       return NextResponse.json({ error: `Insufficient stock for ${error.message.slice("INSUFFICIENT_STOCK:".length)}.` }, { status: 409 });

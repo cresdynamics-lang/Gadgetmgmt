@@ -4,7 +4,9 @@ import { AppShell } from "@/components/app-shell";
 import { useSession } from "next-auth/react";
 import { CreditPolicyForm } from "./policy-form";
 import { Download } from "lucide-react";
+import { sortLipaPlans } from "@/lib/lipa-queue";
 import { downloadCreditAgreementPdf } from "@/lib/receipt-pdf";
+import { takeLipaAccount } from "@/lib/workflow-handoff";
 import { useEffect, useState, type FormEvent } from "react";
 
 type CreditPlan = {
@@ -31,6 +33,10 @@ type CreditPlan = {
 type C2BReceipt = { transactionId: string; billReference: string; phone: string | null; amount: number; createdAt: string; creditPlanId: string | null };
 
 const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
+const callHref = (phone: string) => {
+  const cleaned = phone.replace(/[^\d+]/g, "");
+  return cleaned ? `tel:${cleaned}` : "";
+};
 const statusName = (status: CreditPlan["status"]) => status.replace("_", " ");
 
 export default function CreditPage() {
@@ -64,7 +70,7 @@ export default function CreditPage() {
     async function loadPlans() {
       try {
         await refreshPlans();
-        const accountId = new URLSearchParams(window.location.search).get("account");
+        const accountId = takeLipaAccount();
         if (accountId) setSelectedId(accountId);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load credit accounts.");
@@ -84,8 +90,10 @@ export default function CreditPage() {
     return () => { window.clearTimeout(initialTimer); window.clearInterval(timer); };
   }, [session?.user?.role]);
 
-  const selected = plans.find((plan) => plan.id === selectedId && plan.status !== "PAID_OFF") ?? plans.find((plan) => plan.status !== "PAID_OFF");
-  const outstanding = plans.filter((plan) => plan.status !== "PAID_OFF");
+  const orderedPlans = sortLipaPlans(plans);
+  const finance = session?.user?.role === "OWNER";
+  const selected = orderedPlans.find((plan) => plan.id === selectedId && plan.status !== "PAID_OFF") ?? orderedPlans.find((plan) => plan.status !== "PAID_OFF");
+  const outstanding = orderedPlans.filter((plan) => plan.status !== "PAID_OFF");
   const overdue = outstanding.filter((plan) => ["DUE", "GRACE", "LATE_1", "LATE_2", "LATE_3", "RECOVERY", "OVERDUE"].includes(plan.status));
   const boardColumns = [
     { title: "On track", states: ["ACTIVE", "DUE_SOON"] },
@@ -250,7 +258,7 @@ export default function CreditPage() {
 
         <div className="lipa-stats grid gap-3 sm:grid-cols-3">
           <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Open accounts</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : outstanding.length}</p></div>
-          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">Outstanding balance</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : money(totalBalance)}</p></div>
+          <div className="border-b border-[#e8ebe8] px-4 py-4 sm:border-b-0 sm:border-r"><p className="text-xs text-[#69746c]">{finance ? "Outstanding balance" : "Needs a call"}</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : finance ? money(totalBalance) : overdue.length}</p></div>
           <div className="px-4 py-4"><p className="text-xs text-[#69746c]">Overdue accounts</p><p className="mt-1 text-xl font-semibold tabular-nums">{loading ? "—" : overdue.length}</p></div>
         </div>
 
@@ -283,7 +291,7 @@ export default function CreditPage() {
         <section id="lipa-accounts" className="overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_4px_18px_rgba(24,54,37,.03)]">
           <div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Credit accounts</h3></div>
           <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Customer</th><th className="px-4 py-3 font-medium">Product</th><th className="px-4 py-3 font-medium">Branch</th><th className="px-4 py-3 text-right font-medium">Original</th><th className="px-4 py-3 text-right font-medium">Balance</th><th className="px-4 py-3 font-medium">Next due</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 font-medium">Action</th></tr></thead><tbody className="divide-y divide-[#edf0ed]">
-            {plans.map((plan) => <tr key={plan.id} className={selected?.id === plan.id ? "bg-[#f5f8f2]" : ""}><td className="px-4 py-3"><p className="font-medium">{plan.customer.name}</p><p className="mt-1 text-xs text-[#69746c]">{plan.customer.phone}</p></td><td className="px-4 py-3">{plan.product.name}{plan.imei ? <p className="mt-1 font-mono text-[10px] text-[var(--muted)]">IMEI {plan.imei}</p> : null}</td><td className="px-4 py-3 text-[#69746c]">{plan.branch.name}</td><td className="px-4 py-3 text-right tabular-nums">{money(plan.totalAmount)}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(plan.balance)}</td><td className="px-4 py-3 text-[#69746c]">{new Date(plan.nextDueDate).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${["DUE", "GRACE", "LATE_1", "LATE_2", "LATE_3", "RECOVERY", "OVERDUE"].includes(plan.status) ? "bg-[#fff0ed] text-[#aa5543]" : plan.status === "PAID_OFF" ? "bg-[#f1f3f1] text-[#718078]" : "bg-[#eaf6ed] text-[#367d50]"}`}>{statusName(plan.status)}</span></td><td className="px-4 py-3">{plan.status !== "PAID_OFF" ? <button type="button" onClick={() => setSelectedId(plan.id)} className="rounded-lg bg-[#edf6ef] px-3 py-1.5 text-xs font-semibold text-[#315d3f] hover:bg-[#e1f0e5]">Record payment</button> : <span className="text-xs text-[#69746c]">Settled</span>}</td></tr>)}
+            {orderedPlans.map((plan) => <tr key={plan.id} className={selected?.id === plan.id ? "bg-[#f5f8f2]" : ""}><td className="px-4 py-3"><p className="font-medium">{plan.customer.name}</p><p className="mt-1 text-xs text-[#69746c]">{plan.customer.phone}</p></td><td className="px-4 py-3">{plan.product.name}{plan.imei ? <p className="mt-1 font-mono text-[10px] text-[var(--muted)]">IMEI {plan.imei}</p> : null}</td><td className="px-4 py-3 text-[#69746c]">{plan.branch.name}</td><td className="px-4 py-3 text-right tabular-nums">{finance ? money(plan.totalAmount) : "—"}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(plan.balance)}</td><td className="px-4 py-3 text-[#69746c]">{new Date(plan.nextDueDate).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${["DUE", "GRACE", "LATE_1", "LATE_2", "LATE_3", "RECOVERY", "OVERDUE"].includes(plan.status) ? "bg-[#fff0ed] text-[#aa5543]" : plan.status === "PAID_OFF" ? "bg-[#f1f3f1] text-[#718078]" : "bg-[#eaf6ed] text-[#367d50]"}`}>{statusName(plan.status)}</span></td><td className="px-4 py-3">{plan.status !== "PAID_OFF" ? <div className="flex flex-wrap gap-2">{callHref(plan.customer.phone) ? <a href={callHref(plan.customer.phone)} className="rounded-lg border border-[#d6ddd6] px-3 py-1.5 text-xs font-semibold text-[#315d3f]">Call</a> : null}<button type="button" onClick={() => setSelectedId(plan.id)} className="rounded-lg bg-[#edf6ef] px-3 py-1.5 text-xs font-semibold text-[#315d3f] hover:bg-[#e1f0e5]">Record payment</button></div> : <span className="text-xs text-[#69746c]">Settled</span>}</td></tr>)}
             {!loading && !plans.length ? <tr><td colSpan={8} className="px-4 py-10 text-center"><p className="text-sm font-semibold">No credit accounts recorded</p><p className="mt-1 text-sm text-[#69746c]">Accounts will appear here when a credit sale is created.</p></td></tr> : null}
           </tbody></table></div>
         </section>

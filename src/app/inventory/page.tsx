@@ -9,7 +9,7 @@ import { BarcodeCapture } from "@/components/barcode-capture";
 import type { DetectedCode } from "@/lib/barcode-scanner";
 import { categoryTracksUnits, maskImei, maskSerial } from "@/lib/device-units";
 import { downloadInventoryReceipt, type InventoryReceiptData } from "@/lib/receipt-pdf";
-import { needsReorder, reorderThreshold } from "@/lib/stock-levels";
+import { needsReorder, reorderThreshold, stockAttentionRank } from "@/lib/stock-levels";
 
 type Product = {
   id: string;
@@ -127,9 +127,15 @@ export default function InventoryPage() {
   const receiveMatches = useMemo(() => items.filter((item) => `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(productSearch.trim().toLowerCase())).slice(0, 30), [items, productSearch]);
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return items;
     const unitProductIds = new Set(units.filter((unit) => `${unit.imei ?? ""} ${unit.imei2 ?? ""} ${unit.serialNumber ?? ""} ${unit.location ?? ""}`.toLowerCase().includes(needle)).map((unit) => unit.productId));
-    return items.filter((item) => unitProductIds.has(item.product.id) || `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(needle));
+    const matched = !needle ? items : items.filter((item) => unitProductIds.has(item.product.id) || `${item.product.name} ${item.product.sku} ${item.product.category} ${item.product.brand ?? ""}`.toLowerCase().includes(needle));
+    return [...matched].sort((left, right) => {
+      const leftAvailable = left.stockOnHand - left.reservedStock;
+      const rightAvailable = right.stockOnHand - right.reservedStock;
+      const rank = stockAttentionRank(leftAvailable, left.reorderLevel, left.product.reorderLevel) - stockAttentionRank(rightAvailable, right.reorderLevel, right.product.reorderLevel);
+      if (rank !== 0) return rank;
+      return left.product.name.localeCompare(right.product.name);
+    });
   }, [items, query, units]);
   const visibleUnits = useMemo(() => {
     const needle = query.trim().toLowerCase();

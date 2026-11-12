@@ -17,6 +17,7 @@ export default async function DashboardPage() {
   const session = await requirePage("/dashboard");
   const grants = await getAccessMap();
   const role = session?.user.role ?? "";
+  const finance = role === "OWNER";
   const branchId = session?.user.branchId;
   const scope = session?.user.role === "OWNER" ? {} : { branchId: branchId ?? "" };
   const now = new Date();
@@ -83,6 +84,7 @@ export default async function DashboardPage() {
       label: day.toLocaleDateString("en-KE", { weekday: "short", timeZone: "Africa/Nairobi" }),
       isToday: dateKey(day) === dateKey(now),
       total: currentWeekSales.filter((sale) => sale.createdAt >= day && sale.createdAt < nextDay).reduce((sum, sale) => sum + sale.total, 0),
+      count: currentWeekSales.filter((sale) => sale.createdAt >= day && sale.createdAt < nextDay).length,
     };
   });
   const maxDaily = Math.max(1, ...dailyTotals.map((day) => day.total));
@@ -110,8 +112,8 @@ export default async function DashboardPage() {
         </section>
 
         <div className="dashboard-metrics grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Sales today" value={money(todayTotal)} delta={`${todaySales.length} transactions`} tone="green" />
-          <MetricCard label="Sales · 7 days" value={money(weekTotal)} delta={weekChange} tone={weekTotal >= previousTotal ? "green" : "amber"} />
+          <MetricCard label="Sales today" value={finance ? money(todayTotal) : String(todaySales.length)} delta={finance ? `${todaySales.length} transactions` : "Transactions · revenue stays with the owner"} tone="green" />
+          <MetricCard label="Sales · 7 days" value={finance ? money(weekTotal) : String(currentWeekSales.length)} delta={finance ? weekChange : "Transaction count · revenue stays with the owner"} tone={weekTotal >= previousTotal ? "green" : "amber"} />
           <MetricCard label="Units on hand" value={units.toLocaleString("en-KE")} delta={`${inventory.length} stocked products`} tone="neutral" />
           <MetricCard label="Reorder attention" value={String(lowStock.length)} delta={`${monitoredStockCount} products have a reorder point`} tone={lowStock.length ? "amber" : "green"} />
         </div>
@@ -125,13 +127,13 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        <AiBriefing configured={Boolean(process.env.OPENAI_API_KEY)} />
+        {role === "OWNER" || role === "BRANCH_MANAGER" ? <AiBriefing configured={Boolean(process.env.OPENAI_API_KEY)} /> : null}
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
           <section className="dashboard-panel dashboard-chart">
-            <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><div><h3 className="text-sm font-semibold">Sales activity</h3><p className="mt-1 text-xs text-[#69746c]">Daily revenue · last 7 days</p></div><span className="text-sm font-semibold">{money(weekTotal)}</span></div>
+            <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><div><h3 className="text-sm font-semibold">Sales activity</h3><p className="mt-1 text-xs text-[#69746c]">{finance ? "Daily revenue · last 7 days" : "Daily transactions · last 7 days"}</p></div><span className="text-sm font-semibold">{finance ? money(weekTotal) : currentWeekSales.length}</span></div>
             <div className="grid h-52 grid-cols-7 gap-3 px-5 pb-4 pt-5 sm:gap-5">
-              {dailyTotals.map((day) => <div key={day.label} className="group flex min-w-0 flex-col items-center justify-end gap-2"><span className={`truncate text-[10px] tabular-nums ${day.isToday ? "font-bold text-[#347c52]" : "text-[#9aa59d]"}`}>{day.total ? money(day.total).replace("KES ", "") : "—"}</span><div className="flex h-32 w-full items-end overflow-hidden rounded-t-md bg-[#f4f7f4]"><div title={money(day.total)} className={`w-full rounded-t-md transition-all duration-500 group-hover:brightness-110 ${day.isToday ? "bg-gradient-to-t from-[#347c52] to-[#78bf8c]" : "bg-gradient-to-t from-[#b7d5bf] to-[#d6e9d9]"}`} style={{ height: `${Math.max(4, (day.total / maxDaily) * 100)}%` }} /></div><span className={`grid h-6 min-w-8 place-items-center rounded-full px-2 text-[10px] font-semibold ${day.isToday ? "bg-[#e8f5eb] text-[#347c52]" : "text-[#87948c]"}`}>{day.label}</span></div>)}
+              {dailyTotals.map((day) => <div key={day.label} className="group flex min-w-0 flex-col items-center justify-end gap-2"><span className={`truncate text-[10px] tabular-nums ${day.isToday ? "font-bold text-[#347c52]" : "text-[#9aa59d]"}`}>{finance ? (day.total ? money(day.total).replace("KES ", "") : "—") : (day.count || "—")}</span><div className="flex h-32 w-full items-end overflow-hidden rounded-t-md bg-[#f4f7f4]"><div title={finance ? money(day.total) : `${day.count} sales`} className={`w-full rounded-t-md transition-all duration-500 group-hover:brightness-110 ${day.isToday ? "bg-gradient-to-t from-[#347c52] to-[#78bf8c]" : "bg-gradient-to-t from-[#b7d5bf] to-[#d6e9d9]"}`} style={{ height: `${Math.max(4, ((finance ? day.total : day.count) / (finance ? maxDaily : Math.max(1, ...dailyTotals.map((item) => item.count)))) * 100)}%` }} /></div><span className={`grid h-6 min-w-8 place-items-center rounded-full px-2 text-[10px] font-semibold ${day.isToday ? "bg-[#e8f5eb] text-[#347c52]" : "text-[#87948c]"}`}>{day.label}</span></div>)}
             </div>
           </section>
 
@@ -147,16 +149,16 @@ export default async function DashboardPage() {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
           <section className="dashboard-panel dashboard-sales">
             <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent sales</h3><span className="text-xs text-[#69746c]">Latest 8</span></div>
-            <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Invoice</th><th className="px-4 py-3 font-medium">Time</th><th className="px-4 py-3 font-medium">Branch</th><th className="px-4 py-3 font-medium">Cashier</th><th className="px-4 py-3 text-right font-medium">Total</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-[#edf0ed]">
-              {recentSales.map((sale) => <tr key={sale.id}><td className="px-4 py-3 font-mono text-[11px] font-semibold text-[#435b4b]">{sale.invoiceNumber}</td><td className="px-4 py-3 text-[#69746c]">{sale.createdAt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3">{sale.branch.name}</td><td className="px-4 py-3">{sale.cashier.name}</td><td className="px-4 py-3 text-right font-semibold tabular-nums text-[#263b2e]">{money(sale.total)}</td><td className="px-4 py-3 text-xs"><span className="rounded-full bg-[#eaf6ed] px-2.5 py-1 text-[10px] font-semibold text-[#367d50]">{sale.status}</span></td></tr>)}
-              {!recentSales.length ? <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-[#69746c]">No completed sales have been recorded in this period.</td></tr> : null}
+            <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-[#e8ebe8] bg-[#f7f8f6] text-xs text-[#66736a]"><tr><th className="px-4 py-3 font-medium">Invoice</th><th className="px-4 py-3 font-medium">Time</th><th className="px-4 py-3 font-medium">Branch</th><th className="px-4 py-3 font-medium">Cashier</th>{finance ? <th className="px-4 py-3 text-right font-medium">Total</th> : null}<th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-[#edf0ed]">
+              {recentSales.map((sale) => <tr key={sale.id}><td className="px-4 py-3 font-mono text-[11px] font-semibold text-[#435b4b]">{sale.invoiceNumber}</td><td className="px-4 py-3 text-[#69746c]">{sale.createdAt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</td><td className="px-4 py-3">{sale.branch.name}</td><td className="px-4 py-3">{sale.cashier.name}</td>{finance ? <td className="px-4 py-3 text-right font-semibold tabular-nums text-[#263b2e]">{money(sale.total)}</td> : null}<td className="px-4 py-3 text-xs"><span className="rounded-full bg-[#eaf6ed] px-2.5 py-1 text-[10px] font-semibold text-[#367d50]">{sale.status}</span></td></tr>)}
+              {!recentSales.length ? <tr><td colSpan={finance ? 6 : 5} className="px-4 py-8 text-center text-sm text-[#69746c]">No completed sales have been recorded in this period.</td></tr> : null}
             </tbody></table></div>
           </section>
 
           <section className="dashboard-panel dashboard-credit">
             <div className="flex items-center justify-between border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Credit plans due</h3><span className="text-xs text-[#69746c]">Next 7 days</span></div>
             <div className="divide-y divide-[#edf0ed]">
-              {duePlans.map((plan) => <div key={plan.id} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{plan.customer.name}</p><p className="mt-1 text-xs text-[#69746c]">{plan.branch.name} · Due {plan.nextDueDate.toLocaleDateString("en-KE", { day: "numeric", month: "short" })}</p></div><span className="shrink-0 text-sm font-semibold tabular-nums">{money(plan.balance)}</span></div>)}
+              {duePlans.map((plan) => <div key={plan.id} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{plan.customer.name}</p><p className="mt-1 text-xs text-[#69746c]">{plan.branch.name} · Due {plan.nextDueDate.toLocaleDateString("en-KE", { day: "numeric", month: "short" })}</p></div>{finance ? <span className="shrink-0 text-sm font-semibold tabular-nums">{money(plan.balance)}</span> : <span className="shrink-0 text-xs font-semibold text-[#526057]">Collect</span>}</div>)}
               {!duePlans.length ? <p className="px-4 py-6 text-sm text-[#69746c]">No active credit installments due this week.</p> : null}
             </div>
           </section>

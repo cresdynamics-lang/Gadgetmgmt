@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
+import { omitSaleCost } from "@/lib/finance-visibility";
 import { canUseCapability } from "@/lib/entitlements";
 import { rejectSensitiveQuery } from "@/lib/request-guards";
 import { prisma } from "@/lib/prisma";
@@ -23,5 +24,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     },
   });
   if (!sale) return NextResponse.json({ error: "Sale was not found." }, { status: 404 });
-  return NextResponse.json(sale, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(omitSaleCost(sale, session.user.role), { headers: { "Cache-Control": "no-store" } });
 }
