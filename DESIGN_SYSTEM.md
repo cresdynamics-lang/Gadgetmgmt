@@ -1,17 +1,21 @@
 # Design system
 
-This pass uses the shop's existing spruce and paper palette. It does not introduce a new visual language.
+The app uses the palette from the operations system document.
 
-| Token | Use |
-| --- | --- |
-| `#102d27` | Desk sidebar and the phone navigation drawer. |
-| `#fffefa`, `#f5f4ee` | Page surface and the outer canvas. |
-| `#16856d`, `#173a2b` | Active phone tab and the selected payment method. |
-| `#6d5a32` | The Stanbic status line on Sell, so it reads as a waiting state rather than a success. |
-| Existing borders `#e2e9e2` and muted text `#77837a` | Catalogue, checkout, and table chrome. |
+| Token | Value | Use |
+| --- | --- | --- |
+| Ink | `#0a0a0a` | Sidebar, phone drawer, and dark panels. |
+| Sidebar text | `#c9c9c4` | Resting navigation labels. |
+| Active nav | `#1f1f1e` | The current destination, with a `#0fa36e` icon. |
+| Page | `#f4f4f2` | The canvas behind the work. |
+| Card | `#ffffff` | Panels, tables, and the header. |
+| Line | `#e6e6e2` | Borders and dividers. |
+| Text | `#111111` | Headings and body copy. |
+| Muted | `#6b6b66` | Secondary copy and idle phone tabs. |
+| Green | `#0fa36e` | The active mark and focus ring. |
+| Green action | `#0a7d56` | Primary buttons and positive amounts. |
+| Green tint | `#e5f5ee` | Selected and success washes. |
+| Amber | `#b7791f` | Waiting states. Amber text is `#8a5a12` on `#fdf3df`. |
+| Red | `#d93025` | Destructive and overdue marks. Red text is `#b3261e` on `#fdeceb`. |
 
-Type, radius, and shadow stay on the classes already used by the shell and the till. Icons stay in the Lucide set already imported by the shell: `LogOut` for sign out, `MoreHorizontal` for the phone More tab, and the existing page icons for the bottom bar.
-
-Scan stays on `BarcodeCapture`. Search, quantity steppers, and the checkout card keep their current layout. The phone bar sits outside the page card, with safe-area padding, and the main column reserves `4.75rem` so the last action is not covered. From `lg` that padding is removed because the sidebar replaces the bar.
-
-Copy that had been saved as mojibake (`catalogue…`, the middle dot, and the basket sentence) is plain text again. No new font, no new color ramp, and no marketing reskin.
+Type, radius, and the existing layout stay. The phone bar still reserves `4.75rem`, and the desk sidebar still caps at 90vh on a 1920×1080 screen and larger.
