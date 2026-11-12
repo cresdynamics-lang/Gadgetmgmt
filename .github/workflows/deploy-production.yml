@@ -321,12 +321,30 @@ jobs:
           fi
           if [ -n "$public_host" ]; then
             echo "public_host=${public_host}"
-            public_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "https://${public_host}/login" || echo 000)"
+            public_code="000"
+            for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              public_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "https://${public_host}/login" || echo 000)"
+              if [ "$public_code" = "200" ]; then
+                break
+              fi
+              sleep 5
+            done
             echo "public_login_http=${public_code}"
             if [ "$public_code" != "200" ]; then
               echo "The public tunnel host did not return 200 for /login."
               exit 1
             fi
+            root_headers="$(curl -sSI --max-time 25 "https://${public_host}/" || true)"
+            root_location="$(printf '%s\n' "$root_headers" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}')"
+            echo "public_root_location=${root_location}"
+            case "$root_location" in
+              "https://${public_host}/login"|"https://${public_host}/login?callbackUrl=%2F"|"https://${public_host}/login?callbackUrl=/")
+                ;;
+              *)
+                echo "The public root redirect did not stay on https://${public_host}/login."
+                exit 1
+                ;;
+            esac
           else
             echo "The app responded on the server and the tunnel registered. The public hostname was not in the tunnel log, so this job could not request the public site."
           fi

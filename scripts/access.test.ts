@@ -14,7 +14,8 @@ import {
   hasAnyQuery,
   hasSensitiveQuery,
   parseEntitlementUpdate,
-  relativeAppPath,
+  publicAppUrl,
+  publicRequestOrigin,
   safeInternalPath,
 } from "../src/lib/access";
 
@@ -120,18 +121,23 @@ test("rejects passwords and user details in urls", () => {
   assert.equal(safeInternalPath("/\\evil.example"), null);
   assert.equal(safeInternalPath("/dashboard?password=secret"), null);
   assert.equal(safeInternalPath("/%2f%2fevil.example"), null);
-  assert.equal(relativeAppPath(new URL("http://localhost:3000/login?callbackUrl=%2F")), "/login?callbackUrl=%2F");
-  assert.equal(relativeAppPath(new URL("https://development.gadgethubke.com/dashboard")), "/dashboard");
+  const tunnelRequest = {
+    headers: new Headers({ host: "nodejs:3005", "x-forwarded-host": "development.gadgethubke.com", "x-forwarded-proto": "https" }),
+    nextUrl: new URL("http://localhost:3000/dashboard"),
+  };
+  assert.equal(publicRequestOrigin(tunnelRequest), "https://development.gadgethubke.com");
+  assert.equal(publicAppUrl(tunnelRequest, "/login?callbackUrl=%2F"), "https://development.gadgethubke.com/login?callbackUrl=%2F");
 });
 
-test("auth redirects stay relative so a localhost NEXTAUTH_URL cannot leave the tunnel", () => {
+test("auth redirects use the public host and Compose clears localhost auth URLs", () => {
   const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
-  assert.match(proxy, /relativeAppPath/);
-  assert.match(proxy, /Location: path/);
+  assert.match(proxy, /publicAppUrl/);
   assert.doesNotMatch(proxy, /Response\.redirect\(/);
   const compose = readFileSync(path.join(root, "compose.yaml"), "utf8");
   assert.match(compose, /NEXTAUTH_URL:\s*""/);
   assert.match(compose, /AUTH_URL:\s*""/);
+  const start = readFileSync(path.join(root, "scripts/production-remote-start.sh"), "utf8");
+  assert.match(start, /wait_for_nodejs_ready/);
 });
 
 test("each editable page is refused on the server when it is not granted", () => {
