@@ -1,0 +1,35 @@
+# The Cloudflare public hostname service URL is http://nodejs:3005.
+# cloudflared joins this network, so that name is the Next.js service.
+
+services:
+  nodejs:
+    build:
+      context: .web-context
+    image: gadgetmgmt-nodejs:latest
+    env_file:
+      - .env
+      - .nextauth.env
+    environment:
+      NODE_ENV: production
+    expose:
+      - "3005"
+    restart: unless-stopped
+
+  cloudflared:
+    image: node:22.23.5-bookworm-slim
+    user: "${HOST_UID}:${HOST_GID}"
+    entrypoint: ["/usr/local/bin/cloudflared"]
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - http://nodejs:3005
+      - run
+      - --token-file
+      - /etc/cloudflared/token
+    volumes:
+      - ./bin/cloudflared:/usr/local/bin/cloudflared:ro
+      - ./.tunnel-token:/etc/cloudflared/token:ro
+    depends_on:
+      - nodejs
+    restart: unless-stopped

@@ -69,7 +69,7 @@ jobs:
           stage="${RUNNER_TEMP}/deploy-bundle"
           rm -rf "$stage"
           mkdir -p "$stage/.next" "$stage/public" "$stage/prisma"
-          cp package.json package-lock.json next.config.ts tsconfig.json "$stage/"
+          cp package.json package-lock.json next.config.ts tsconfig.json Dockerfile.web compose.yaml "$stage/"
           cp -a .next/. "$stage/.next/"
           rm -rf "$stage/.next/cache"
           cp -a public/. "$stage/public/"
@@ -97,6 +97,8 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS || vars.DEPLOY_SSH_KNOWN_HOSTS }}
           TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXT_AUTH_SECRET: ${{ secrets.NEXT_AUTH_SECRET }}
         run: |
           set -euo pipefail
 
@@ -107,6 +109,11 @@ jobs:
           [ -n "${DEPLOY_PATH-}" ] || { echo "Missing required deploy setting: DEPLOY_PATH"; missing=1; }
           [ -n "${DEPLOY_SSH_KNOWN_HOSTS-}" ] || { echo "Missing required deploy setting: DEPLOY_SSH_KNOWN_HOSTS"; missing=1; }
           [ -n "${TUNNEL_TOKEN-}" ] || { echo "Missing required deploy setting: TUNNEL_TOKEN"; missing=1; }
+          if [ -z "${NEXTAUTH_SECRET-}" ] && [ -n "${NEXT_AUTH_SECRET-}" ]; then
+            NEXTAUTH_SECRET="$NEXT_AUTH_SECRET"
+          fi
+          unset NEXT_AUTH_SECRET
+          [ -n "${NEXTAUTH_SECRET-}" ] || { echo "Missing required deploy setting: NEXTAUTH_SECRET"; missing=1; }
           if [ "${missing}" -ne 0 ]; then
             exit 1
           fi
@@ -209,6 +216,8 @@ jobs:
             "${stage}/package-lock.json" \
             "${stage}/next.config.ts" \
             "${stage}/tsconfig.json" \
+            "${stage}/Dockerfile.web" \
+            "${stage}/compose.yaml" \
             "${remote}:${DEPLOY_PATH}/"
 
           # Cloudflare tunnel token. Write it mode 600, then drop it from the environment.
@@ -220,6 +229,18 @@ jobs:
           token_lines="$(grep -c '' "$token_file" || true)"
           if [ "$token_lines" != "1" ] || grep -q '[[:space:]]' "$token_file"; then
             echo "TUNNEL_TOKEN must be a single-line secret."
+            exit 1
+          fi
+
+          auth_file="${ssh_dir}/nextauth-secret"
+          printf '%s' "$NEXTAUTH_SECRET" > "$auth_file"
+          unset NEXTAUTH_SECRET
+          tr -d '\r\n' < "$auth_file" > "${auth_file}.clean"
+          mv "${auth_file}.clean" "$auth_file"
+          chmod 600 "$auth_file"
+          auth_len="$(wc -c < "$auth_file" | tr -d ' ')"
+          if [ "$auth_len" -lt 43 ] || grep -q '[[:space:]]' "$auth_file" || grep -qx 'replace-with-a-long-random-secret' "$auth_file"; then
+            echo "Blocker: NEXTAUTH_SECRET must be a single-line 32-byte base64 value."
             exit 1
           fi
 
@@ -277,6 +298,8 @@ jobs:
           fi
           scp_base "$token_file" "${remote}:${DEPLOY_PATH}/.tunnel-token"
           rm -f "$token_file"
+          scp_base "$auth_file" "${remote}:${DEPLOY_PATH}/.nextauth-secret"
+          rm -f "$auth_file"
           scp_base scripts/production-remote-start.sh "${remote}:${DEPLOY_PATH}/bin/production-remote-start.sh"
           echo "Checking Node.js and the server environment file"
           ssh_base "$remote" "if command -v node >/dev/null 2>&1; then node -v; else echo NO_NODE; fi; if [ -f ${quoted_path}/.env ]; then echo HAS_ENV; else echo NO_ENV; fi"
