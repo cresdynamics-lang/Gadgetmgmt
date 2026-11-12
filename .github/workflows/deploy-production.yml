@@ -236,6 +236,15 @@ jobs:
           curl -fsSL --retry 3 -o "$cf_bin" "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/${cf_asset}"
           echo "${cf_sha}  ${cf_bin}" | sha256sum -c -
           chmod 755 "$cf_bin"
+          case "$arch" in
+            x86_64) node_asset="node-v22.23.5-linux-x64.tar.xz"; node_sha="cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8" ;;
+            aarch64|arm64) node_asset="node-v22.23.5-linux-arm64.tar.xz"; node_sha="2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09" ;;
+          esac
+          node_tar="${ssh_dir}/${node_asset}"
+          curl -fsSL --retry 3 -o "$node_tar" "https://nodejs.org/dist/v22.23.5/${node_asset}"
+          echo "${node_sha}  ${node_tar}" | sha256sum -c -
+          tar -xJf "$node_tar" -C "$ssh_dir"
+          node_dir="${ssh_dir}/${node_asset%.tar.xz}"
 
           scp_base() {
             scp \
@@ -256,6 +265,9 @@ jobs:
           ssh_base "$remote" "mkdir -p -- ${quoted_path}/bin"
           echo "Copying the tunnel client"
           scp_base "$cf_bin" "${remote}:${DEPLOY_PATH}/bin/cloudflared"
+          echo "Copying Node.js 22"
+          ssh_base "$remote" "rm -rf -- ${quoted_path}/.node"
+          scp_base -r "$node_dir" "${remote}:${DEPLOY_PATH}/.node"
           scp_base "$token_file" "${remote}:${DEPLOY_PATH}/.tunnel-token"
           rm -f "$token_file"
           scp_base scripts/production-remote-start.sh "${remote}:${DEPLOY_PATH}/bin/production-remote-start.sh"
