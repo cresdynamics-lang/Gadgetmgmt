@@ -269,11 +269,18 @@ case "$host" in
 esac
 if [ -n "$host" ]; then
   echo "public_host=${host}"
-  # Point APP_BASE_URL at the public host when .env still has a loopback origin.
-  if grep -Eq '^APP_BASE_URL=https?://(localhost|127\.0\.0\.1)(:[0-9]+)?/?$' .env 2>/dev/null \
-    || ! grep -Eq '^APP_BASE_URL=https://' .env 2>/dev/null; then
+  desired_base="https://${host}"
+  existing_base=""
+  if [ -f .public-url.env ]; then
+    existing_base="$(sed -n 's/^APP_BASE_URL=//p' .public-url.env | tr -d '\r' | head -n 1)"
+  fi
+  # Keep APP_BASE_URL on the public host. Skip recreate when a previous deploy
+  # already wrote the same value, so later pushes do not bounce the app and race the tunnel check.
+  if [ "$existing_base" = "$desired_base" ]; then
+    echo "app_base_url=${desired_base}"
+  else
     umask 077
-    printf 'APP_BASE_URL=https://%s\n' "$host" > .public-url.env
+    printf 'APP_BASE_URL=%s\n' "$desired_base" > .public-url.env
     chmod 600 .public-url.env
     # Recreate only the app so receipt and payment links use the public host.
     # Auth URLs stay cleared in compose.yaml so login redirects keep using the request host.
@@ -288,7 +295,7 @@ if [ -n "$host" ]; then
         -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' || true
       exit 1
     fi
-    echo "app_base_url=https://${host}"
+    echo "app_base_url=${desired_base}"
   fi
 else
   echo "public_host="
