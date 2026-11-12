@@ -1,5 +1,9 @@
 # Install the public key in the VPC user's authorized_keys, and store the
 # device private key as the DEPLOY_SSH_KEY secret.
+#
+# Production deploys are held. The last start found a listener on port 3000
+# that the deploy user cannot see or stop. Do not assume that user has sudo
+# or Docker. Remove `if: false` below only after that listener is identified.
 
 name: Deploy production
 
@@ -24,6 +28,8 @@ defaults:
 jobs:
   deploy:
     name: Build and copy to production
+    # Held until the port 3000 listener is identified. aabere could not see it.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
