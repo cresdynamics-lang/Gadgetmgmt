@@ -96,6 +96,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER || vars.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS || vars.DEPLOY_SSH_KNOWN_HOSTS }}
+          TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -105,9 +106,19 @@ jobs:
           [ -n "${DEPLOY_USER-}" ] || { echo "Missing required deploy setting: DEPLOY_USER"; missing=1; }
           [ -n "${DEPLOY_PATH-}" ] || { echo "Missing required deploy setting: DEPLOY_PATH"; missing=1; }
           [ -n "${DEPLOY_SSH_KNOWN_HOSTS-}" ] || { echo "Missing required deploy setting: DEPLOY_SSH_KNOWN_HOSTS"; missing=1; }
+          [ -n "${TUNNEL_TOKEN-}" ] || { echo "Missing required deploy setting: TUNNEL_TOKEN"; missing=1; }
           if [ "${missing}" -ne 0 ]; then
             exit 1
           fi
+
+          # Drop accidental wrapping quotes or surrounding whitespace. Do not substitute a path.
+          DEPLOY_PATH=${DEPLOY_PATH//$'\r'/}
+          DEPLOY_PATH="${DEPLOY_PATH#"${DEPLOY_PATH%%[![:space:]]*}"}"
+          DEPLOY_PATH="${DEPLOY_PATH%"${DEPLOY_PATH##*[![:space:]]}"}"
+          case "$DEPLOY_PATH" in
+            \"*\") DEPLOY_PATH=${DEPLOY_PATH#\"}; DEPLOY_PATH=${DEPLOY_PATH%\"} ;;
+            \'*\') DEPLOY_PATH=${DEPLOY_PATH#\'}; DEPLOY_PATH=${DEPLOY_PATH%\'} ;;
+          esac
 
           if ! printf '%s' "$DEPLOY_USER" | grep -Eq '^[A-Za-z_][A-Za-z0-9._-]{0,31}$'; then
             echo "DEPLOY_USER must be a plain SSH username."
@@ -118,7 +129,7 @@ jobs:
             exit 1
           fi
           if ! printf '%s' "$DEPLOY_PATH" | grep -Eq '^/[A-Za-z0-9._/-]+$'; then
-            echo "DEPLOY_PATH must be an absolute directory path."
+            echo "DEPLOY_PATH must be an absolute directory path. It must start with / and contain only letters, numbers, and / . _ -."
             exit 1
           fi
           case "$DEPLOY_PATH" in
@@ -199,6 +210,73 @@ jobs:
             "${stage}/next.config.ts" \
             "${stage}/tsconfig.json" \
             "${remote}:${DEPLOY_PATH}/"
+
+          # Cloudflare tunnel token. Write it mode 600, then drop it from the environment.
+          token_file="${ssh_dir}/tunnel-token"
+          umask 077
+          printf '%s' "$TUNNEL_TOKEN" > "$token_file"
+          chmod 600 "$token_file"
+          unset TUNNEL_TOKEN
+          token_lines="$(grep -c '' "$token_file" || true)"
+          if [ "$token_lines" != "1" ] || grep -q '[[:space:]]' "$token_file"; then
+            echo "TUNNEL_TOKEN must be a single-line secret."
+            exit 1
+          fi
+
+          arch="$(ssh_base "$remote" uname -m)"
+          case "$arch" in
+            x86_64) cf_asset="cloudflared-linux-amd64"; cf_sha="1f99fb518b83dec2ba8d870a7cc991d82a77e6196295a3d2754ba17ab9f91872" ;;
+            aarch64|arm64) cf_asset="cloudflared-linux-arm64"; cf_sha="3df43aedc9ff291d1735b5cb576cb97e0b157488796db2e32b28aecabb445775" ;;
+            *)
+              echo "The server CPU is not a supported tunnel-client architecture."
+              exit 1
+              ;;
+          esac
+          cf_bin="${ssh_dir}/cloudflared"
+          curl -fsSL --retry 3 -o "$cf_bin" "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/${cf_asset}"
+          echo "${cf_sha}  ${cf_bin}" | sha256sum -c -
+          chmod 755 "$cf_bin"
+
+          scp_base() {
+            scp \
+              -i "$key_file" \
+              -o IdentitiesOnly=yes \
+              -o PreferredAuthentications=publickey \
+              -o PasswordAuthentication=no \
+              -o KbdInteractiveAuthentication=no \
+              -o PubkeyAuthentication=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$known_hosts" \
+              -o GlobalKnownHostsFile=/dev/null \
+              -o BatchMode=yes \
+              -o ConnectTimeout=30 \
+              "$@"
+          }
+          ssh_base "$remote" "mkdir -p -- ${quoted_path}/bin"
+          scp_base "$cf_bin" "${remote}:${DEPLOY_PATH}/bin/cloudflared"
+          scp_base "$token_file" "${remote}:${DEPLOY_PATH}/.tunnel-token"
+          rm -f "$token_file"
+
+          scp_base scripts/production-remote-start.sh "${remote}:${DEPLOY_PATH}/bin/production-remote-start.sh"
+          remote_status="$(ssh_base "$remote" bash "${DEPLOY_PATH}/bin/production-remote-start.sh" "$DEPLOY_PATH")"
+          printf '%s\n' "$remote_status"
+          local_code="$(printf '%s\n' "$remote_status" | sed -n 's/^local_login_http=//p' | head -n 1)"
+          public_host="$(printf '%s\n' "$remote_status" | sed -n 's/^public_host=//p' | head -n 1)"
+          if [ "$local_code" != "200" ]; then
+            echo "The app did not respond on the server."
+            exit 1
+          fi
+          if [ -n "$public_host" ]; then
+            echo "public_host=${public_host}"
+            public_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "https://${public_host}/login" || echo 000)"
+            echo "public_login_http=${public_code}"
+            if [ "$public_code" != "200" ]; then
+              echo "The public tunnel host did not return 200 for /login."
+              exit 1
+            fi
+          else
+            echo "The app responded on the server and the tunnel registered. The public hostname was not in the tunnel log, so this job could not request the public site."
+          fi
 
       - name: Delete the deploy key
         if: always()
