@@ -8,18 +8,32 @@ deploy_path="${1:?deploy path required}"
 cd "$deploy_path"
 chmod 600 .tunnel-token
 chmod 755 bin/cloudflared
+if [ -x "$deploy_path/.node/bin/node" ]; then
+  export PATH="$deploy_path/.node/bin:$PATH"
+fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "The server does not have Node.js on PATH. Install Node.js 22 or newer."
+  echo "Blocker: Node.js is not available on the server."
   exit 1
 fi
+node_version="$(node -v)"
+echo "node_version=${node_version}"
 node_major="$(node -p 'process.versions.node.split(".")[0]')"
 if [ "$node_major" -lt 22 ]; then
-  echo "The server Node.js is older than 22. Install Node.js 22 or newer."
+  echo "Blocker: Node.js ${node_version} is older than 22."
   exit 1
 fi
 if [ ! -f .env ]; then
-  echo "The server is missing .env in the deploy directory. Add the production environment there, including DATABASE_URL and NEXTAUTH_SECRET. This workflow does not copy that file."
+  for candidate in "$HOME/.env" "$HOME/.env.production"; do
+    if [ -f "$candidate" ]; then
+      ln -s "$candidate" .env
+      echo "Using an existing environment file from the home directory."
+      break
+    fi
+  done
+fi
+if [ ! -f .env ]; then
+  echo "Blocker: no .env in the deploy directory, and none in the home directory. The app needs DATABASE_URL and NEXTAUTH_SECRET there. This workflow does not create that file."
   exit 1
 fi
 
