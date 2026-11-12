@@ -1,6 +1,5 @@
 "use client";
 
-import { AppShell } from "@/components/app-shell";
 import { useSession } from "next-auth/react";
 import { CreditPolicyForm } from "./policy-form";
 import { Download } from "lucide-react";
@@ -249,7 +248,7 @@ export default function CreditPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="lipa-workspace space-y-5">
         <div className="lipa-hero flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-[#244c35] bg-[#183b2a] px-5 py-5 text-white shadow-[0_14px_36px_rgba(22,57,39,.13)] sm:px-7 sm:py-6"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#a9c9ad]">Take home today, pay over time</p><h2 className="mt-1.5 text-2xl font-semibold tracking-tight">Lipa Mdogo Mdogo</h2><p className="mt-2 max-w-xl text-sm leading-6 text-[#ccdbcf]">Track every account from deposit to final installment, and see which customer needs attention next.</p></div><div className="flex flex-wrap gap-2"><a href="#lipa-record-payment" className="rounded-xl bg-[#d9edda] px-4 py-2.5 text-xs font-bold text-[#234b32] transition hover:bg-white">Record payment</a><a href="#lipa-accounts" className="rounded-xl border border-white/20 bg-white/[.07] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-white/[.13]">View accounts</a></div></div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
@@ -315,6 +314,6 @@ export default function CreditPage() {
 
         {selected?.installments.length ? <section className="border border-[#dfe4df] bg-white"><div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Repayment schedule · {selected.termMonths} months</h3><p className="mt-1 text-xs text-[#69746c]">The customer’s shared account page updates as payments are recorded.</p></div><div className="grid gap-px bg-[#eeece4] sm:grid-cols-2 lg:grid-cols-3">{selected.installments.map((installment) => <div key={installment.id} className="flex items-center justify-between gap-3 bg-white px-4 py-3"><span><span className="block text-xs font-semibold text-[#354638]">Payment {installment.sequence}</span><span className="mt-1 block text-[10px] text-[#898c81]">{new Date(installment.dueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}</span></span><span className="text-right"><span className="block text-xs font-semibold tabular-nums">{money(installment.amount)}</span><span className="mt-1 block text-[9px] uppercase tracking-wider text-[#747b70]">{installment.paidAt ? "Paid" : installment.paidAmount ? "Part paid" : "Upcoming"}</span></span></div>)}</div></section> : null}        {selected?.payments.length ? <section className="border border-[#dfe4df] bg-white"><div className="border-b border-[#e8ebe8] px-4 py-3.5"><h3 className="text-sm font-semibold">Recent installments · {selected.customer.name}</h3></div><div className="divide-y divide-[#edf0ed]">{selected.payments.map((payment) => <div key={payment.id} className="flex flex-wrap justify-between gap-3 px-4 py-3 text-sm"><span className="text-[#69746c]">{new Date(payment.createdAt).toLocaleString("en-KE")} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</span><strong>{money(payment.amount)}</strong></div>)}</div></section> : null}
       </div>
-    </AppShell>
+    </>
   );
 }

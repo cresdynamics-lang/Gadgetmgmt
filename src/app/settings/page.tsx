@@ -3,8 +3,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Save } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { AppShell } from "@/components/app-shell";
-
 type Branch = { id: string; name: string; code: string; address: string; phone: string; email: string | null; isActive: boolean };
 const roleNames: Record<string, string> = { OWNER: "Administrator", BRANCH_MANAGER: "Branch manager", CASHIER: "Cashier", INVENTORY_LEAD: "Inventory lead" };
 
@@ -64,7 +62,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="settings-workspace space-y-5">
         <div className="settings-hero rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7"><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#60816b]">Configuration</p><h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-[#20382d]">Business settings</h2><p className="mt-1.5 text-sm text-[#77837a]">Manage branch identity and review the account you’re signed in with.</p></div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
@@ -82,6 +80,6 @@ export default function SettingsPage() {
         </form> : <div className="border border-[#dfe4df] bg-white p-6 text-sm text-[#69746c]">{loading ? "Loading branch settings…" : "No branch is assigned to this account."}</div>}
         <section className="settings-account-card overflow-hidden rounded-2xl border border-[#e2e9e2] bg-white shadow-[0_4px_18px_rgba(24,54,37,.03)]"><div className="border-b border-[#e8eee8] bg-[#fbfdfb] px-5 py-4 sm:px-6"><h3 className="text-sm font-semibold text-[#304235]">Signed-in account</h3><p className="mt-1 text-xs text-[#77847a]">Your current identity and access level</p></div><dl className="grid gap-3 p-5 sm:grid-cols-3 sm:p-6">{[["Name", session?.user.name ?? "Loading…"], ["Email", session?.user.email ?? "—"], ["Access role", session?.user.role ? roleNames[session.user.role] ?? session.user.role : "—"]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#edf1ed] bg-[#fbfdfb] p-3"><dt className="text-[9px] font-bold uppercase tracking-[.12em] text-[#849087]">{label}</dt><dd className="mt-1.5 break-all text-sm font-semibold text-[#304235]">{value}</dd></div>)}</dl></section>
       </div>
-    </AppShell>
+    </>
   );
 }

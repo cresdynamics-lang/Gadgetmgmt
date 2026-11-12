@@ -12,7 +12,8 @@ Reviewed against the v4 operations spec, the HTML prototype, OWASP issue #3, and
 | Managers and cashiers could see shop revenue, profit, and Lipa totals. Sale JSON included unit cost. | Those figures are owner-only in the UI, the insights model, and the sale response. |
 | Lipa follow-up followed the calendar, and stock followed the catalogue. | Late plans and thin stock lead their lists. Lipa has a call action. |
 | Client and account ids were query parameters. | They move through `sessionStorage`, and the proxy strips the old query keys. |
-| Desk navigation was a hamburger, and Sign out looked like a menu. | Persistent sidebar, phone tabs, and a labeled Sign out button. |
+| Desk navigation was a hamburger, and Sign out looked like a menu. | Persistent sidebar, phone tabs, and a labeled Sign out button. The sidebar caps at 90vh on 1920×1080 and larger, and the link list scrolls on shorter screens. |
+| Server pages held the whole screen until their data finished. | The shell stays in the layout. A loading skeleton shows while dashboard, insights, and the other routes finish their server read. |
 | The sales provider was undecided. | Stanbic is named on the till and in `GET /api/pos`. Checkout stays off. |
 
 ## Stanbic

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CalendarDays, Check, CreditCard, Download, Maximize2, Minimize2, Minus, Package, Plus, Search, ShieldCheck, ShoppingBag, Sparkles, Trash2, UserRoundPlus } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
 import { BarcodeCapture } from "@/components/barcode-capture";
 import { detectDeviceCode, type DetectedCode } from "@/lib/barcode-scanner";
 import { claimFromIdentifier } from "@/lib/device-units";
@@ -314,7 +313,7 @@ export default function SalesPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className={`sales-workspace space-y-5 ${cashierMode ? "cashier-mode" : ""}`}>
         <div className="sales-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Point of sale</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">New sale</h2><p className="mt-1.5 text-sm text-[#77837a]">Search the catalogue, scan a code, and check out in one place.</p>{stanbic ? <p className="mt-2 max-w-xl text-xs leading-5 text-[#6d5a32]">{stanbic.detail}</p> : null}</div><div className="flex items-center gap-3"><p className="hidden text-sm text-[#66736a] sm:block">Live prices and available stock</p><button type="button" aria-pressed={cashierMode} onClick={() => setCashierMode((active) => !active)} className="inline-flex items-center gap-2 rounded-xl border border-[#dce6dd] bg-white px-3.5 py-2.5 text-xs font-semibold text-[#365b43] transition hover:bg-[#f1f7f2]">{cashierMode ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}{cashierMode ? "Exit cashier mode" : "Cashier mode"}</button></div></div>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
@@ -418,6 +417,6 @@ export default function SalesPage() {
           </form>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

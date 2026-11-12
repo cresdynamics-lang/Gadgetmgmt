@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { Check, Download, FileText, Package, Search } from "lucide-react";
 
-import { AppShell } from "@/components/app-shell";
 import { BarcodeCapture } from "@/components/barcode-capture";
 import type { DetectedCode } from "@/lib/barcode-scanner";
 import { categoryTracksUnits, maskImei, maskSerial } from "@/lib/device-units";
@@ -347,7 +346,7 @@ export default function InventoryPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="inventory-workspace space-y-5">
         <div className="inventory-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7">
           <div>
@@ -490,6 +489,6 @@ export default function InventoryPage() {
           </tbody></table></div>
         </section>
       </div>
-    </AppShell>
+    </>
   );
 }

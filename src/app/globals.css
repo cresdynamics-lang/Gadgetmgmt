@@ -27,6 +27,35 @@ button { cursor: pointer; }
 
 .workspace-content { background: #f7f6f1; }
 
+/* The desk sidebar stays with the viewport. On 1920×1080 and larger it caps at 90vh.
+   Shorter screens scroll the link list instead of stretching the column down the page. */
+@media (min-width: 1024px) {
+  .side-nav {
+    position: sticky;
+    top: 0.75rem;
+    align-self: flex-start;
+    height: calc(100vh - 1.5rem);
+    max-height: calc(100vh - 1.5rem);
+    overflow: hidden;
+  }
+}
+@media (max-height: 1079px) {
+  .side-nav-links {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+@media (min-width: 1920px) and (min-height: 1080px) {
+  .side-nav {
+    height: auto;
+    max-height: 90vh;
+    overflow: hidden;
+  }
+  .side-nav-links {
+    overflow: visible;
+  }
+}
+
 /* Quiet, consistent surfaces across each operations module. */
 .workspace-content section.border,
 .workspace-content form.border,

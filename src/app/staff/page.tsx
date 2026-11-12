@@ -4,8 +4,6 @@ import { ArrowUpRight, Plus, Search, ShieldCheck, UsersRound } from "lucide-reac
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
-import { AppShell } from "@/components/app-shell";
-
 type StaffMember = {
   id: string;
   name: string;
@@ -114,7 +112,7 @@ export default function StaffPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <div className="staff-welcome relative flex flex-wrap items-end justify-between gap-5 overflow-hidden rounded-[22px] border border-[#dcebe0] bg-[linear-gradient(115deg,#e8f5ec_0%,#f6faf6_55%,#eef6f1_100%)] px-6 py-6 sm:px-7">
           <div className="pointer-events-none absolute -right-8 -top-20 h-60 w-60 rounded-full border border-[#d2e8d8]"/><div className="pointer-events-none absolute right-9 -top-14 h-44 w-44 rounded-full border border-[#d2e8d8]"/>
@@ -272,6 +270,6 @@ export default function StaffPage() {
           </div>
         </section>
       </div>
-    </AppShell>
+    </>
   );
 }

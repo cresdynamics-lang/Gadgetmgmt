@@ -3,7 +3,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Download } from "lucide-react";
 import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
 import { downloadLayawayPaymentReceipt } from "@/lib/receipt-pdf";
 
 type LayawayStatus = "ACTIVE" | "READY_FOR_PICKUP" | "FULFILLED";
@@ -114,7 +113,7 @@ export default function LayawayPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#e2e6e2] pb-4">
           <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Legacy account close-out</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Existing layaway commitments</h2></div>
@@ -146,6 +145,6 @@ export default function LayawayPage() {
           </section>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

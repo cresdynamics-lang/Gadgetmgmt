@@ -1,4 +1,3 @@
-import { AppShell } from "@/components/app-shell";
 import { MetricCard } from "@/components/metric-card";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CirclePlus, CreditCard, PackageCheck } from "lucide-react";
@@ -92,7 +91,7 @@ export default async function DashboardPage() {
   const formattedDate = now.toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Nairobi" });
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <section className="dashboard-welcome relative overflow-hidden rounded-[24px] bg-[#12372d] px-6 py-7 text-white shadow-[0_18px_42px_rgba(18,55,45,.17)] sm:px-8 sm:py-8">
           <div className="pointer-events-none absolute -right-14 -top-36 h-[390px] w-[390px] rounded-full border border-[#d4c29d]/[.12]"/><div className="pointer-events-none absolute -right-2 -top-24 h-[300px] w-[300px] rounded-full border border-white/[.08]"/>
@@ -164,6 +163,6 @@ export default async function DashboardPage() {
           </section>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

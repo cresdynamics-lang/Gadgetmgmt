@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ArrowRight, AlertCircle, CalendarClock, ChevronLeft, ChevronRight, CreditCard, Mail, Pencil, Phone, Plus, Search, UserRoundPlus } from "lucide-react";
 
-import { AppShell } from "@/components/app-shell";
 import { creditProgress } from "@/lib/credit-progress";
 import { rememberLipaAccount, rememberSaleCustomer } from "@/lib/workflow-handoff";
 
@@ -221,7 +220,7 @@ export default function CustomersPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <div className="customer-hero flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[#e1e9e1] bg-white px-5 py-5 shadow-[0_4px_18px_rgba(24,54,37,.035)] sm:px-7">
           <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#607266]">Customer accounts</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Customers <span className="ml-1 text-base font-normal text-[#69746c]">{summary.total}</span></h2><p className="mt-1.5 text-sm text-[#77837a]">Know every customer, account and next step.</p></div>
@@ -344,6 +343,6 @@ export default function CustomersPage() {
           </section>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

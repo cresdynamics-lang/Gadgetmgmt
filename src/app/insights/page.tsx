@@ -1,5 +1,4 @@
 import { auth } from "@/auth";
-import { AppShell } from "@/components/app-shell";
 import { getBusinessInsights } from "@/lib/business-insights";
 import { presentBusinessInsights } from "@/lib/finance-visibility";
 import { canAccessPage } from "@/lib/entitlements";
@@ -33,7 +32,7 @@ export default async function InsightsPage() {
   const lowStockCount = data.inventory.attentionCount;
   const dateRange = `${new Date(data.period.from).toLocaleDateString("en-KE", { day: "numeric", month: "short", timeZone: "Africa/Nairobi" })} – ${new Date(data.period.to).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Nairobi" })}`;
 
-  return <AppShell>
+  return <>
     <div className="mx-auto max-w-[1400px] space-y-5">
       <section className="relative overflow-hidden rounded-[20px] border border-[#e6e4d8] bg-[#fbfaf6] px-5 py-5 sm:px-7 sm:py-6">
         <div className="pointer-events-none absolute -right-16 -top-32 h-72 w-72 rounded-full border border-[#e9e4d7]"/><div className="pointer-events-none absolute -right-6 -top-24 h-52 w-52 rounded-full border border-[#eee9df]"/>
@@ -89,5 +88,5 @@ export default async function InsightsPage() {
       </div>
       <p className="px-1 text-[10px] leading-relaxed text-[#939a90]">Figures come from GadgetHub records. Gross profit is an estimate based on recorded item costs and sale totals. AI recommendations summarize these figures and should be reviewed by the business owner.</p>
     </div>
-  </AppShell>;
+  </>;
 }
