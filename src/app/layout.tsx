@@ -14,7 +14,7 @@ export const viewport: Viewport = { themeColor: "#0a0a0a" };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
+    <html lang="en" className="h-full antialiased" data-scroll-behavior="auto">
       <body className="min-h-full bg-[#f4f4f2] text-[#0a0a0a]"><AuthProvider>{children}</AuthProvider></body>
     </html>
   );

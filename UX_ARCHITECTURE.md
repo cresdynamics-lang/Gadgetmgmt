@@ -4,7 +4,7 @@ GadgetHub stays a Next.js App Router operations client. Roles are owner, branch 
 
 ## Shell
 
-From the `lg` breakpoint the existing navigation sits in a persistent dark sidebar (`#102d27`). The column sticks to the viewport instead of stretching with the page. On a 1920×1080 screen and larger it is capped at 90vh. On a shorter screen the link list scrolls. Below that, the same destinations are a bottom bar: Today, Sell, Stock, and Alerts for the owner; Today, Sell, Stock, and Lipa for a manager; Today, Sell, Lipa, and Clients for a cashier; Today, Stock, and Alerts for inventory. More opens the full drawer. The header Sign out control is a button with a label, not a chevron that signs the person out.
+From the `lg` breakpoint the navigation sits in a persistent dark sidebar (`#0a0a0a`) that is part of the screen, not a card floating on the page. The header stays put. Only the page scrolls. The sidebar link list scrolls on its own, and the scrollbar stays hidden until the pointer is over the list. Below that, the same destinations are a bottom bar: Today, Sell, Stock, and Alerts for the owner; Today, Sell, Stock, and Lipa for a manager; Today, Sell, Lipa, and Clients for a cashier; Today, Stock, and Alerts for inventory. More opens the full drawer. The header Sign out control is a button with a label, not a chevron that signs the person out.
 
 The shell lives in each page layout, so the sidebar and header stay up while a `loading.tsx` skeleton stands in for the server data. Dashboard and insights still read their figures on the server. The rest of the till already loads its lists in the browser after the shell is on screen.
 

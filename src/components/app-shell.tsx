@@ -57,7 +57,7 @@ function Navigation({ pathname, role, grants, close }: { pathname: string; role:
     {navItems.filter(({ href }) => canAccessPage(role, href, grants)).map(({ label, href }) => {
       const Icon = iconByHref[href] ?? Package;
       const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
-      return <Link key={href} href={href} onClick={close} aria-current={active ? "page" : undefined} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200 ${active ? "bg-[#1f1f1e] text-white" : "text-[#c9c9c4] hover:bg-[#1a1a19] hover:text-white"}`}>
+      return <Link key={href} href={href} onClick={close} aria-current={active ? "page" : undefined} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors duration-150 ${active ? "bg-[#1f1f1e] text-white" : "text-[#c9c9c4] hover:bg-[#1a1a19] hover:text-white"}`}>
         <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-[#0fa36e]" : "text-[#8a8a85] group-hover:text-white"}`} strokeWidth={1.8}/>
         <span className="flex-1">{label}</span>
         {active && <span className="h-1.5 w-1.5 rounded-full bg-[#0fa36e]"/>}
@@ -114,13 +114,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     router.push(href);
   }
 
-  return <div className="min-h-screen bg-[#f4f4f2] text-[#0a0a0a] lg:p-3">
-    <div className="mx-auto flex min-h-screen max-w-[1800px] bg-[#ffffff] shadow-[0_12px_45px_rgb(0_0_0/.07)] lg:min-h-[calc(100vh-24px)] lg:rounded-[20px] lg:border lg:border-[#e6e6e2]">
-      <aside className="side-nav hidden w-[248px] shrink-0 flex-col bg-[#0a0a0a] p-4 text-white lg:flex lg:rounded-l-[20px]">
+  return <div className="fixed inset-0 flex overflow-hidden bg-[#f4f4f2] text-[#0a0a0a]">
+      <aside className="side-nav hidden h-full w-[248px] shrink-0 flex-col bg-[#0a0a0a] p-4 text-white lg:flex">
         <div className="shrink-0">
           <Link href="/dashboard" className="mb-8 flex items-center gap-3 px-2"><span className="grid h-10 w-10 place-items-center rounded-xl border-2 border-white text-white"><Package className="h-5 w-5"/></span><span className="text-base font-semibold text-white">GadgetHub</span></Link>
         </div>
-        <div className="side-nav-links min-h-0 flex-1">
+        <div className="side-nav-links min-h-0 flex-1 overflow-y-auto">
           <Navigation pathname={pathname} role={role} grants={grants}/>
         </div>
         <div className="mt-4 flex shrink-0 items-center justify-between border-t border-white/10 px-2 pt-4">
@@ -130,16 +129,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       {menuOpen && <div className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#0a0a0a]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full max-h-[100dvh] w-[290px] max-w-[85vw] flex-col bg-[#0a0a0a] p-4 text-white shadow-2xl"><div className="mb-8 flex shrink-0 items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border-2 border-white text-white"><Package className="h-5 w-5"/></span><span className="text-base font-semibold text-white">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><div className="side-nav-links min-h-0 flex-1"><Navigation pathname={pathname} role={role} grants={grants} close={() => setMenuOpen(false)}/></div><div className="mt-4 flex shrink-0 items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void signOut({ redirectTo: "/login" })} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
 
-      <main className="flex min-w-0 flex-1 flex-col pb-[4.75rem] lg:pb-0">
-        <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[var(--border)] bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-9">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="z-20 flex min-h-[76px] shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-white px-4 sm:px-6 lg:px-9">
           <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e6e6e2] bg-white text-[#111111] shadow-sm transition hover:bg-[#f4f4f2] lg:hidden"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#6b6b66] sm:flex"><span>GadgetHub</span><span className="text-[#6b6b66]">/</span><span className="text-[#111111]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#111111] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
           <div className="flex items-center gap-2 sm:gap-3"><NotificationBell /><button type="button" onClick={() => { setActiveCommand(0); setLauncherOpen(true); setLauncherQuery(""); }} aria-label="Open quick navigation" className="flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-2.5 text-[#111111] transition hover:border-[var(--signal)] hover:bg-[#ffffff] sm:px-3"><Search className="h-3.5 w-3.5"/><span className="hidden text-[11px] font-medium sm:inline">Jump to anything</span><kbd className="hidden rounded-md border border-[var(--border)] bg-[#f4f4f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#111111] sm:inline">⌘ K</kbd></button><div className="hidden items-center gap-2 rounded-full border border-[var(--border)] bg-[#ffffff] px-3 py-2 text-[11px] font-medium text-[#111111] md:flex"><span className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]"/>{session?.user.branchName ?? (role === "OWNER" ? "All branches" : "Branch not assigned")}</div><div className="hidden h-8 w-px bg-[var(--border)] sm:block"/><div className="flex items-center gap-2 sm:hidden"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span></div><div className="hidden items-center gap-2 sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span><span className="hidden max-w-28 truncate text-xs font-semibold text-[#111111] xl:block">{displayName}</span><button type="button" onClick={() => void signOut({ redirectTo: "/login" })} aria-label={`Sign out ${displayName}`} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold text-[#111111] transition hover:bg-[#f4f4f2]"><LogOut className="h-3.5 w-3.5"/>Sign out</button></div></div>
         </header>
-        <div className="workspace-content flex-1 px-4 py-6 sm:px-6 sm:py-7 lg:px-9 lg:py-8">{children}</div>
-        <footer className="flex items-center justify-between border-t border-[#f4f4f2] px-4 py-3.5 text-[10px] text-[#6b6b66] sm:px-6 lg:px-9"><span>GadgetHub · Retail operations</span><span className="flex items-center gap-1.5">A clearer view of every day <ArrowUpRight className="h-3 w-3"/></span></footer>
+        <div className="app-scroll min-h-0 flex-1 overflow-y-auto pb-[4.75rem] lg:pb-0">
+          <div className="workspace-content px-4 py-6 sm:px-6 sm:py-7 lg:px-9 lg:py-8">{children}</div>
+          <footer className="flex items-center justify-between border-t border-[#e6e6e2] px-4 py-3.5 text-[10px] text-[#6b6b66] sm:px-6 lg:px-9"><span>GadgetHub · Retail operations</span><span className="flex items-center gap-1.5">A clearer view of every day <ArrowUpRight className="h-3 w-3"/></span></footer>
+        </div>
       </main>
-    </div>
-    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#e6e6e2] bg-white/95 px-1 pt-1 shadow-[0_-8px_24px_rgb(0_0_0/.06)] backdrop-blur-xl lg:hidden" style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}>
+    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#e6e6e2] bg-white px-1 pt-1 lg:hidden" style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}>
       {primaryTabs.map((href) => {
         const Icon = iconByHref[href] ?? Package;
         const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));

@@ -18,4 +18,4 @@ The app uses the palette from the operations system document.
 | Amber | `#b7791f` | Waiting states. Amber text is `#8a5a12` on `#fdf3df`. |
 | Red | `#d93025` | Destructive and overdue marks. Red text is `#b3261e` on `#fdeceb`. |
 
-Type, radius, and the existing layout stay. The phone bar still reserves `4.75rem`, and the desk sidebar still caps at 90vh on a 1920×1080 screen and larger.
+Type and radius stay. The phone bar still reserves `4.75rem`. On a desk the sidebar and header are fixed to the screen, and only the page scrolls. The sidebar link list keeps a quiet scrollbar.

@@ -18,7 +18,7 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: auto; }
 body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -27,33 +27,34 @@ button { cursor: pointer; }
 
 .workspace-content { background: #f4f4f2; }
 
-/* The desk sidebar stays with the viewport. On 1920×1080 and larger it caps at 90vh.
-   Shorter screens scroll the link list instead of stretching the column down the page. */
-@media (min-width: 1024px) {
-  .side-nav {
-    position: sticky;
-    top: 0.75rem;
-    align-self: flex-start;
-    height: calc(100vh - 1.5rem);
-    max-height: calc(100vh - 1.5rem);
-    overflow: hidden;
-  }
+/* The sidebar is part of the frame. Its link list scrolls in place, and the thumb
+   stays hidden until the pointer is on the list. */
+.side-nav-links {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
-@media (max-height: 1079px) {
-  .side-nav-links {
-    min-height: 0;
-    overflow-y: auto;
-  }
+.side-nav-links:hover,
+.side-nav-links:focus-within { scrollbar-color: rgb(255 255 255 / 22%) transparent; }
+.side-nav-links::-webkit-scrollbar { width: 10px; }
+.side-nav-links::-webkit-scrollbar-track { background: transparent; }
+.side-nav-links::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 99px;
+  background: transparent;
+  background-clip: padding-box;
 }
-@media (min-width: 1920px) and (min-height: 1080px) {
-  .side-nav {
-    height: auto;
-    max-height: 90vh;
-    overflow: hidden;
-  }
-  .side-nav-links {
-    overflow: visible;
-  }
+.side-nav-links:hover::-webkit-scrollbar-thumb,
+.side-nav-links:focus-within::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 22%);
+  background-clip: padding-box;
+}
+.app-scroll {
+  overflow-anchor: none;
+  overscroll-behavior: contain;
 }
 
 /* Quiet, consistent surfaces across each operations module. */
@@ -624,7 +625,7 @@ header a:focus-visible { outline-color: var(--signal); }
 .cashier-mode > div.grid > section:first-child > div.divide-y > div button { width: 42px; height: 42px; }
 .cashier-mode > div.grid > form { box-shadow: 0 12px 36px rgb(0 0 0 / 8%); }
 @media (min-width: 1280px) {
-  .cashier-mode > div.grid > form { position: sticky; top: 84px; }
+  .cashier-mode > div.grid > form { position: sticky; top: 1rem; }
 }
 
 /* Refined sales and inventory surfaces, keeping the existing spruce palette. */
