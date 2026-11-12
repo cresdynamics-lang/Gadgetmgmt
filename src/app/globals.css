@@ -835,6 +835,39 @@ header a:focus-visible { outline-color: var(--signal); }
 .workspace-content .staff-directory tbody tr:hover { background: #f4f4f2; }
 .workspace-content .staff-directory select { border-radius: 8px; }
 
+.workspace-content .dashboard-welcome {
+  min-height: 0;
+  border: 1px solid #e6e6e2;
+  border-radius: 16px;
+  background: #fff;
+  background-image: none;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 4%);
+}
+.workspace-content .dashboard-welcome::after { display: none; }
+.workspace-content .dashboard-welcome > div:first-child,
+.workspace-content .dashboard-welcome > div:nth-child(2) {
+  position: static;
+  width: auto;
+  height: auto;
+  border: 0;
+}
+.workspace-content .dashboard-welcome h2 {
+  color: #111111;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+.workspace-content .dashboard-welcome a {
+  border-radius: 12px;
+  background: #0a7d56;
+  color: #fff;
+  box-shadow: none;
+  transform: none;
+}
+.workspace-content .dashboard-welcome a:hover { background: #0fa36e; transform: none; box-shadow: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .workspace-content .dashboard-welcome a,
   .workspace-content .dashboard-shortcut,

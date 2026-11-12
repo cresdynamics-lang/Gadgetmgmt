@@ -1,6 +1,6 @@
 import { MetricCard } from "@/components/metric-card";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CirclePlus, CreditCard, PackageCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, BellRing, CalendarDays, CirclePlus, CreditCard, PackageCheck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { canAccessPage } from "@/lib/access";
 import { getAccessMap } from "@/lib/entitlements";
@@ -89,16 +89,24 @@ export default async function DashboardPage() {
   const maxDaily = Math.max(1, ...dailyTotals.map((day) => day.total));
   const weekChange = previousTotal ? `${Math.round(((weekTotal - previousTotal) / previousTotal) * 100)}% vs prior week` : "No prior-week baseline";
   const formattedDate = now.toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Nairobi" });
+  const branchLabel = session?.user.branchName ?? (session?.user.role === "OWNER" ? "All branches" : "Branch not assigned");
+  const nextSteps = [
+    canAccessPage(role, "/notifications", grants) && paymentReviewCount > 0 ? { href: "/notifications", title: `${paymentReviewCount} payment ${paymentReviewCount === 1 ? "check" : "checks"} to review`, detail: "Match the M-Pesa receipts before they are applied." } : null,
+    canAccessPage(role, "/credit", grants) && overduePlanCount > 0 ? { href: "/credit", title: `${overduePlanCount} overdue Lipa ${overduePlanCount === 1 ? "plan" : "plans"}`, detail: "Open the collection board and record a payment or place a call." } : null,
+    canAccessPage(role, "/inventory", grants) && lowStock.length > 0 ? { href: "/inventory", title: `${lowStock.length} stock ${lowStock.length === 1 ? "item needs" : "items need"} a reorder`, detail: `${lowStock[0].product.name} is the thinnest on hand.` } : null,
+  ].filter((step) => step !== null);
+  const nextStep = nextSteps[0] ?? (canAccessPage(role, "/sales", grants) ? { href: "/sales", title: todaySales.length ? `${todaySales.length} ${todaySales.length === 1 ? "sale" : "sales"} recorded today` : "No sales yet today", detail: finance && todayTotal ? `${money(todayTotal)} so far. Start the next sale.` : "Start the next sale." } : null);
 
   return (
     <>
       <div className="space-y-6">
-        <section className="dashboard-welcome relative overflow-hidden rounded-[24px] bg-[#0a0a0a] px-6 py-7 text-white shadow-[0_18px_42px_rgb(0_0_0/.17)] sm:px-8 sm:py-8">
-          <div className="pointer-events-none absolute -right-14 -top-36 h-[390px] w-[390px] rounded-full border border-[#8a5a12]/[.12]"/><div className="pointer-events-none absolute -right-2 -top-24 h-[300px] w-[300px] rounded-full border border-white/[.08]"/>
-          <div className="relative flex flex-wrap items-end justify-between gap-6">
-            <div className="max-w-xl"><h2 className="mt-4 text-[28px] font-semibold leading-tight tracking-[-.045em] sm:text-[34px]">A good day to make<br className="hidden sm:block"/> good things happen.</h2><p className="mt-2 text-sm text-white/60">{session?.user.branchName ?? (session?.user.role === "OWNER" ? "All branches" : "Branch not assigned")} <span className="mx-1.5 text-white/30">·</span> {todaySales.length} sales captured today</p></div>
-            <div className="flex flex-wrap items-center gap-3"><time dateTime={now.toISOString()} className="inline-flex items-center gap-2 rounded-xl border border-white/[.12] bg-white/[.06] px-3.5 py-2.5 text-xs font-medium text-white/75"><CalendarDays className="h-4 w-4 text-[#0fa36e]"/>{formattedDate}</time>{canAccessPage(role, "/sales", grants) ? <Link href="/sales" className="inline-flex items-center gap-2 rounded-xl bg-[#e5f5ee] px-4 py-2.5 text-xs font-semibold text-[#0a0a0a] shadow-sm transition hover:bg-white"><CirclePlus className="h-4 w-4"/>Open point of sale<ArrowUpRight className="h-3.5 w-3.5"/></Link> : null}</div>
+        <section className="dashboard-welcome flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e6e6e2] bg-white px-4 py-3 sm:px-5" aria-label="Next step">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#6b6b66]"><time dateTime={now.toISOString()}>{formattedDate}</time> · {branchLabel}</p>
+            <h2 className="mt-1 text-base font-semibold text-[#111111]">{nextStep?.title ?? "Nothing is waiting"}</h2>
+            <p className="mt-0.5 text-xs text-[#6b6b66]">{nextStep?.detail ?? "The stock, Lipa, and payment checks you can open are clear."}{nextSteps.length > 1 ? ` ${nextSteps.length - 1} more ${nextSteps.length === 2 ? "item is" : "items are"} on the action desk.` : ""}</p>
           </div>
+          {nextStep ? <Link href={nextStep.href} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[#0a7d56] px-4 py-2.5 text-xs font-semibold text-white">{nextStep.href === "/sales" ? "Start a sale" : "Open"}<ArrowRight className="h-3.5 w-3.5"/></Link> : null}
         </section>
 
         <section aria-label="Quick actions" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
