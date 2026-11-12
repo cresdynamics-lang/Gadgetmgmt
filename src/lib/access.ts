@@ -242,9 +242,22 @@ export function safeInternalPath(value: string | null | undefined) {
   return pathPart;
 }
 
-/** Keep auth redirects on the public host. Auth.js may rewrite nextUrl to NEXTAUTH_URL (often localhost). */
-export function relativeAppPath(url: URL) {
-  return `${url.pathname}${url.search}`;
+/**
+ * Public origin for auth redirects. Prefer forwarded host headers from the
+ * Cloudflare tunnel. Never use a loopback NEXTAUTH_URL that Auth.js may have
+ * written onto nextUrl.
+ */
+export function publicRequestOrigin(request: { headers: Headers; nextUrl: URL }) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const hostHeader = request.headers.get("host")?.split(",")[0]?.trim();
+  const host = forwardedHost || hostHeader || request.nextUrl.host;
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = forwardedProto || (request.nextUrl.protocol === "https:" ? "https" : "http");
+  return `${proto}://${host}`;
+}
+
+export function publicAppUrl(request: { headers: Headers; nextUrl: URL }, path: string) {
+  return new URL(path, publicRequestOrigin(request)).toString();
 }
 
 export function parseEntitlementUpdate(input: unknown): { ok: true; grants: Record<AppRole, RoleGrant> } | { ok: false; error: string } {

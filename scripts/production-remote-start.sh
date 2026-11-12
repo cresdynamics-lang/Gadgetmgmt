@@ -69,6 +69,28 @@ compose() {
   exit 1
 }
 
+wait_for_nodejs_ready() {
+  local ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+    if compose logs --no-color --tail 80 nodejs 2>/dev/null | grep -q 'Ready'; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "next start did not become ready."
+    compose logs --no-color --tail 40 nodejs 2>/dev/null | sed -E \
+      -e 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' \
+      -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' || true
+    exit 1
+  fi
+}
+
+local_login_status() {
+  compose exec -T nodejs node -e 'const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15000); fetch("http://127.0.0.1:3005/login",{signal:controller.signal,redirect:"manual"}).then((response)=>{clearTimeout(timer); process.stdout.write(String(response.status)); process.exit(response.status===200?0:1);}).catch(()=>{process.stdout.write("000"); process.exit(1);});' || true
+}
+
 stop_pid .cloudflared.pid
 stop_pid .next-start.pid
 
@@ -129,23 +151,8 @@ export HOST_GID="$(id -g)"
 echo "Starting the nodejs service and the tunnel. Tunnel target is http://nodejs:3005."
 compose up -d --build --force-recreate
 
-ready=0
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
-  if compose logs --no-color --tail 80 nodejs 2>/dev/null | grep -q 'Ready'; then
-    ready=1
-    break
-  fi
-  sleep 1
-done
-if [ "$ready" -ne 1 ]; then
-  echo "next start did not become ready."
-  compose logs --no-color --tail 40 nodejs 2>/dev/null | sed -E \
-    -e 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' \
-    -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' || true
-  exit 1
-fi
-
-code="$(compose exec -T nodejs node -e 'const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15000); fetch("http://127.0.0.1:3005/login",{signal:controller.signal,redirect:"manual"}).then((response)=>{clearTimeout(timer); process.stdout.write(String(response.status)); process.exit(response.status===200?0:1);}).catch(()=>{process.stdout.write("000"); process.exit(1);});' || true)"
+wait_for_nodejs_ready
+code="$(local_login_status)"
 echo "local_login_http=${code}"
 echo "local_origin=http://127.0.0.1:3005"
 echo "tunnel_origin=http://nodejs:3005"
@@ -271,6 +278,16 @@ if [ -n "$host" ]; then
     # Recreate only the app so receipt and payment links use the public host.
     # Auth URLs stay cleared in compose.yaml so login redirects keep using the request host.
     compose up -d --no-deps --force-recreate nodejs >/dev/null
+    wait_for_nodejs_ready
+    code="$(local_login_status)"
+    echo "local_login_http=${code}"
+    if [ "$code" != "200" ]; then
+      echo "The app did not return 200 for /login after setting APP_BASE_URL."
+      compose logs --no-color --tail 40 nodejs 2>/dev/null | sed -E \
+        -e 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' \
+        -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' || true
+      exit 1
+    fi
     echo "app_base_url=https://${host}"
   fi
 else
