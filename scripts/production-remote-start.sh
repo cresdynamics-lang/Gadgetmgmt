@@ -123,6 +123,10 @@ echo "local_login_http=${code}"
 echo "local_origin=${origin}"
 if [ "$code" != "200" ]; then
   echo "The app did not return 200 for /login on the server."
+  sed -E \
+    -e 's/(SECRET|TOKEN|PASSWORD|DATABASE_URL)=[^[:space:]]*/\1=***/g' \
+    -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' \
+    .next-start.log | tail -n 40
   exit 1
 fi
 
