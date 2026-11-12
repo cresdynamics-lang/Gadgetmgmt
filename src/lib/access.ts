@@ -242,6 +242,11 @@ export function safeInternalPath(value: string | null | undefined) {
   return pathPart;
 }
 
+/** Keep auth redirects on the public host. Auth.js may rewrite nextUrl to NEXTAUTH_URL (often localhost). */
+export function relativeAppPath(url: URL) {
+  return `${url.pathname}${url.search}`;
+}
+
 export function parseEntitlementUpdate(input: unknown): { ok: true; grants: Record<AppRole, RoleGrant> } | { ok: false; error: string } {
   if (!input || typeof input !== "object") return { ok: false, error: "Send the role entitlements in the request body." };
   const grantsValue = (input as { grants?: unknown }).grants;

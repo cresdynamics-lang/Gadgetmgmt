@@ -1,6 +1,13 @@
 import { auth } from "@/auth";
-import { canAccessPage, hasSensitiveQuery, isOwnerEntitlementPath, isSensitiveQueryKey, safeInternalPath } from "@/lib/access";
+import { canAccessPage, hasSensitiveQuery, isOwnerEntitlementPath, isSensitiveQueryKey, relativeAppPath, safeInternalPath } from "@/lib/access";
 import { getAccessMap } from "@/lib/entitlements";
+
+function redirectTo(path: string) {
+  return new Response(null, {
+    status: 303,
+    headers: { Location: path, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
+  });
+}
 
 export default auth(async (request) => {
   const pathname = request.nextUrl.pathname;
@@ -13,19 +20,15 @@ export default auth(async (request) => {
     const safeCallback = safeInternalPath(callbackUrl);
     if (callbackUrl && !safeCallback) clean.searchParams.delete("callbackUrl");
     if (safeCallback) clean.searchParams.set("callbackUrl", safeCallback);
-    clean.search = clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : "";
-    return new Response(null, {
-      status: 303,
-      headers: { Location: clean.toString(), "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
-    });
+    return redirectTo(relativeAppPath(clean));
   }
 
   const publicCustomerPayment = pathname.startsWith("/pay/") || pathname.startsWith("/request/");
   if (!request.auth && pathname !== "/login" && !publicCustomerPayment) {
-    const loginUrl = new URL("/login", request.nextUrl);
+    const login = new URL("/login", "http://gadgethub.local");
     const callbackUrl = safeInternalPath(pathname);
-    if (callbackUrl && callbackUrl !== "/login") loginUrl.searchParams.set("callbackUrl", callbackUrl);
-    return Response.redirect(loginUrl);
+    if (callbackUrl && callbackUrl !== "/login") login.searchParams.set("callbackUrl", callbackUrl);
+    return redirectTo(relativeAppPath(login));
   }
   if (request.auth?.user && pathname !== "/login" && !publicCustomerPayment) {
     let grants;
@@ -37,7 +40,7 @@ export default auth(async (request) => {
     }
     if (!canAccessPage(request.auth.user.role, pathname, grants)) {
       if (pathname !== "/dashboard" && canAccessPage(request.auth.user.role, "/dashboard", grants)) {
-        return Response.redirect(new URL("/dashboard", request.nextUrl));
+        return redirectTo("/dashboard");
       }
       return new Response("Your role does not include this page.", { status: 403, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" } });
     }

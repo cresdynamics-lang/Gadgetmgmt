@@ -14,6 +14,7 @@ import {
   hasAnyQuery,
   hasSensitiveQuery,
   parseEntitlementUpdate,
+  relativeAppPath,
   safeInternalPath,
 } from "../src/lib/access";
 
@@ -119,6 +120,18 @@ test("rejects passwords and user details in urls", () => {
   assert.equal(safeInternalPath("/\\evil.example"), null);
   assert.equal(safeInternalPath("/dashboard?password=secret"), null);
   assert.equal(safeInternalPath("/%2f%2fevil.example"), null);
+  assert.equal(relativeAppPath(new URL("http://localhost:3000/login?callbackUrl=%2F")), "/login?callbackUrl=%2F");
+  assert.equal(relativeAppPath(new URL("https://development.gadgethubke.com/dashboard")), "/dashboard");
+});
+
+test("auth redirects stay relative so a localhost NEXTAUTH_URL cannot leave the tunnel", () => {
+  const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
+  assert.match(proxy, /relativeAppPath/);
+  assert.match(proxy, /Location: path/);
+  assert.doesNotMatch(proxy, /Response\.redirect\(/);
+  const compose = readFileSync(path.join(root, "compose.yaml"), "utf8");
+  assert.match(compose, /NEXTAUTH_URL:\s*""/);
+  assert.match(compose, /AUTH_URL:\s*""/);
 });
 
 test("each editable page is refused on the server when it is not granted", () => {
