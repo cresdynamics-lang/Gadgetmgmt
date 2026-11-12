@@ -7,7 +7,6 @@ set -euo pipefail
 deploy_path="${1:?deploy path required}"
 cd "$deploy_path"
 chmod 600 .tunnel-token
-chmod 755 bin/cloudflared
 if [ -x "$deploy_path/.node/bin/node" ]; then
   export PATH="$deploy_path/.node/bin:$PATH"
 fi
@@ -54,17 +53,32 @@ stop_pid() {
 stop_pid .cloudflared.pid
 stop_pid .next-start.pid
 
-# A previous cloudflared can outlive its pid file. Stop only this deploy's copy.
+# A previous cloudflared can outlive its pid file. Stop only this deploy's copy
+# before replacing the binary it is running.
+old_pids=""
 for proc in /proc/[0-9]*; do
   pid="${proc##*/}"
   [ -r "$proc/cmdline" ] || continue
   cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
   case "$cmd" in
     *"${deploy_path}/bin/cloudflared"*)
-      kill "$pid" 2>/dev/null || true
+      old_pids="$old_pids $pid"
       ;;
   esac
 done
+for pid in $old_pids; do
+  kill "$pid" 2>/dev/null || true
+done
+sleep 1
+for pid in $old_pids; do
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+done
+if [ -f bin/cloudflared.new ]; then
+  mv -f bin/cloudflared.new bin/cloudflared
+fi
+chmod 755 bin/cloudflared
 
 port="3000"
 origin="http://127.0.0.1:${port}"

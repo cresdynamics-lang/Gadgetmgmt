@@ -264,7 +264,7 @@ jobs:
           echo "Creating the remote directory"
           ssh_base "$remote" "mkdir -p -- ${quoted_path}/bin"
           echo "Copying the tunnel client"
-          scp_base "$cf_bin" "${remote}:${DEPLOY_PATH}/bin/cloudflared"
+          scp_base "$cf_bin" "${remote}:${DEPLOY_PATH}/bin/cloudflared.new"
           echo "Copying Node.js 22"
           ssh_base "$remote" "rm -rf -- ${quoted_path}/.node"
           scp_base -r "$node_dir" "${remote}:${DEPLOY_PATH}/.node"
