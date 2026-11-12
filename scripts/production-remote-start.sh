@@ -127,9 +127,22 @@ chmod 755 bin/cloudflared
 umask 077
 printf 'NEXTAUTH_SECRET=%s\n' "$(tr -d '\r\n' < .nextauth-secret)" > .nextauth.env
 chmod 600 .nextauth.env
-# Compose always loads this file. It starts empty and is filled with the public
-# APP_BASE_URL once the tunnel hostname is known.
-: > .public-url.env
+# Compose always loads this file. Keep a previous public APP_BASE_URL across
+# deploys so the first boot already has it and we do not bounce nodejs again
+# after the tunnel hostname is confirmed.
+seeded_base=""
+if [ -f .public-url.env ]; then
+  seeded_base="$(sed -n 's/^APP_BASE_URL=//p' .public-url.env | tr -d '\r' | head -n 1)"
+fi
+case "$seeded_base" in
+  https://[A-Za-z0-9.-]*)
+    printf 'APP_BASE_URL=%s\n' "$seeded_base" > .public-url.env
+    ;;
+  *)
+    seeded_base=""
+    : > .public-url.env
+    ;;
+esac
 chmod 600 .public-url.env
 
 # Auth.js treats NEXTAUTH_URL/AUTH_URL as the request origin. A localhost value
@@ -270,14 +283,12 @@ esac
 if [ -n "$host" ]; then
   echo "public_host=${host}"
   desired_base="https://${host}"
-  existing_base=""
-  if [ -f .public-url.env ]; then
-    existing_base="$(sed -n 's/^APP_BASE_URL=//p' .public-url.env | tr -d '\r' | head -n 1)"
-  fi
-  # Keep APP_BASE_URL on the public host. Skip recreate when a previous deploy
-  # already wrote the same value, so later pushes do not bounce the app and race the tunnel check.
-  if [ "$existing_base" = "$desired_base" ]; then
+  # Keep APP_BASE_URL on the public host. Skip recreate when this boot already
+  # started with that value, so later pushes do not bounce the app and race the
+  # public readiness check.
+  if [ "$seeded_base" = "$desired_base" ]; then
     echo "app_base_url=${desired_base}"
+    echo "app_base_url_recreate=skipped"
   else
     umask 077
     printf 'APP_BASE_URL=%s\n' "$desired_base" > .public-url.env
@@ -296,6 +307,7 @@ if [ -n "$host" ]; then
       exit 1
     fi
     echo "app_base_url=${desired_base}"
+    echo "app_base_url_recreate=applied"
   fi
 else
   echo "public_host="
