@@ -80,55 +80,15 @@ if [ -f bin/cloudflared.new ]; then
 fi
 chmod 755 bin/cloudflared
 
-port="3000"
+# Leave the existing listener on port 3000 alone. Serve this app on 3001.
+port="3001"
 origin="http://127.0.0.1:${port}"
-
-# Listeners on this port, from /proc/net/tcp and /proc/net/tcp6. inode is field 10.
-port_listen_inodes() {
-  local hex
-  hex="$(printf '%04X' "$1")"
-  awk -v hex="$hex" 'NR > 1 && $4 == "0A" { split($2, addr, ":"); if (toupper(addr[2]) == hex) print $10 }' /proc/net/tcp /proc/net/tcp6 2>/dev/null | sort -u
-}
-
-stop_port_listeners() {
-  local inodes inode fd target pid
-  inodes="$(port_listen_inodes "$port")"
-  [ -n "$inodes" ] || return 0
-  local pids=""
-  for inode in $inodes; do
-    for fd in /proc/[0-9]*/fd/*; do
-      target="$(readlink "$fd" 2>/dev/null || true)"
-      if [ "$target" = "socket:[$inode]" ]; then
-        pid="${fd#/proc/}"
-        pid="${pid%%/*}"
-        pids="$pids $pid"
-      fi
-    done
-  done
-  pids="$(printf '%s\n' $pids | awk 'NF { print }' | sort -u)"
-  if [ -z "$pids" ]; then
-    echo "Blocker: port ${port} is in use, and this user cannot see the process."
-    exit 1
-  fi
-  for pid in $pids; do
-    echo "Stopping stale process ${pid} on port ${port}."
-    kill "$pid" 2>/dev/null || true
-  done
-  sleep 1
-  for pid in $pids; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -9 "$pid" 2>/dev/null || true
-    fi
-  done
-  sleep 1
-  if [ -n "$(port_listen_inodes "$port")" ]; then
-    echo "Blocker: port ${port} is still in use after stopping the stale process."
-    exit 1
-  fi
-  echo "Freed port ${port}."
-}
-
-stop_port_listeners
+port_hex="$(printf '%04X' "$port")"
+if awk -v hex="$port_hex" 'NR > 1 && $4 == "0A" { split($2, addr, ":"); if (toupper(addr[2]) == hex) found=1 } END { exit(found ? 0 : 1) }' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+  echo "Blocker: port ${port} is already in use. The listener on port 3000 was left alone."
+  exit 1
+fi
+echo "Starting the app on ${origin}."
 
 umask 077
 nohup node --env-file=.env ./node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$port" > .next-start.log 2>&1 &
@@ -230,7 +190,7 @@ while read -r kind value; do
     service)
       saw_service=1
       case "$value" in
-        http://127.0.0.1:3000|http://localhost:3000|https://127.0.0.1:3000|https://localhost:3000)
+        "http://127.0.0.1:${port}"|"http://localhost:${port}"|"https://127.0.0.1:${port}"|"https://localhost:${port}")
           points_at_next=1
           ;;
         http_status:*)
