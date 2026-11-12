@@ -32,6 +32,7 @@ function toState(grant: GrantResponse): GrantState {
 function pageLock(role: AppRole, path: string, allPages: boolean) {
   if (role === "OWNER" && allPages) return "Included while every screen is on. Turn that off to choose screens one by one.";
   if (path === "/insights" && role !== "OWNER" && role !== "BRANCH_MANAGER") return "Only the owner and a branch manager can open insights.";
+  if ((path === "/finance" || path === "/expenses" || path === "/activity") && role !== "OWNER") return "Only the owner can open this.";
   return "";
 }
 
@@ -82,7 +83,7 @@ export function EntitlementEditor() {
         body: JSON.stringify({
           grants: grants.map((grant) => ({
             role: grant.role,
-            pages: grant.role === "OWNER" && grant.allPages ? ["*"] : grant.pages.filter((page) => page !== "*" && (page !== "/insights" || grant.role === "OWNER" || grant.role === "BRANCH_MANAGER")),
+            pages: grant.role === "OWNER" && grant.allPages ? ["*"] : grant.pages.filter((page) => page !== "*" && (page !== "/insights" || grant.role === "OWNER" || grant.role === "BRANCH_MANAGER") && (grant.role === "OWNER" || (page !== "/finance" && page !== "/expenses" && page !== "/activity"))),
             capabilities: grant.capabilities,
           })),
         }),

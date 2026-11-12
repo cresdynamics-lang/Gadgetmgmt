@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getBusinessInsights } from "@/lib/business-insights";
+import { canAccessPage } from "@/lib/entitlements";
 import { presentBusinessInsights } from "@/lib/finance-visibility";
 import { z } from "zod";
 
@@ -62,9 +63,9 @@ function getResponseText(payload: unknown) {
 
 export async function POST() {
   const session = await auth();
-  const role = session?.user?.role;
   if (!session?.user?.id) return Response.json({ error: "Sign in to generate business insights." }, { status: 401 });
-  if (role !== "OWNER" && role !== "BRANCH_MANAGER") return Response.json({ error: "Business insights are available to owners and branch managers." }, { status: 403 });
+  const role = session.user.role;
+  if (!(await canAccessPage(role, "/assistant")) && !(await canAccessPage(role, "/insights"))) return Response.json({ error: "The assistant is not open for this role." }, { status: 403 });
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return Response.json({ error: "AI insights are not configured yet. Add OPENAI_API_KEY to the server environment." }, { status: 503 });

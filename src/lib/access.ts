@@ -12,15 +12,33 @@ export const ROLE_CATALOG: readonly { id: AppRole; label: string; detail: string
 export const PAGE_CATALOG = [
   { path: "/dashboard", label: "Dashboard" },
   { path: "/sales", label: "Sales (POS)" },
+  { path: "/deliveries", label: "Deliveries" },
   { path: "/inventory", label: "Inventory" },
+  { path: "/planner", label: "Stock planner" },
+  { path: "/devices", label: "Devices" },
+  { path: "/repairs", label: "Repairs" },
+  { path: "/partners", label: "Partners" },
   { path: "/customers", label: "Customers" },
   { path: "/credit", label: "Lipa Mdogo Mdogo" },
   { path: "/layaway", label: "Layaway close-out" },
-  { path: "/staff", label: "Staff & users" },
+  { path: "/finance", label: "Finance" },
+  { path: "/expenses", label: "Expenses" },
+  { path: "/performance", label: "Performance" },
+  { path: "/assistant", label: "AI Assistant" },
   { path: "/insights", label: "Business insights" },
+  { path: "/staff", label: "Staff & users" },
+  { path: "/activity", label: "Activity" },
   { path: "/notifications", label: "Messages & alerts" },
   { path: "/settings", label: "Settings" },
 ] as const;
+
+const OWNER_ONLY_PAGES = new Set(["/finance", "/expenses", "/activity"]);
+
+const legacyRolePages = {
+  BRANCH_MANAGER: ["/dashboard", "/sales", "/inventory", "/customers", "/credit", "/staff", "/insights", "/settings", "/notifications"],
+  CASHIER: ["/dashboard", "/sales", "/customers", "/credit", "/notifications"],
+  INVENTORY_LEAD: ["/dashboard", "/inventory", "/notifications"],
+} as const;
 
 export type AccessPage = (typeof PAGE_CATALOG)[number]["path"];
 
@@ -53,15 +71,15 @@ export const defaultRoleGrants: Record<AppRole, { pages: readonly string[]; capa
     capabilities: CAPABILITY_CATALOG.map((capability) => capability.id),
   },
   BRANCH_MANAGER: {
-    pages: ["/dashboard", "/sales", "/inventory", "/customers", "/credit", "/staff", "/insights", "/settings", "/notifications"],
+    pages: ["/dashboard", "/sales", "/deliveries", "/inventory", "/planner", "/devices", "/repairs", "/partners", "/customers", "/credit", "/performance", "/assistant", "/staff", "/insights", "/settings", "/notifications"],
     capabilities: ["sales", "inventory", "customers", "credit", "layaway", "staff", "branchSettings", "notifications"],
   },
   CASHIER: {
-    pages: ["/dashboard", "/sales", "/customers", "/credit", "/notifications"],
+    pages: ["/dashboard", "/sales", "/deliveries", "/devices", "/repairs", "/customers", "/credit", "/performance", "/assistant", "/notifications"],
     capabilities: ["sales", "customers", "credit"],
   },
   INVENTORY_LEAD: {
-    pages: ["/dashboard", "/inventory", "/notifications"],
+    pages: ["/dashboard", "/inventory", "/planner", "/devices", "/repairs", "/assistant", "/notifications"],
     capabilities: ["inventory"],
   },
 };
@@ -128,17 +146,27 @@ export function normalizeCapabilities(values: readonly string[]): AccessCapabili
   return CAPABILITY_CATALOG.map((capability) => capability.id).filter((id) => values.includes(id));
 }
 
+function samePageSet(left: readonly string[], right: readonly string[]) {
+  if (left.length !== right.length) return false;
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((page, index) => page === sortedRight[index]);
+}
+
 export function applyPageFloors(role: AppRole, pages: readonly string[]) {
   if (role === "OWNER") return [...pages];
-  return pages.filter((page) => page !== "*" && (role === "BRANCH_MANAGER" || page !== "/insights"));
+  return pages.filter((page) => page !== "*" && !OWNER_ONLY_PAGES.has(page) && (role === "BRANCH_MANAGER" || page !== "/insights"));
 }
 
 export function buildAccessMap(rows: readonly { role: string; pages: readonly string[]; capabilities: readonly string[] }[]) {
   const map = defaultAccessMap();
   for (const row of rows) {
     if (!isAppRole(row.role)) continue;
+    const normalized = normalizePages(row.pages);
+    const legacy = row.role === "OWNER" ? null : legacyRolePages[row.role];
+    const pages = legacy && !normalized.includes("*") && samePageSet(normalized, legacy) ? [...defaultRoleGrants[row.role].pages] : normalized;
     map[row.role] = {
-      pages: applyPageFloors(row.role, normalizePages(row.pages)),
+      pages: applyPageFloors(row.role, pages),
       capabilities: normalizeCapabilities(row.capabilities),
     };
   }
@@ -256,6 +284,9 @@ export function assertEntitlementFloors(grants: Record<AppRole, RoleGrant>): { o
     }
     if (role !== "OWNER" && role !== "BRANCH_MANAGER" && grants[role].pages.includes("/insights")) {
       return { ok: false, error: "Business insights can be granted only to the owner and branch managers." };
+    }
+    if (role !== "OWNER" && grants[role].pages.some((page) => OWNER_ONLY_PAGES.has(page))) {
+      return { ok: false, error: "Finance, expenses, and the activity log stay with the owner." };
     }
   }
   return { ok: true, grants };

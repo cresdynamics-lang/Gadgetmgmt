@@ -14,7 +14,7 @@ Source of truth: `Gadget_Hub_Operations_System_v4.pdf`. The HTML prototype is a 
 | Finance visibility | Only the owner sees cost, profit, margin, expenses, payroll, and stock value. | OWASP issue #3. Selling price stays visible to every role. | Dashboard, insights, insights AI, and sale JSON hide those figures from everyone except the owner. |
 | Identity in URLs | No passwords or user details in URLs. Server-side auth. | Customer and Lipa account ids count. | Customers page stores the id in `sessionStorage`. The proxy strips `customer`, `account`, and the matching id keys. |
 | Navigation | Phone and desk both need the daily actions. | Reuse the spruce shell. | Desk sidebar from `lg`. Phone primary tabs plus More. Sign out is a labeled button. |
-| Trade-in, deliveries, partners, expenses, payroll, Face ID, label printer | Specified or left open. | Not in this pass. | Not built. |
+| Deliveries, stock planner, devices, repairs, partners, finance, expenses, performance, assistant, activity | Named in the operations sidebar. | Show the desks. Do not invent rates, targets, or sample rows. | In the sidebar for the roles in the document. Devices, the planner, in-repair units, performance counts, owner finance, and the activity log read live records. Deliveries, partners, and expenses stay empty until a record exists. Payroll, Face ID, and a label printer are still not built. |
 | Bank transfer tender | Named in the spec. Which accounts are still open. | Stanbic is the sales API, not a new staff tender type. | No `BANK` enum and no migration. |
 
 Per-account Lipa balances stay on the collection screen and in the credit API because a cashier cannot collect without the amount due. Shop-wide Lipa totals, revenue, profit, cost, and stock value do not.

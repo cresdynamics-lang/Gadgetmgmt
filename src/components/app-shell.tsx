@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { ArrowDown, ArrowUpRight, Boxes, CreditCard, LayoutDashboard, LogOut, Menu, MoreHorizontal, Package, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles, UserRound, UsersRound, Wallet, X, BellRing, CornerDownLeft } from "lucide-react";
+import { Activity, ArrowDown, ArrowUpRight, BellRing, Boxes, ClipboardList, CornerDownLeft, CreditCard, Handshake, Landmark, LayoutDashboard, LogOut, Menu, MoreHorizontal, Package, Receipt, ScrollText, Search, Settings2, ShieldCheck, ShoppingBag, Smartphone, Sparkles, Star, Truck, UserRound, UsersRound, Wallet, Wrench, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { NotificationBell } from "@/components/notification-bell";
@@ -30,12 +30,22 @@ const primaryTabLabel: Record<string, string> = {
 const iconByHref: Record<string, typeof LayoutDashboard> = {
   "/dashboard": LayoutDashboard,
   "/sales": ShoppingBag,
+  "/deliveries": Truck,
   "/inventory": Boxes,
+  "/planner": ClipboardList,
+  "/devices": Smartphone,
+  "/repairs": Wrench,
+  "/partners": Handshake,
   "/customers": UsersRound,
   "/credit": CreditCard,
   "/layaway": Wallet,
+  "/finance": Landmark,
+  "/expenses": Receipt,
+  "/performance": Star,
+  "/assistant": Sparkles,
+  "/insights": Activity,
   "/staff": UserRound,
-  "/insights": Sparkles,
+  "/activity": ScrollText,
   "/notifications": BellRing,
   "/settings": Settings2,
   "/access": ShieldCheck,
