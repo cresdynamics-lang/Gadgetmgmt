@@ -126,11 +126,11 @@ accounts. Production release remains subject to issue #3's full checklist.
 Zod is pinned to 4.6.7 and deepmerge-ts is overridden to 8.0.2 to resolve the audit
 findings affecting validation and Prisma configuration without a Prisma major upgrade.
 Production responses include HSTS; HTTPS/TLS termination must still be configured by
-hosting. The known Next.js advisory is deferred to the separate upgrade branch and
-continues to block a production release under issue #3.
+hosting. Next.js is pinned to 16.4.6, the latest release outside the 16.4.0 advisories.
+Issue #3 still requires the rest of its checklist before a full production sign-off.
 
 The production deployment workflow runs the access/notification regression checks and
 blocks high/critical production dependency advisories before building or copying files.
-Deploy SSH credentials are scoped to the copy step, away from package installation and
-build scripts. Until the separate Next.js security upgrade lands, the audit gate is
-expected to block production deployment even though the feature may be merged to main.
+Deploy SSH credentials and the tunnel token are scoped to the copy step, away from
+package installation and build scripts. The audit gate still blocks the deploy when
+production dependencies have a high or critical advisory.
