@@ -16,7 +16,11 @@ for(const [name,sentinel] of [['20261113120000_device_auth','AuthDevice'],['2026
  const body=readFileSync(`prisma/migrations/${name}/migration.sql`,'utf8');const checksum=createHash('sha256').update(body).digest('hex');
  const exists=sql(`SELECT to_regclass('public."${sentinel}"') IS NOT NULL`) === 't';
  if(exists){console.log(`${name}: existing schema detected; leaving unchanged.`);continue;}
- try{sql(`BEGIN; SELECT pg_advisory_xact_lock(281113); SET LOCAL ROLE gadgethub_ops_app; ${body}\n COMMIT;`);}catch{throw new Error(`Migration ${name} failed; transaction rolled back. Backup retained.`);}
+ const ownership=name.endsWith('pwa_operations')?['Operation','DeviceEvent','ExpenseEntry','RecurringBill','VariantTarget'].map(table=>`ALTER TABLE "${table}" OWNER TO gadgethub_ops_app;`).join(' ')+' ALTER TYPE "OperationKind" OWNER TO gadgethub_ops_app;':['AuthDevice','AuthPasskey','AuthChallenge','AuthEvent'].map(table=>`ALTER TABLE "${table}" OWNER TO gadgethub_ops_app;`).join(' ');
+ try{sql(`BEGIN; SELECT pg_advisory_xact_lock(281113); ${body}\n ${ownership} COMMIT;`);}catch(error){
+   const detail=String(error.stderr??'').split('\n').find(line=>line.includes('ERROR:'))??'Database rejected the schema change';
+   console.error(detail.slice(0,300));throw new Error(`Migration ${name} failed; transaction rolled back. Backup retained.`);
+ }
  console.log(`${name}: applied (${checksum.slice(0,12)}).`);
 }
 for(const [table,column] of [['User','accessExpiresAt'],['AuthDevice','activeUntil'],['SaleItem','totalCost'],['Customer','marketingSource']]){

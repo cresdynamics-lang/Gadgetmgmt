@@ -175,6 +175,19 @@ rm -f .initial-owner-password
 trap - EXIT
 
 wait_for_nodejs_ready
+worker_ready=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  if compose exec -T nodejs node -e 'const {PrismaClient}=require("@prisma/client");const p=new PrismaClient();p.scheduledJobRun.findUnique({where:{id:"staff-notifications-heartbeat"}}).then(row=>{if(!row||row.status!=="SUCCEEDED"||Date.now()-row.finishedAt.getTime()>60000)process.exitCode=1;}).catch(()=>{process.exitCode=1;}).finally(()=>p.$disconnect());' >/dev/null 2>&1; then
+    worker_ready=1
+    break
+  fi
+  sleep 5
+done
+if [ "$worker_ready" != "1" ]; then
+  echo "Blocker: notification worker has no current database heartbeat."
+  exit 1
+fi
+echo "notification_worker_heartbeat=verified"
 code="$(local_login_status)"
 echo "local_login_http=${code}"
 echo "local_origin=http://127.0.0.1:3005"
