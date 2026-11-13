@@ -129,13 +129,13 @@ test("rejects passwords and user details in urls", () => {
   assert.equal(publicAppUrl(tunnelRequest, "/login?callbackUrl=%2F"), "https://development.gadgethubke.com/login?callbackUrl=%2F");
 });
 
-test("auth redirects use the public host and Compose clears localhost auth URLs", () => {
+test("auth redirects and Compose use the public HTTPS origin", () => {
   const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
   assert.match(proxy, /publicAppUrl/);
   assert.doesNotMatch(proxy, /Response\.redirect\(/);
   const compose = readFileSync(path.join(root, "compose.yaml"), "utf8");
-  assert.match(compose, /NEXTAUTH_URL:\s*""/);
-  assert.match(compose, /AUTH_URL:\s*""/);
+  assert.match(compose, /NEXTAUTH_URL:\s*"https:\/\/development\.gadgethubke\.com"/);
+  assert.match(compose, /\bAUTH_URL:\s*"https:\/\/development\.gadgethubke\.com"/);
   const start = readFileSync(path.join(root, "scripts/production-remote-start.sh"), "utf8");
   assert.match(start, /wait_for_nodejs_ready/);
   assert.match(start, /seeded_base/);
