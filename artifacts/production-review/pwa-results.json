@@ -1,0 +1,254 @@
+{
+  "date": "2026-11-13T19:27:00.149Z",
+  "results": [
+    "Physical receipt persists a unique device and its first history event",
+    "Repair assignment works through the actual UI and removes sellable stock",
+    "Write-only repair costs persist while staff workflow and history responses omit protected values",
+    "Cashier scans an eligible device, identifies a customer, records unpaid COD, downloads a real receipt and queues email without repeating the sale",
+    "Delivery UI traces rider handover, proof, COD payment and closure to the saved sale",
+    "Expense UI persists actual owner payments; corrections append reversals, duplicate bill periods are rejected, and staff cannot query or export finance",
+    "Variant restocking uses the approved target and actual sold-device history",
+    "Read-only AI receives only granted datasets and returns only authorized source links",
+    "Expired temporary access is rejected on the next server request",
+    "All workspace routes are checked at five widths in both appearances with automated WCAG analysis",
+    "Owner service readiness distinguishes configured services from unverified real delivery",
+    "A suspended or killed client cannot revive an expired foreground lease",
+    "Offline navigation exposes only a public recovery screen, protected data is absent from CacheStorage, and reopening a locked PWA requires sign-in"
+  ],
+  "accessibility": [
+    {
+      "path": "/dashboard",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/sales",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/inventory",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/planner",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/devices",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/repairs",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/deliveries",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/partners",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/trade-ins",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/expenses",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/finance",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/customers",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/credit",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/layaway",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/staff",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/activity",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/notifications",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/settings",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/performance",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/assistant",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/insights",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/account",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/access",
+      "theme": "light",
+      "violations": 0
+    },
+    {
+      "path": "/dashboard",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/sales",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/inventory",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/planner",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/devices",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/repairs",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/deliveries",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/partners",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/trade-ins",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/expenses",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/finance",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/customers",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/credit",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/layaway",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/staff",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/activity",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/notifications",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/settings",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/performance",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/assistant",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/insights",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/account",
+      "theme": "dark",
+      "violations": 0
+    },
+    {
+      "path": "/access",
+      "theme": "dark",
+      "violations": 0
+    }
+  ],
+  "limits": [
+    "Physical iPhone installation, Face ID hardware, VoiceOver and real push/email delivery require real-device/provider verification.",
+    "Unapproved financing, statutory payroll and refund accounting policies are not invented."
+  ]
+}

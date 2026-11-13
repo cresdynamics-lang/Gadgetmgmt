@@ -94,9 +94,8 @@ local_login_status() {
 stop_pid .cloudflared.pid
 stop_pid .next-start.pid
 
-if docker info >/dev/null 2>&1 || sudo -n docker info >/dev/null 2>&1; then
-  compose down --remove-orphans >/dev/null 2>&1 || true
-fi
+# Keep existing containers serving while the replacement image is assembled.
+# Compose replaces them only after the new image is ready.
 
 # A previous host cloudflared can outlive its pid file. Stop only this deploy's copy.
 old_pids=""

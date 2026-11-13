@@ -1,0 +1,636 @@
+[
+  {
+    "path": "/dashboard",
+    "theme": "light",
+    "textLength": 1989,
+    "headings": [
+      "7 sales recorded today",
+      "Today’s action desk",
+      "AI business briefing",
+      "Sales activity",
+      "Reorder attention",
+      "Recent sales",
+      "Credit plans due"
+    ],
+    "controls": 9
+  },
+  {
+    "path": "/sales",
+    "theme": "light",
+    "textLength": 963,
+    "headings": [
+      "New sale",
+      "Current sale"
+    ],
+    "controls": 18
+  },
+  {
+    "path": "/inventory",
+    "theme": "light",
+    "textLength": 1336,
+    "headings": [
+      "Inventory",
+      "Record a device",
+      "Branch stock",
+      "Recent stock movements"
+    ],
+    "controls": 19
+  },
+  {
+    "path": "/planner",
+    "theme": "light",
+    "textLength": 5163,
+    "headings": [
+      "Variant stock planner",
+      "Review iPhone 13bc734c",
+      "Review iPhone 9d6adedc",
+      "Review iPhone 9e55787f",
+      "Review iPhone ae8d5e1a",
+      "Review iPhone e7f578a8",
+      "Review iPhone f094fa05",
+      "Review iPhone ccfce363",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review iPhone 625c23eb",
+      "Review iPhone cb0ae984"
+    ],
+    "controls": 60
+  },
+  {
+    "path": "/devices",
+    "theme": "light",
+    "textLength": 839,
+    "headings": [
+      "Device passports",
+      "Review iPhone ae8d5e1a",
+      "Review iPhone 9d6adedc",
+      "Review iPhone f094fa05",
+      "Review iPhone 13bc734c",
+      "Review iPhone ccfce363",
+      "Review iPhone 9e55787f",
+      "Review iPhone e7f578a8",
+      "Review iPhone cb0ae984",
+      "Review iPhone 625c23eb"
+    ],
+    "controls": 9
+  },
+  {
+    "path": "/repairs",
+    "theme": "light",
+    "textLength": 1956,
+    "headings": [
+      "Repair workspace",
+      "Recorded work",
+      "Review iPhone cb0ae984",
+      "Review iPhone e7f578a8",
+      "Review iPhone 9e55787f",
+      "Review iPhone ccfce363",
+      "Review iPhone 13bc734c",
+      "Review iPhone f094fa05",
+      "Review iPhone 9d6adedc",
+      "Review iPhone ae8d5e1a"
+    ],
+    "controls": 15
+  },
+  {
+    "path": "/deliveries",
+    "theme": "light",
+    "textLength": 2176,
+    "headings": [
+      "Delivery workspace",
+      "Recorded work",
+      "Review iPhone e7f578a8",
+      "Review iPhone 9e55787f",
+      "Review iPhone ccfce363",
+      "Review iPhone 13bc734c",
+      "Review iPhone f094fa05",
+      "Review iPhone 9d6adedc",
+      "Review iPhone ae8d5e1a"
+    ],
+    "controls": 16
+  },
+  {
+    "path": "/partners",
+    "theme": "light",
+    "textLength": 503,
+    "headings": [
+      "Partner handover workspace",
+      "No work recorded yet"
+    ],
+    "controls": 8
+  },
+  {
+    "path": "/trade-ins",
+    "theme": "light",
+    "textLength": 1149,
+    "headings": [
+      "Trade-in workspace",
+      "No work recorded yet"
+    ],
+    "controls": 20
+  },
+  {
+    "path": "/expenses",
+    "theme": "light",
+    "textLength": 4018,
+    "headings": [
+      "Expenses & bills",
+      "Recurring obligations",
+      "Payment history",
+      "Fixture utility",
+      "Fixture landlord ae8d5e1a",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord 9d6adedc",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord f094fa05",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord 13bc734c",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord ccfce363",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord 9e55787f",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord e7f578a8",
+      "Fixture repairer",
+      "Fixture repairer",
+      "Fixture landlord ae8d5e1a",
+      "Fixture landlord 9d6adedc",
+      "Fixture landlord f094fa05",
+      "Fixture landlord 13bc734c",
+      "Fixture landlord ccfce363",
+      "Fixture landlord 9e55787f",
+      "Fixture landlord e7f578a8"
+    ],
+    "controls": 41
+  },
+  {
+    "path": "/finance",
+    "theme": "light",
+    "textLength": 1416,
+    "headings": [
+      "Finance",
+      "Customer-stated marketing attribution"
+    ],
+    "controls": 2
+  },
+  {
+    "path": "/customers",
+    "theme": "light",
+    "textLength": 1805,
+    "headings": [
+      "Customers 8",
+      "Fixture buyer ae8d5e1a"
+    ],
+    "controls": 24
+  },
+  {
+    "path": "/credit",
+    "theme": "light",
+    "textLength": 689,
+    "headings": [
+      "Lipa Mdogo Mdogo",
+      "Lipa collection board",
+      "Credit accounts"
+    ],
+    "controls": 11
+  },
+  {
+    "path": "/layaway",
+    "theme": "light",
+    "textLength": 423,
+    "headings": [
+      "Existing layaway commitments",
+      "Layaway orders"
+    ],
+    "controls": 3
+  },
+  {
+    "path": "/staff",
+    "theme": "light",
+    "textLength": 7582,
+    "headings": [
+      "Meet your team",
+      "Your people"
+    ],
+    "controls": 84
+  },
+  {
+    "path": "/activity",
+    "theme": "light",
+    "textLength": 3185,
+    "headings": [
+      "Activity"
+    ],
+    "controls": 0
+  },
+  {
+    "path": "/notifications",
+    "theme": "light",
+    "textLength": 5066,
+    "headings": [
+      "Messages & alerts",
+      "Your inbox · 0 unread",
+      "Automation health",
+      "Recent delivery activity"
+    ],
+    "controls": 13
+  },
+  {
+    "path": "/settings",
+    "theme": "light",
+    "textLength": 1204,
+    "headings": [
+      "Business settings",
+      "Branch profile",
+      "Signed-in account"
+    ],
+    "controls": 7
+  },
+  {
+    "path": "/performance",
+    "theme": "light",
+    "textLength": 453,
+    "headings": [
+      "Staff performance"
+    ],
+    "controls": 0
+  },
+  {
+    "path": "/assistant",
+    "theme": "light",
+    "textLength": 495,
+    "headings": [
+      "Ask Gadget Hub",
+      "AI business briefing"
+    ],
+    "controls": 1
+  },
+  {
+    "path": "/insights",
+    "theme": "light",
+    "textLength": 2155,
+    "headings": [
+      "Business insights",
+      "AI business briefing",
+      "How did daily sales move?",
+      "What is driving sales value?",
+      "Which stock needs attention?",
+      "How old is the overdue balance?"
+    ],
+    "controls": 1
+  },
+  {
+    "path": "/account",
+    "theme": "light",
+    "textLength": 3028,
+    "headings": [
+      "Account security",
+      "Your installed workspace",
+      "Delivery & installation readiness",
+      "Face ID & passkeys",
+      "Verified devices"
+    ],
+    "controls": 24
+  },
+  {
+    "path": "/access",
+    "theme": "light",
+    "textLength": 2021,
+    "headings": [
+      "Team access"
+    ],
+    "controls": 1
+  },
+  {
+    "path": "/dashboard",
+    "theme": "dark",
+    "textLength": 1989,
+    "headings": [
+      "7 sales recorded today",
+      "Today’s action desk",
+      "AI business briefing",
+      "Sales activity",
+      "Reorder attention",
+      "Recent sales",
+      "Credit plans due"
+    ],
+    "controls": 9
+  },
+  {
+    "path": "/sales",
+    "theme": "dark",
+    "textLength": 963,
+    "headings": [
+      "New sale",
+      "Current sale"
+    ],
+    "controls": 18
+  },
+  {
+    "path": "/inventory",
+    "theme": "dark",
+    "textLength": 1336,
+    "headings": [
+      "Inventory",
+      "Record a device",
+      "Branch stock",
+      "Recent stock movements"
+    ],
+    "controls": 19
+  },
+  {
+    "path": "/planner",
+    "theme": "dark",
+    "textLength": 5163,
+    "headings": [
+      "Variant stock planner",
+      "Review iPhone 13bc734c",
+      "Review iPhone 9d6adedc",
+      "Review iPhone 9e55787f",
+      "Review iPhone ae8d5e1a",
+      "Review iPhone e7f578a8",
+      "Review iPhone f094fa05",
+      "Review iPhone ccfce363",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review iPhone 625c23eb",
+      "Review iPhone cb0ae984"
+    ],
+    "controls": 60
+  },
+  {
+    "path": "/devices",
+    "theme": "dark",
+    "textLength": 839,
+    "headings": [
+      "Device passports",
+      "Review iPhone ae8d5e1a",
+      "Review iPhone 9d6adedc",
+      "Review iPhone f094fa05",
+      "Review iPhone 13bc734c",
+      "Review iPhone ccfce363",
+      "Review iPhone 9e55787f",
+      "Review iPhone e7f578a8",
+      "Review iPhone cb0ae984",
+      "Review iPhone 625c23eb"
+    ],
+    "controls": 9
+  },
+  {
+    "path": "/repairs",
+    "theme": "dark",
+    "textLength": 1956,
+    "headings": [
+      "Repair workspace",
+      "Recorded work",
+      "Review iPhone cb0ae984",
+      "Review iPhone e7f578a8",
+      "Review iPhone 9e55787f",
+      "Review iPhone ccfce363",
+      "Review iPhone 13bc734c",
+      "Review iPhone f094fa05",
+      "Review iPhone 9d6adedc",
+      "Review iPhone ae8d5e1a"
+    ],
+    "controls": 15
+  },
+  {
+    "path": "/deliveries",
+    "theme": "dark",
+    "textLength": 2176,
+    "headings": [
+      "Delivery workspace",
+      "Recorded work",
+      "Review iPhone e7f578a8",
+      "Review iPhone 9e55787f",
+      "Review iPhone ccfce363",
+      "Review iPhone 13bc734c",
+      "Review iPhone f094fa05",
+      "Review iPhone 9d6adedc",
+      "Review iPhone ae8d5e1a"
+    ],
+    "controls": 16
+  },
+  {
+    "path": "/partners",
+    "theme": "dark",
+    "textLength": 503,
+    "headings": [
+      "Partner handover workspace",
+      "No work recorded yet"
+    ],
+    "controls": 8
+  },
+  {
+    "path": "/trade-ins",
+    "theme": "dark",
+    "textLength": 1149,
+    "headings": [
+      "Trade-in workspace",
+      "No work recorded yet"
+    ],
+    "controls": 20
+  },
+  {
+    "path": "/expenses",
+    "theme": "dark",
+    "textLength": 4018,
+    "headings": [
+      "Expenses & bills",
+      "Recurring obligations",
+      "Payment history",
+      "Fixture utility",
+      "Fixture landlord ae8d5e1a",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord 9d6adedc",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord f094fa05",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord 13bc734c",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord ccfce363",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord 9e55787f",
+      "Fixture repairer",
+      "Fixture utility",
+      "Fixture landlord e7f578a8",
+      "Fixture repairer",
+      "Fixture repairer",
+      "Fixture landlord ae8d5e1a",
+      "Fixture landlord 9d6adedc",
+      "Fixture landlord f094fa05",
+      "Fixture landlord 13bc734c",
+      "Fixture landlord ccfce363",
+      "Fixture landlord 9e55787f",
+      "Fixture landlord e7f578a8"
+    ],
+    "controls": 41
+  },
+  {
+    "path": "/finance",
+    "theme": "dark",
+    "textLength": 1416,
+    "headings": [
+      "Finance",
+      "Customer-stated marketing attribution"
+    ],
+    "controls": 2
+  },
+  {
+    "path": "/customers",
+    "theme": "dark",
+    "textLength": 1805,
+    "headings": [
+      "Customers 8",
+      "Fixture buyer ae8d5e1a"
+    ],
+    "controls": 24
+  },
+  {
+    "path": "/credit",
+    "theme": "dark",
+    "textLength": 689,
+    "headings": [
+      "Lipa Mdogo Mdogo",
+      "Lipa collection board",
+      "Credit accounts"
+    ],
+    "controls": 11
+  },
+  {
+    "path": "/layaway",
+    "theme": "dark",
+    "textLength": 423,
+    "headings": [
+      "Existing layaway commitments",
+      "Layaway orders"
+    ],
+    "controls": 3
+  },
+  {
+    "path": "/staff",
+    "theme": "dark",
+    "textLength": 7582,
+    "headings": [
+      "Meet your team",
+      "Your people"
+    ],
+    "controls": 84
+  },
+  {
+    "path": "/activity",
+    "theme": "dark",
+    "textLength": 3185,
+    "headings": [
+      "Activity"
+    ],
+    "controls": 0
+  },
+  {
+    "path": "/notifications",
+    "theme": "dark",
+    "textLength": 5066,
+    "headings": [
+      "Messages & alerts",
+      "Your inbox · 0 unread",
+      "Automation health",
+      "Recent delivery activity"
+    ],
+    "controls": 13
+  },
+  {
+    "path": "/settings",
+    "theme": "dark",
+    "textLength": 1204,
+    "headings": [
+      "Business settings",
+      "Branch profile",
+      "Signed-in account"
+    ],
+    "controls": 7
+  },
+  {
+    "path": "/performance",
+    "theme": "dark",
+    "textLength": 453,
+    "headings": [
+      "Staff performance"
+    ],
+    "controls": 0
+  },
+  {
+    "path": "/assistant",
+    "theme": "dark",
+    "textLength": 495,
+    "headings": [
+      "Ask Gadget Hub",
+      "AI business briefing"
+    ],
+    "controls": 1
+  },
+  {
+    "path": "/insights",
+    "theme": "dark",
+    "textLength": 2155,
+    "headings": [
+      "Business insights",
+      "AI business briefing",
+      "How did daily sales move?",
+      "What is driving sales value?",
+      "Which stock needs attention?",
+      "How old is the overdue balance?"
+    ],
+    "controls": 1
+  },
+  {
+    "path": "/account",
+    "theme": "dark",
+    "textLength": 3028,
+    "headings": [
+      "Account security",
+      "Your installed workspace",
+      "Delivery & installation readiness",
+      "Face ID & passkeys",
+      "Verified devices"
+    ],
+    "controls": 24
+  },
+  {
+    "path": "/access",
+    "theme": "dark",
+    "textLength": 2021,
+    "headings": [
+      "Team access"
+    ],
+    "controls": 1
+  }
+]
