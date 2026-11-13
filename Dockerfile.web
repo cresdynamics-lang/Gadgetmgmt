@@ -9,6 +9,7 @@ WORKDIR /app
 COPY package.json package-lock.json next.config.ts tsconfig.json ./
 COPY public ./public
 COPY prisma ./prisma
+COPY worker ./worker
 COPY .next ./.next
 COPY node_modules ./node_modules
 
