@@ -1,4 +1,4 @@
-export const UNIT_STATUSES = ["IN_STOCK", "RESERVED", "SOLD", "IN_REPAIR", "RETURNED"] as const;
+export const UNIT_STATUSES = ["IN_STOCK", "RESERVED", "SOLD", "IN_REPAIR", "RETURNED", "WITH_PARTNER", "QUARANTINED"] as const;
 export const DEVICE_CONDITIONS = ["NEW", "OPEN_BOX", "REFURBISHED", "USED"] as const;
 export const NETWORK_LOCKS = ["UNKNOWN", "LOCKED", "UNLOCKED"] as const;
 export const ACTIVATION_LOCKS = ["UNKNOWN", "ON", "OFF"] as const;

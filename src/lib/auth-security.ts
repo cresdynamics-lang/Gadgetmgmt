@@ -63,3 +63,10 @@ export async function loginTicket(userId: string, deviceId: string) {
   await makeChallenge(userId, "ticket", digest(ticket), deviceId);
   return ticket;
 }
+
+// A short server lease bounds access when the OS kills a PWA without a visibility beacon.
+export function foregroundLeaseUntil(now = Date.now()) {
+  const configured = Number(process.env.AUTH_FOREGROUND_LEASE_SECONDS || 120);
+  const seconds = Number.isFinite(configured) ? Math.max(60, Math.min(300, configured)) : 120;
+  return new Date(now + seconds * 1000);
+}

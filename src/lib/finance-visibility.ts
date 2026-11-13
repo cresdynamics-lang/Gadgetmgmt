@@ -105,13 +105,14 @@ export function presentBusinessInsights(insights: BusinessInsights, role: string
   };
 }
 
-export function omitSaleCost<T extends { saleItems?: readonly { unitCost?: number }[] }>(sale: T, role: string | null | undefined): T {
+export function omitSaleCost<T extends { saleItems?: readonly { unitCost?: number; totalCost?: number | null }[] }>(sale: T, role: string | null | undefined): T {
   if (canViewFinance(role) || !sale.saleItems) return sale;
   return {
     ...sale,
     saleItems: sale.saleItems.map((item) => {
       const rest = { ...item };
       delete rest.unitCost;
+      delete rest.totalCost;
       return rest;
     }),
   };

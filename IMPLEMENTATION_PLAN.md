@@ -50,3 +50,20 @@ Before any checkout call:
 Migration deliberately removes inherited staff authorization: Victor must grant each account explicitly. Configure AUTH_OWNER_EMAIL (or INITIAL_OWNER_EMAIL), canonical APP_BASE_URL, and the existing email service before rollout. No production database changes are performed by this review.
 
 Final auth verification: 18 end-to-end browser/security scenarios and 48 focused/regression checks pass. Fresh NUH seeding was exercised twice in the isolated migration database and retained exactly one shop. The migration applies to the original schema. See UX_QA_REPORT.md and artifacts/auth-review/results.json for scope and limits.
+
+## PWA completion pass
+
+The product target is now an installable PWA, not an Expo/native client. WebAuthn provides platform Face ID/fingerprint/device PIN; native-only backlog items are replaced by browser-supported acceptance tests. No offline payment or customer-data queue is introduced.
+
+Execution: (1) app-wide service worker, safe offline/install/update behavior, themes and bounded foreground sessions; (2) persistent repair/delivery/partner/trade-in and device histories; (3) owner expense/payroll/recurring/marketing records and exports; (4) permission expiry and finance boundaries; (5) transaction, API, accessibility and responsive browser verification. Preserve existing Lipa policies until Victor approves changes. Physical iPhone, actual push/email delivery, and production accounting-policy decisions remain external acceptance gates rather than fabricated test successes.
+
+
+### PWA pass implementation and verification
+
+Completed: shared themes/accessibility, app-wide offline/install/update shell, bounded sessions and expiring grants; persistent operations/device histories/labels; COD sale-to-delivery payments; owner ledger/recurring bills/CSV; variant planning; sourced AI scoping; receipt recovery worker and readiness. Added a deployable migration without modifying production data.
+
+Validation: `npm run test:pwa:e2e` (isolated database and fake providers), `PWA_TEST_DATABASE_URL=<isolated review database> npm run test:pwa`, regression suites, TypeScript, lint and production build. Browser artifacts are under `artifacts/pwa-review`. The dated PWA requirements matrix supersedes earlier “not built” statements.
+
+Rollout dependencies: apply migrations using the established deployment process; deploy application and notification worker together; configure canonical HTTPS, owner identity and provider secrets; grant new operational capabilities individually. Old devices without a live foreground lease reauthenticate. No automatic data consolidation, inventory backfill, bank charging, payroll deductions or financing-policy change is performed.
+
+Remaining external acceptance work: real iPhone installed-mode/Face ID/camera/VoiceOver/large text; actual provider inbox/push and physical label printing; confirmed bank, statutory payroll, trade-in exchange/refund and replacement financing policy. These are explicitly tracked dependencies, not simulated production passes.

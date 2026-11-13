@@ -32,7 +32,9 @@
     "test:device-units": "node --import tsx --test scripts/device-units.test.ts scripts/barcode-scanner.test.ts",
     "auth:unlock": "node --env-file=.env --import tsx scripts/unlock-auth.ts",
     "test:auth": "node --import tsx --test scripts/auth-security.test.ts",
-    "test:auth:e2e": "node scripts/auth/review.mjs"
+    "test:auth:e2e": "node scripts/auth/review.mjs",
+    "test:pwa": "node --import tsx --test scripts/pwa-workflows.test.ts scripts/pwa/service-worker.test.mjs",
+    "test:pwa:e2e": "PWA_REVIEW=1 node scripts/auth/review.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -54,12 +56,14 @@
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.0.0",
     "web-push": "^4.0.0",
-    "zod": "4.6.7",
+    "webauthn-browser": "npm:@simplewebauthn/browser@^14.0.0",
     "webauthn-server": "npm:@simplewebauthn/server@^14.1.0",
-    "webauthn-browser": "npm:@simplewebauthn/browser@^14.0.0"
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.65.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -70,8 +74,7 @@
     "prisma": "6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
-    "typescript": "^5",
-    "@tailwindcss/postcss": "^4.3.3"
+    "typescript": "^5"
   },
   "allowScripts": {
     "@prisma/client@6.19.3": true,

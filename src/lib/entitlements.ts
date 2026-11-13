@@ -3,6 +3,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
   buildAccessMap,
+  CAPABILITY_CATALOG,
   canAccessPage as allowPage,
   canUseCapability as allowCapability,
   isAppRole,
@@ -38,8 +39,9 @@ export const getAccessMap = cache(async () => {
 // Staff access is explicit per person; shared role grants never authorize staff.
 export async function readStoredGrant(role: string, userId: string): Promise<RoleGrant> {
   if (!isAppRole(role)) return { pages: [], capabilities: [] };
-  if (role === "OWNER") return { pages: ["*"], capabilities: ["sales", "inventory", "customers", "credit", "layaway", "staff", "branchSettings", "notifications"] };
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { accessPages: true, accessCapabilities: true } });
+  if (role === "OWNER") return { pages: ["*"], capabilities: CAPABILITY_CATALOG.map(item => item.id) };
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { accessPages: true, accessCapabilities: true, accessExpiresAt: true } });
+  if (user?.accessExpiresAt && user.accessExpiresAt <= new Date()) return { pages: [], capabilities: [] };
   return { pages: applyPageFloors(role, normalizePages(user?.accessPages ?? [])), capabilities: normalizeCapabilities(user?.accessCapabilities ?? []) };
 }
 

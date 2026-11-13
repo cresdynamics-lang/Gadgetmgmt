@@ -27,6 +27,7 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
             quantity: true,
             total: true,
             unitCost: true,
+            totalCost: true,
             product: { select: { name: true, sku: true } },
           },
         },
@@ -57,9 +58,9 @@ export async function getBusinessInsights(scope: InsightScope, now = new Date())
     const collected = periodSales.reduce((sum, sale) => sum + sale.paidAmount, 0);
     const items = periodSales.flatMap((sale) => sale.saleItems);
     const units = items.reduce((sum, item) => sum + item.quantity, 0);
-    const costedItems = items.filter((item) => item.unitCost > 0);
+    const costedItems = items.filter((item) => (item.totalCost??item.unitCost*item.quantity) > 0);
     const costedUnits = costedItems.reduce((sum, item) => sum + item.quantity, 0);
-    const estimatedGrossProfit = costedItems.length ? costedItems.reduce((sum, item) => sum + item.total - item.unitCost * item.quantity, 0) : null;
+    const estimatedGrossProfit = costedItems.length ? costedItems.reduce((sum, item) => sum + item.total - (item.totalCost??item.unitCost*item.quantity), 0) : null;
     return {
       salesCount: periodSales.length,
       total,

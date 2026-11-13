@@ -37,7 +37,7 @@ function sameIdentifier(left: string | null | undefined, right: string) {
 }
 
 export function matchSaleScan(products: readonly ScannableProduct[], code: SaleScanCode): SaleScanMatch {
-  const identifiers = [code.imei, code.imei2, code.serialNumber].filter((value): value is string => Boolean(value?.trim()));
+  const identifiers = [code.imei, code.imei2, code.serialNumber, code.raw].filter((value): value is string => Boolean(value?.trim()));
   for (const identifier of identifiers) {
     const product = products.find((item) => item.devices?.some((device) =>
       sameIdentifier(device.imei, identifier)

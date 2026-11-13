@@ -5,6 +5,7 @@ export const navItems = [
   { label: "Inventory", href: "/inventory" },
   { label: "Stock planner", href: "/planner" },
   { label: "Devices", href: "/devices" },
+  { label: "Trade-ins & returns", href: "/trade-ins" },
   { label: "Repairs", href: "/repairs" },
   { label: "Partners", href: "/partners" },
   { label: "Customers", href: "/customers" },

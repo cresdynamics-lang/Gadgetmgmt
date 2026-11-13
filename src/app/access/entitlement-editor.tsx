@@ -111,15 +111,15 @@ export function EntitlementEditor() {
 
   return (
     <form method="post" action="/access" onSubmit={save} className="space-y-5">
-      <section className="relative overflow-hidden rounded-[22px] border border-[#e6e6e2] bg-[linear-gradient(115deg,#e5f5ee_0%,#f4f4f2_55%,#e5f5ee_100%)] px-6 py-6 sm:px-7">
+      <section className="relative overflow-hidden rounded-[22px] border border-[var(--border)] bg-[linear-gradient(115deg,#e5f5ee_0%,#f4f4f2_55%,#e5f5ee_100%)] px-6 py-6 sm:px-7">
         <div className="pointer-events-none absolute -right-8 -top-20 h-60 w-60 rounded-full border border-[#e5f5ee]" />
-        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#0a7d56]"><ShieldCheck className="h-3.5 w-3.5" />Owner only</p>
-        <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[#111111] sm:text-[31px]">Role access</h2>
-        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#111111]">Choose one role, then the screens it can open and the work it can do. Both are saved together and checked on the server. This screen stays with the owner.</p>
+        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[var(--accent-text)]"><ShieldCheck className="h-3.5 w-3.5" />Owner only</p>
+        <h2 className="mt-2 text-[27px] font-semibold tracking-[-.045em] text-[var(--foreground)] sm:text-[31px]">Role access</h2>
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[var(--foreground)]">Choose one role, then the screens it can open and the work it can do. Both are saved together and checked on the server. This screen stays with the owner.</p>
       </section>
 
       {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
-      {notice ? <p role="status" className="border-l-2 border-[#0a7d56] bg-[#e5f5ee] px-4 py-3 text-sm text-[#111111]">{notice}</p> : null}
+      {notice ? <p role="status" className="border-l-2 border-[#0a7d56] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--foreground)]">{notice}</p> : null}
 
       <div role="tablist" aria-label="Roles" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {ROLE_CATALOG.map((role) => {
@@ -127,10 +127,10 @@ export function EntitlementEditor() {
           const count = row ? (row.allPages ? PAGE_CATALOG.length : row.pages.length) : 0;
           const active = role.id === roleId;
           return (
-            <button key={role.id} type="button" role="tab" aria-selected={active} disabled={loading || !ready} onClick={() => setRoleId(role.id)} className={`min-h-16 rounded-2xl border px-3 py-3 text-left transition ${active ? "border-[#0a7d56] bg-[#0a7d56] text-white shadow-[0_8px_18px_rgb(0_0_0/.16)]" : "border-[#e6e6e2] bg-white text-[#111111] hover:border-[#6b6b66]"} disabled:opacity-60`}>
+            <button key={role.id} type="button" role="tab" aria-selected={active} disabled={loading || !ready} onClick={() => setRoleId(role.id)} className={`min-h-16 rounded-2xl border px-3 py-3 text-left transition ${active ? "border-[#0a7d56] bg-[#0a7d56] text-white shadow-[0_8px_18px_rgb(0_0_0/.16)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--foreground)] hover:border-[#6b6b66]"} disabled:opacity-60`}>
               <span className="block text-sm font-semibold">{role.label}</span>
-              <span className={`mt-1 block text-[11px] ${active ? "text-white/75" : "text-[#111111]"}`}>{role.detail}</span>
-              <span className={`mt-2 block text-[10px] font-semibold uppercase tracking-[.12em] ${active ? "text-[#e5f5ee]" : "text-[#0a7d56]"}`}>{loading ? "Loading" : row ? `${count} screens` : "Unavailable"}</span>
+              <span className={`mt-1 block text-[11px] ${active ? "text-white/75" : "text-[var(--foreground)]"}`}>{role.detail}</span>
+              <span className={`mt-2 block text-[10px] font-semibold uppercase tracking-[.12em] ${active ? "text-[#e5f5ee]" : "text-[var(--accent-text)]"}`}>{loading ? "Loading" : row ? `${count} screens` : "Unavailable"}</span>
             </button>
           );
         })}
@@ -138,34 +138,34 @@ export function EntitlementEditor() {
 
       {loading ? (
         <div className="space-y-3" aria-live="polite" aria-busy="true">
-          <p className="text-sm text-[#111111]">Loading role access…</p>
-          <div className="h-28 animate-pulse rounded-2xl bg-[#e6e6e2]" />
-          <div className="h-64 animate-pulse rounded-2xl bg-[#e6e6e2]" />
+          <p className="text-sm text-[var(--foreground)]">Loading role access…</p>
+          <div className="h-28 animate-pulse rounded-2xl bg-[var(--background)]" />
+          <div className="h-64 animate-pulse rounded-2xl bg-[var(--background)]" />
         </div>
       ) : grant ? (
         <>
-          <section className="overflow-hidden rounded-2xl border border-[#e6e6e2] bg-white shadow-[0_5px_22px_rgb(0_0_0/.035)]" aria-labelledby="role-screens-heading">
-            <div className="border-b border-[#e6e6e2] px-4 py-4 sm:px-5">
-              <h3 id="role-screens-heading" className="text-sm font-semibold text-[#111111]">Screens {selected.label} can open</h3>
-              <p className="mt-1 text-xs leading-5 text-[#6b6b66]">{screenCount} of {PAGE_CATALOG.length} screens. A screen that is off is refused on the server, including when someone types the address. This role-access screen is not in the list.</p>
+          <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-[0_5px_22px_rgb(0_0_0/.035)]" aria-labelledby="role-screens-heading">
+            <div className="border-b border-[var(--border)] px-4 py-4 sm:px-5">
+              <h3 id="role-screens-heading" className="text-sm font-semibold text-[var(--foreground)]">Screens {selected.label} can open</h3>
+              <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{screenCount} of {PAGE_CATALOG.length} screens. A screen that is off is refused on the server, including when someone types the address. This role-access screen is not in the list.</p>
             </div>
             <div className="divide-y divide-[#f4f4f2]">
               {grant.role === "OWNER" ? (
                 <label className="flex min-h-14 items-start gap-3 px-4 py-3 sm:px-5">
                   <input type="checkbox" className="mt-1 h-4 w-4 accent-[#0a7d56]" checked={grant.allPages} disabled={busy} aria-label="All screens for Owner" onChange={(event) => updateGrant(grant.role, (current) => ({ ...current, allPages: event.target.checked, pages: event.target.checked ? PAGE_CATALOG.map((page) => page.path) : current.pages }))} />
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium text-[#111111]">Every screen</span>
-                    <span className="mt-0.5 block text-[11px] leading-5 text-[#6b6b66]">Includes screens added later. This stays with the owner.</span>
+                    <span className="block text-sm font-medium text-[var(--foreground)]">Every screen</span>
+                    <span className="mt-0.5 block text-[11px] leading-5 text-[var(--muted)]">Includes screens added later. This stays with the owner.</span>
                   </span>
                 </label>
               ) : (
-                <p className="px-4 py-3 text-[11px] leading-5 text-[#6b6b66] sm:px-5">Every screen, including ones added later, stays with the owner.</p>
+                <p className="px-4 py-3 text-[11px] leading-5 text-[var(--muted)] sm:px-5">Every screen, including ones added later, stays with the owner.</p>
               )}
               {PAGE_CATALOG.map((page) => {
                 const lock = pageLock(grant.role, page.path, grant.allPages);
                 const checked = grant.allPages || grant.pages.includes(page.path);
                 return (
-                  <label key={page.path} className={`flex min-h-14 items-start gap-3 px-4 py-3 sm:px-5 ${lock ? "bg-[#ffffff]" : ""}`}>
+                  <label key={page.path} className={`flex min-h-14 items-start gap-3 px-4 py-3 sm:px-5 ${lock ? "bg-[var(--panel)]" : ""}`}>
                     <input
                       type="checkbox"
                       className="mt-1 h-4 w-4 accent-[#0a7d56]"
@@ -178,8 +178,8 @@ export function EntitlementEditor() {
                       }))}
                     />
                     <span className="min-w-0">
-                      <span className="block text-sm font-medium text-[#111111]">{page.label}</span>
-                      {lock ? <span className="mt-0.5 block text-[11px] leading-5 text-[#6b6b66]">{lock}</span> : null}
+                      <span className="block text-sm font-medium text-[var(--foreground)]">{page.label}</span>
+                      {lock ? <span className="mt-0.5 block text-[11px] leading-5 text-[var(--muted)]">{lock}</span> : null}
                     </span>
                   </label>
                 );
@@ -187,10 +187,10 @@ export function EntitlementEditor() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-[#e6e6e2] bg-white shadow-[0_5px_22px_rgb(0_0_0/.035)]" aria-labelledby="role-actions-heading">
-            <div className="border-b border-[#e6e6e2] px-4 py-4 sm:px-5">
-              <h3 id="role-actions-heading" className="text-sm font-semibold text-[#111111]">What {selected.label} can do</h3>
-              <p className="mt-1 text-xs leading-5 text-[#6b6b66]">These are checked on the server. Branch limits, and who may change a staff role, still apply. {grant.capabilities.length} of {CAPABILITY_CATALOG.length} actions are on.</p>
+          <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-[0_5px_22px_rgb(0_0_0/.035)]" aria-labelledby="role-actions-heading">
+            <div className="border-b border-[var(--border)] px-4 py-4 sm:px-5">
+              <h3 id="role-actions-heading" className="text-sm font-semibold text-[var(--foreground)]">What {selected.label} can do</h3>
+              <p className="mt-1 text-xs leading-5 text-[var(--muted)]">These are checked on the server. Branch limits, and who may change a staff role, still apply. {grant.capabilities.length} of {CAPABILITY_CATALOG.length} actions are on.</p>
             </div>
             <div className="divide-y divide-[#f4f4f2]">
               {CAPABILITY_CATALOG.map((capability) => (
@@ -209,8 +209,8 @@ export function EntitlementEditor() {
                     }))}
                   />
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium text-[#111111]">{capability.label}</span>
-                    <span className="mt-0.5 block text-[11px] leading-5 text-[#6b6b66]">{capability.detail}</span>
+                    <span className="block text-sm font-medium text-[var(--foreground)]">{capability.label}</span>
+                    <span className="mt-0.5 block text-[11px] leading-5 text-[var(--muted)]">{capability.detail}</span>
                   </span>
                 </label>
               ))}
@@ -219,8 +219,8 @@ export function EntitlementEditor() {
         </>
       ) : null}
 
-      <div className="sticky bottom-[4.75rem] z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e6e6e2] bg-[#ffffff]/95 px-4 py-3 shadow-[0_8px_24px_rgb(0_0_0/.06)] backdrop-blur lg:bottom-4 sm:px-5">
-        <p className="max-w-xl text-xs leading-5 text-[#111111]">Switching roles keeps your edits. Save writes all four roles together. Passwords and account details stay out of the page address.</p>
+      <div className="sticky bottom-[4.75rem] z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)]/95 px-4 py-3 shadow-[0_8px_24px_rgb(0_0_0/.06)] backdrop-blur lg:bottom-4 sm:px-5">
+        <p className="max-w-xl text-xs leading-5 text-[var(--foreground)]">Switching roles keeps your edits. Save writes all four roles together. Passwords and account details stay out of the page address.</p>
         <button disabled={busy} className="min-h-11 rounded-xl bg-[#0a7d56] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0a7d56] disabled:opacity-60">{saving ? "Saving…" : "Save role access"}</button>
       </div>
     </form>

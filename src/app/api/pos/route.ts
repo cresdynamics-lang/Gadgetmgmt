@@ -7,7 +7,7 @@ import { auth } from "@/auth";
 import { tracksUnits } from "@/lib/device-units";
 import { canUseCapability } from "@/lib/entitlements";
 import { rejectSensitiveQuery } from "@/lib/request-guards";
-import { claimDevicesForSale, StockUnitError } from "@/lib/stock-units";
+import { snapshotSaleCosts, claimDevicesForSale, StockUnitError } from "@/lib/stock-units";
 import { omitSaleCost } from "@/lib/finance-visibility";
 import { stanbicSalesStatus } from "@/lib/stanbic";
 import { proportionalIntegerShare } from "@/lib/money-allocation";
@@ -53,12 +53,14 @@ export async function GET(request: Request) {
     }),
   ]);
 
+  const blockedUnits=await prisma.stockUnit.findMany({where:{branchId,status:"IN_STOCK",operations:{some:{kind:"PARTNER",partnerDirection:"IN",status:"BORROWED_IN",closedAt:null,costAmount:null}}},select:{id:true,productId:true}});
+  const blockedIds=new Set(blockedUnits.map(unit=>unit.id));
   return NextResponse.json({
     products: products.map(({ inventory, ...product }) => ({
       ...product,
       tracksUnits: tracksUnits(product.category, product.unitTracking),
-      devices: devices.filter((unit) => unit.productId === product.id).map(({ id, imei, imei2, serialNumber }) => ({ id, imei, imei2, serialNumber })),
-      available: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - (inventory[0]?.reservedStock ?? 0)),
+      devices: devices.filter((unit) => unit.productId === product.id && !blockedIds.has(unit.id)).map(({ id, imei, imei2, serialNumber }) => ({ id, imei, imei2, serialNumber })),
+      available: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - (inventory[0]?.reservedStock ?? 0) - blockedUnits.filter(unit=>unit.productId===product.id).length),
     })),
     customers,
     creditPolicy: creditPolicy ?? { minimumDepositPercent: 20, defaultCreditLimit: 0 },
@@ -86,7 +88,7 @@ const checkoutSchema = z.object({
     phone: z.string().trim().min(7).max(30),
     email: z.union([z.string().trim().email().max(254), z.literal("")]).optional(),
   }).strict().optional(),
-  paymentMethod: z.enum(["CASH", "MPESA", "CARD", "CREDIT", "SPLIT", "PAY_LINK"]),
+  paymentMethod: z.enum(["CASH", "MPESA", "CARD", "CREDIT", "SPLIT", "PAY_LINK", "COD"]),
   creditTermMonths: z.union([z.literal(4), z.literal(6), z.literal(12)]).optional(),
   creditDepositAmount: z.number().int().positive().max(2_000_000_000).optional(),
   creditDepositMethod: z.enum(["CASH", "MPESA", "CARD"]).optional(),
@@ -126,7 +128,7 @@ const checkoutSchema = z.object({
   if (data.paymentMethod !== "SPLIT" && data.paymentBreakdown) {
     context.addIssue({ code: "custom", path: ["paymentBreakdown"], message: "Payment breakdown is only valid for split tenders." });
   }
-  if (data.paymentMethod === "CREDIT" && !data.customerId && !data.newCustomer) {
+  if (["CREDIT","COD"].includes(data.paymentMethod) && !data.customerId && !data.newCustomer) {
     context.addIssue({ code: "custom", path: ["newCustomer"], message: "Add or select a customer for a Lipa plan." });
   }
   if (data.paymentMethod === "PAY_LINK" && (!data.payerPhone || data.payerConsent !== true)) {
@@ -255,7 +257,7 @@ export async function POST(request: Request) {
       if (parsed.data.discountAmount > subtotal) throw new Error("DISCOUNT_EXCEEDS_SUBTOTAL");
       const total = subtotal - parsed.data.discountAmount + parsed.data.taxAmount;
       if (!Number.isSafeInteger(total) || total < 1 || total > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
-      const paidAmount = parsed.data.paymentMethod === "CREDIT" ? parsed.data.creditDepositAmount! : parsed.data.paymentMethod === "PAY_LINK" ? 0 : total;
+      const paidAmount = parsed.data.paymentMethod === "CREDIT" ? parsed.data.creditDepositAmount! : (parsed.data.paymentMethod === "PAY_LINK" || parsed.data.paymentMethod === "COD") ? 0 : total;
       if (paidAmount > total) throw new Error("DEPOSIT_EXCEEDS_TOTAL");
       if (parsed.data.paymentMethod === "CREDIT" && customerId) {
         const customer = await transaction.customer.findFirst({ where: { id: customerId, branchId }, select: { creditLimit: true, status: true } });
@@ -312,7 +314,7 @@ export async function POST(request: Request) {
               total: lineTotal,
             })),
           },
-          ...(parsed.data.paymentMethod === "PAY_LINK" ? {} : { payments: {
+          ...((parsed.data.paymentMethod === "PAY_LINK" || parsed.data.paymentMethod === "COD") ? {} : { payments: {
             create: parsed.data.paymentMethod === "SPLIT"
               ? parsed.data.paymentBreakdown!
               : parsed.data.paymentMethod === "CREDIT"
@@ -345,6 +347,9 @@ export async function POST(request: Request) {
           stockSnapshot: lineItems.find((item) => item.product.id === product.id)?.inventory,
         });
       }
+      await snapshotSaleCosts(transaction,createdSale.id);
+      const costSnapshots=await transaction.saleItem.findMany({where:{saleId:createdSale.id},select:{id:true,unitCost:true,totalCost:true}});
+      for(const line of createdSale.saleItems) Object.assign(line,costSnapshots.find(cost=>cost.id===line.id));
 
       let salePaymentLink: { token: string; amount: number } | null = null;
       let payerNotificationId: string | null = null;

@@ -31,13 +31,13 @@ export function PaymentSubmissionForm({ token, scheduledAmount, balance }: { tok
     }
   }
 
-  if (submitted) return <div role="status" className="mt-5 rounded-xl border border-[#e6e6e2] bg-[#e5f5ee] p-4 text-sm text-[#111111]">Your payment reference was sent to the branch for confirmation. Your balance will update after it is verified.</div>;
+  if (submitted) return <div role="status" className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--accent-soft)] p-4 text-sm text-[var(--foreground)]">Your payment reference was sent to the branch for confirmation. Your balance will update after it is verified.</div>;
 
   return <form onSubmit={submitPayment} className="mt-5 space-y-3 border-t border-[#8a5a12] pt-5">
-    {error ? <p role="alert" className="rounded-lg bg-[#fdeceb] px-3 py-2 text-xs text-[#b3261e]">{error}</p> : null}
-    <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#111111]">Amount paid (KES)<input name="amount" type="number" min="1" max={balance} defaultValue={Math.min(scheduledAmount, balance)} required className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#111111]"/></label>
-    <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#111111]">M-Pesa transaction code<input name="reference" minLength={6} maxLength={32} required placeholder="e.g. QWE123ABC" className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-white px-3 py-2.5 text-sm uppercase normal-case tracking-normal text-[#111111] placeholder:normal-case placeholder:tracking-normal"/></label>
+    {error ? <p role="alert" className="rounded-lg bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger-text)]">{error}</p> : null}
+    <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--foreground)]">Amount paid (KES)<input name="amount" type="number" min="1" max={balance} defaultValue={Math.min(scheduledAmount, balance)} required className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-[var(--panel)] px-3 py-2.5 text-sm normal-case tracking-normal text-[var(--foreground)]"/></label>
+    <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--foreground)]">M-Pesa transaction code<input name="reference" minLength={6} maxLength={32} required placeholder="e.g. QWE123ABC" className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-[var(--panel)] px-3 py-2.5 text-sm uppercase normal-case tracking-normal text-[var(--foreground)] placeholder:normal-case placeholder:tracking-normal"/></label>
     <button type="submit" disabled={sending} className="w-full rounded-lg bg-[#0a7d56] px-4 py-3 text-xs font-semibold text-white transition hover:bg-[#111111] disabled:opacity-60">{sending ? "Sending reference…" : "Submit payment for confirmation"}</button>
-    <p className="text-[10px] leading-4 text-[#6b6b66]">The branch will verify the transaction before your balance changes. Never share your M-Pesa PIN.</p>
+    <p className="text-[10px] leading-4 text-[var(--muted)]">The branch will verify the transaction before your balance changes. Never share your M-Pesa PIN.</p>
   </form>;
 }

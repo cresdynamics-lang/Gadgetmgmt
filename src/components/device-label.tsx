@@ -1,0 +1,4 @@
+"use client";
+import {useState} from "react";
+import {createDeviceLabel} from "@/lib/device-label";
+export function DeviceLabel({name,identifier}:{name:string;identifier:string}){const[notice,setNotice]=useState("");return <section className="security-panel"><h3>Physical device label</h3><p className="security-detail">This QR label identifies the individual device. It does not use a shared product barcode. Print at actual size on a compatible label printer or through a PDF viewer.</p><button className="security-secondary" onClick={()=>{try{createDeviceLabel(name,identifier).save("gadgethub-device-label.pdf");setNotice("Label PDF prepared. Select the printer in your PDF viewer; the PWA cannot verify printer availability.");}catch{setNotice("The label could not be prepared. Keep the identifier available for manual entry.");}}}>Download device label PDF</button>{notice&&<p role="status" className="security-notice">{notice}</p>}</section>;}

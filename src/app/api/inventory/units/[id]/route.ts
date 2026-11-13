@@ -32,12 +32,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!parsed.success) return NextResponse.json({ error: "Choose a stock status for this device." }, { status: 400, headers: noStore });
 
   try {
-    const moved = await prisma.$transaction((transaction) => moveStockUnit(transaction, {
+    const moved = await prisma.$transaction(async (transaction) => {
+      if(await transaction.operation.findFirst({where:{unitId:id,closedAt:null}}))throw new StockUnitError(409,"Finish this device’s open workflow before editing its stock state.");
+      return moveStockUnit(transaction, {
+      userId:session.user.id,
       id,
       branchId: session.user.branchId!,
       status: parsed.data.status,
       location: parsed.data.location,
-    }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }); }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return NextResponse.json(moved, { headers: noStore });
   } catch (error) {
     if (error instanceof StockUnitError) return NextResponse.json({ error: error.message }, { status: error.status, headers: noStore });

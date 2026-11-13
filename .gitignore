@@ -52,3 +52,5 @@ next-env.d.ts
 /.next-auth-review/
 /.next-auth-test/
 /.next-auth-test-clean/
+
+/.next-pwa-review/

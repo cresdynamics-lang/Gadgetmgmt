@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,7 +23,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
   "include": [
@@ -32,7 +38,11 @@
     ".next-notifications-e2e/types/**/*.ts",
     ".next-notifications-e2e/dev/types/**/*.ts",
     ".next-auth-test-clean/types/**/*.ts",
-    ".next-auth-test-clean/dev/types/**/*.ts"
+    ".next-auth-test-clean/dev/types/**/*.ts",
+    ".next-pwa-review/types/**/*.ts",
+    ".next-pwa-review/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

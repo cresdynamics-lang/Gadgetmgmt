@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { ownedStockValuation } from "@/lib/stock-valuation";
 import { auth } from "@/auth";
 import { presentDevice, tracksUnits } from "@/lib/device-units";
 import { canUseCapability } from "@/lib/entitlements";
@@ -41,10 +42,12 @@ export async function GET(request: Request) {
     }),
   ]);
 
+  const valuation=canViewCost?await ownedStockValuation({branchId:session.user.branchId}):null;
   return NextResponse.json({
     canViewCost,
     items: items.map((item) => ({
       ...item,
+      ...(valuation?{ownedStockValue:valuation.byItem[item.id]}:{}),
       product: {
         ...item.product,
         tracksUnits: tracksUnits(item.product.category, item.product.unitTracking),

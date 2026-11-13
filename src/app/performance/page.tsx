@@ -39,9 +39,9 @@ export default async function PerformancePage() {
   return (
     <Desk title={role === "CASHIER" ? "Your sales" : "Staff performance"} detail="Completed sales this month, compared with last month by count. Sale value stays with the owner. Targets are not set.">
       {rows.length ? (
-        <div className="overflow-x-auto rounded-2xl border border-[#e6e6e2] bg-white">
+        <div className="overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--panel)]">
           <table className="w-full min-w-[560px] text-left text-sm">
-            <thead className="bg-[#f4f4f2] text-[10px] font-semibold uppercase tracking-[.12em] text-[#6b6b66]">
+            <thead className="bg-[var(--background)] text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--muted)]">
               <tr>
                 <th className="px-4 py-3">Person</th>
                 <th className="px-4 py-3">Sales</th>
@@ -50,14 +50,14 @@ export default async function PerformancePage() {
                 <th className="px-4 py-3">Change</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#e6e6e2]">
+            <tbody className="divide-y divide-[var(--border)]">
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td className="px-4 py-3"><span className="block font-semibold text-[#111111]">{row.name}</span><span className="text-[11px] text-[#6b6b66]">{roleName[row.role] ?? "Staff"}</span></td>
-                  <td className="px-4 py-3 font-semibold tabular-nums text-[#111111]">{row.sales}</td>
-                  {finance ? <td className="px-4 py-3 tabular-nums text-[#111111]">{money(row.total)}</td> : null}
-                  <td className="px-4 py-3 tabular-nums text-[#6b6b66]">{row.prior}</td>
-                  <td className={`px-4 py-3 font-semibold tabular-nums ${row.change < 0 ? "text-[#b3261e]" : "text-[#0a7d56]"}`}>{row.change > 0 ? `+${row.change}` : row.change}</td>
+                  <td className="px-4 py-3"><span className="block font-semibold text-[var(--foreground)]">{row.name}</span><span className="text-[11px] text-[var(--muted)]">{roleName[row.role] ?? "Staff"}</span></td>
+                  <td className="px-4 py-3 font-semibold tabular-nums text-[var(--foreground)]">{row.sales}</td>
+                  {finance ? <td className="px-4 py-3 tabular-nums text-[var(--foreground)]">{money(row.total)}</td> : null}
+                  <td className="px-4 py-3 tabular-nums text-[var(--muted)]">{row.prior}</td>
+                  <td className={`px-4 py-3 font-semibold tabular-nums ${row.change < 0 ? "text-[var(--danger-text)]" : "text-[var(--accent-text)]"}`}>{row.change > 0 ? `+${row.change}` : row.change}</td>
                 </tr>
               ))}
             </tbody>

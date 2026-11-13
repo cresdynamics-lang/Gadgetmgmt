@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-13T18:50:49.502Z",
+  "findings": [
+    "Login renders without overflow and with 44px targets at five viewport widths",
+    "Failed sign-in displays a recoverable error and preserves email",
+    "Cross-origin authentication rejected",
+    "New device requires emailed code and resend is throttled",
+    "Expired and incorrect email codes cannot authenticate",
+    "Password and emailed code complete the actual browser sign-in flow",
+    "Verification code cannot be replayed",
+    "Login ticket is single-use and successful sign-in audited",
+    "Mobile navigation traps keyboard focus and closes with Escape",
+    "Real WebAuthn registration with required user verification succeeds",
+    "Real WebAuthn authentication opens an authorized workspace",
+    "A signed-in staff account has no operational or owner access before explicit grants",
+    "Individual grants persist and finance screen cannot be delegated",
+    "Permission changes apply to existing sessions and staff inventory JSON excludes buying costs",
+    "Individual permission editor saves grants through its actual browser controls",
+    "Server-backed workspace lock blocks subsequent authenticated requests",
+    "Revoke ends access on the next API request",
+    "Three failures lock the account and alert the owner"
+  ],
+  "limitations": [
+    "Virtual authenticator validates WebAuthn protocol, not physical Face ID hardware.",
+    "Email uses a test-process transport; live provider delivery not exercised."
+  ]
+}

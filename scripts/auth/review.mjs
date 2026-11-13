@@ -14,10 +14,10 @@ const run = Date.now().toString(36);
 const email = `victor-${run}@example.test`;
 const password = 'Auth-review-password-2026!';
 const mailFile = `/tmp/gadgethub-auth-mail-${run}.json`;
-const artifactDir = resolve('artifacts/auth-review');
+const artifactDir = resolve(process.env.PWA_REVIEW==='1'?'artifacts/pwa-review':'artifacts/auth-review');
 mkdirSync(artifactDir, { recursive: true });
 const logFile = `/tmp/gadgethub-auth-server-${run}.log`;
-const server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--port', '3012'], { env: { ...process.env, DATABASE_URL: database, NEXT_DIST_DIR: '.next-auth-test-clean', APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base, AUTH_OWNER_EMAIL: email, NEXTAUTH_SECRET: 'isolated-review-secret-64-characters-long-for-authentication-only-2026', RESEND_API_KEY: 'auth-review-fake-key', EMAIL_FROM: 'GadgetHub <auth@example.test>', AUTH_REVIEW_MAIL_FILE: mailFile, NODE_OPTIONS: `--import=${resolve('scripts/auth/test-bootstrap.mjs')}` }, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--port', '3012'], { env: { ...process.env, DATABASE_URL: database, NEXT_DIST_DIR: process.env.PWA_REVIEW==='1'?'.next-pwa-review':'.next-auth-test-clean', APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base, AUTH_OWNER_EMAIL: email, NEXTAUTH_SECRET: 'isolated-review-secret-64-characters-long-for-authentication-only-2026', RESEND_API_KEY: 'auth-review-fake-key', EMAIL_FROM: 'GadgetHub <auth@example.test>', AUTH_REVIEW_MAIL_FILE: mailFile, AUTH_REVIEW_AI_FILE: process.env.AUTH_REVIEW_AI_FILE||`/tmp/gadgethub-ai-${run}.json`, OPENAI_API_KEY:'auth-review-fake-key', NODE_OPTIONS: `--import=${resolve('scripts/auth/test-bootstrap.mjs')}` }, stdio: ['ignore', 'pipe', 'pipe'] });
 let logs = '';
 for (const stream of [server.stdout, server.stderr]) stream.on('data', chunk => { logs += chunk; writeFileSync(logFile, logs); });
 let browser;
@@ -173,7 +173,7 @@ try {
   assert.equal(ownerInventory.items[0].product.costPrice,765432);
   pass('Permission changes apply to existing sessions and staff inventory JSON excludes buying costs');
   await openWorkspace('Team access','/access');
-  await page.getByLabel('Team member').selectOption(staff.id);
+  await page.getByRole('combobox').selectOption(staff.id);
   await page.getByRole('checkbox',{name:'Sales (POS)',exact:true}).check();
   await page.getByRole('checkbox',{name:'Sales View and record sales',exact:true}).check();
   await page.getByLabel('Confirm your password to save',{exact:true}).fill(password);
@@ -187,6 +187,11 @@ try {
     assert.equal(await page.locator('.workspace-content:visible').evaluate(el => el.scrollWidth > el.clientWidth),false);
   }
   await page.setViewportSize({width:390,height:844});
+  if(process.env.PWA_REVIEW==='1') {
+    process.env.AUTH_REVIEW_AI_FILE=`/tmp/gadgethub-ai-${run}.json`;
+    const {runPwaReview}=await import('../pwa/review.mjs');
+    await runPwaReview({context,page,prisma,base,owner,staff,staffContext,password,branch,artifactDir,openWorkspace});
+  }
   // Lock the device and confirm that server access ends.
   assert.equal((await context.request.post(base+'/api/auth/lock',{headers:{Origin:base},data:{}})).status(),204);
   assert.equal((await context.request.get(base+'/api/auth/devices')).status(),401);pass('Server-backed workspace lock blocks subsequent authenticated requests');

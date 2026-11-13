@@ -31,11 +31,11 @@ export default async function ActivityPage() {
   return (
     <Desk title="Activity" detail="Recent sales, stock changes, and staff alerts. Only the owner can open this log. Entries are not edited here.">
       {events.length ? (
-        <div className="divide-y divide-[#e6e6e2] overflow-hidden rounded-2xl border border-[#e6e6e2] bg-white">
+        <div className="divide-y divide-[var(--border)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)]">
           {events.map((event) => (
             <div key={event.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3 sm:px-5">
-              <div className="min-w-0"><p className="text-sm font-semibold text-[#111111]">{event.title}</p><p className="mt-0.5 text-xs text-[#6b6b66]">{event.detail}</p></div>
-              <time className="text-[11px] text-[#6b6b66]" dateTime={event.at.toISOString()}>{event.at.toLocaleString("en-KE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</time>
+              <div className="min-w-0"><p className="text-sm font-semibold text-[var(--foreground)]">{event.title}</p><p className="mt-0.5 text-xs text-[var(--muted)]">{event.detail}</p></div>
+              <time className="text-[11px] text-[var(--muted)]" dateTime={event.at.toISOString()}>{event.at.toLocaleString("en-KE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" })}</time>
             </div>
           ))}
         </div>

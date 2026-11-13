@@ -43,18 +43,18 @@ export function CreditPolicyForm({ owner }: { owner: boolean }) {
     finally { setBusy(false); }
   }
 
-  const field = (key: keyof typeof defaults, label: string, helper: string, max = 2_000_000_000) => <label key={key} className="block text-xs font-medium text-[#111111]">{label}<input type="number" min="0" max={max} step="1" value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: Number(event.target.value) }))} className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm tabular-nums"/><span className="mt-1 block text-[10px] leading-4 text-[var(--muted)]">{helper}</span></label>;
+  const field = (key: keyof typeof defaults, label: string, helper: string, max = 2_000_000_000) => <label key={key} className="block text-xs font-medium text-[var(--foreground)]">{label}<input type="number" min="0" max={max} step="1" value={values[key]} onChange={(event) => setValues((current) => ({ ...current, [key]: Number(event.target.value) }))} className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm tabular-nums"/><span className="mt-1 block text-[10px] leading-4 text-[var(--muted)]">{helper}</span></label>;
 
   if (!branches.length) return null;
-  return <details className="rounded-2xl border border-[var(--border)] bg-white p-4 shadow-sm sm:p-5">
-    <summary className="cursor-pointer text-sm font-semibold text-[#0a0a0a]">Lipa policy <span className="ml-2 text-xs font-normal text-[var(--muted)]">{owner ? "Set branch rules" : "Manage this branch"}</span></summary>
+  return <details className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm sm:p-5">
+    <summary className="cursor-pointer text-sm font-semibold text-[var(--foreground)]">Lipa policy <span className="ml-2 text-xs font-normal text-[var(--muted)]">{owner ? "Set branch rules" : "Manage this branch"}</span></summary>
     <form onSubmit={save} className="mt-4 space-y-4">
-      {owner ? <label className="block max-w-sm text-xs font-medium text-[#111111]">Branch<select value={branchId} onChange={(event) => setBranchId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-sm">{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label> : null}
+      {owner ? <label className="block max-w-sm text-xs font-medium text-[var(--foreground)]">Branch<select value={branchId} onChange={(event) => setBranchId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm">{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {field("minimumDepositPercent", "Minimum deposit (%)", "Required before the customer takes the product.", 100)}
         {field("defaultCreditLimit", "Default customer limit (KES)", "Zero means no branch default limit; a customer limit still applies.")}
         {field("graceDays", "Grace period (days)", "Days after the due date before late follow-up.", 30)}
-        <label className="block text-xs font-medium text-[#111111]">Late fee (KES)<input type="number" value="0" readOnly disabled className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[#f4f4f2] px-3 py-2.5 text-sm tabular-nums text-[#111111]"/><span className="mt-1 block text-[10px] leading-4 text-[var(--muted)]">Unavailable until the system can record signed customer consent and the agreed fee terms.</span></label>
+        <label className="block text-xs font-medium text-[var(--foreground)]">Late fee (KES)<input type="number" value="0" readOnly disabled className="mt-1.5 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm tabular-nums text-[var(--foreground)]"/><span className="mt-1 block text-[10px] leading-4 text-[var(--muted)]">Unavailable until the system can record signed customer consent and the agreed fee terms.</span></label>
         {field("earlySettlementDiscountPercent", "Early settlement discount (%)", "Reserved for early-payoff calculation in the signed agreement.", 100)}
         {field("managerEscalationDays", "Manager escalation (days late)", "Notify the branch manager after this many days.", 60)}
         {field("ownerEscalationDays", "Owner escalation (days late)", "Notify the owner after this many days.", 90)}

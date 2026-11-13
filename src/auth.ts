@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { cookies } from "next/headers";
-import { consumeChallenge, DEVICE_COOKIE, digest, permittedOwner } from "@/lib/auth-security";
+import { foregroundLeaseUntil, consumeChallenge, DEVICE_COOKIE, digest, permittedOwner } from "@/lib/auth-security";
 import { z } from "zod";
 
 import { readStoredGrant } from "@/lib/entitlements";
@@ -35,7 +35,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         if (!user || user.status !== "ACTIVE" || user.lockedAt || !permittedOwner(user)) return null;
         await prisma.$transaction([
           prisma.user.update({ where: { id: user.id }, data: { failedSignIns: 0 } }),
-          prisma.authDevice.update({ where: { id: device.id }, data: { lastUsedAt: new Date(), lockedAt: null } }),
+          prisma.authDevice.update({ where: { id: device.id }, data: { lastUsedAt: new Date(), lockedAt: null, activeUntil: foregroundLeaseUntil() } }),
           prisma.authEvent.create({ data: { userId: user.id, action: "Signed in", deviceLabel: device.label } }),
         ]);
 
@@ -65,7 +65,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           select: { email: true, lockedAt: true, role: true, status: true, branchId: true, branch: { select: { name: true } } },
         });
         if (!currentUser || currentUser.status !== "ACTIVE" || currentUser.lockedAt || !permittedOwner(currentUser)) return null;
-        const device = typeof token.deviceId === "string" ? await prisma.authDevice.findFirst({ where: { id: token.deviceId, userId: token.userId, revokedAt: null, lockedAt: null } }) : null;
+        const device = typeof token.deviceId === "string" ? await prisma.authDevice.findFirst({ where: { id: token.deviceId, userId: token.userId, revokedAt: null, lockedAt: null, activeUntil: { gt: new Date() } } }) : null;
         if (!device) return null;
         token.role = currentUser.role;
         token.branchId = currentUser.branchId;

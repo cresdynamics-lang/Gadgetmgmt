@@ -1,3 +1,60 @@
+# PWA implementation and QA report — 2026-11-13
+
+This is the current report. The previous authentication-only report is retained below as historical evidence; its missing-feature list is superseded by this section and the dated PWA requirements matrix. The PDF/HTML were unavailable. Requirements authority is the supplied master prompt, confirmed repository decisions and issue #29; the user explicitly authorized design judgment and a PWA target.
+
+## Implemented and verified
+
+- **Operational accuracy:** real repair assignment/pass/fail, outgoing/borrowed partner device obligations, trade-in/return quarantine and inspection, delivery custody/COD, append-only device passports, per-device cost snapshots, and unique-identifier label PDFs. Database tests preserve one physical device through receipt, repair, partner return, two sales, return and repeated trade-in. Borrowed stock needs approved supplier cost before sale and settlement cannot duplicate an expense.
+- **Cashier journey:** actual browser scan/manual serial → eligible device → identified customer → unpaid COD sale → real receipt PDF → queued email recovery. Delivery UI records rider dispatch, named proof, actual payment and closure against the original sale. A queued email is never reported as delivered.
+- **Owner controls:** actual expense/payroll/marketing payments, immutable reversing corrections, recurring obligations and period-payment uniqueness, audited bill pause/resume, protected CSV export, capital/operating distinctions, estimated finance summary and owned-stock basis excluding borrowed stock. All money mutations/exports require fresh owner password confirmation where applicable; write-only repair costs remain unreadable to staff.
+- **Permissions/security:** expiring individual grants apply on subsequent server requests; owner-only endpoints/exports are denied to staff. Passport and operational staff payloads omit protected costs and private input hashes. AI gets only explicitly granted datasets and source links, with no mutation tools. Database-backed foreground locking and expiring leases prevent a suspended client renewing an expired session.
+- **PWA:** app-wide standalone manifest and authorized launch, install guidance, explicit update/restart, public-only offline recovery, connection feedback, system/light/dark appearances and safe areas. CacheStorage inspection proves that only the offline HTML/icons are retained. Authenticated pages/APIs and unsubmitted money are not cached or queued.
+- **Usability/accessibility:** explicit field labels, mobile table labels/header associations, 44px actions, readable mobile inputs, focusable scroll region, drawer/quick-navigation focus management, readable semantic status colors and reduced motion. Large product prices and Add actions wrap instead of clipping.
+
+## Verified defects fixed, ordered by impact
+
+| Impact | Finding | Correction and evidence |
+| --- | --- | --- |
+| Critical — operational | Named modules lacked persistent handovers, inspections and payment reconciliation | Transactional state machines, concurrency versions, request-key deduplication and actual ledger/payment writes; transaction/browser evidence |
+| Critical — privacy | New cost/history/AI paths could expose owner data unless explicitly shaped | Staff DTO allowlists/redaction; individual capability and expiry checks; browser API/model-input inspection |
+| High — security | Browser background lock had no server bound after suspension/network loss | Local prepaint cover, lock beacon, renewable short lease and expired-heartbeat rejection; browser verified |
+| High — task completion | Raw manual serial could fail identifier lookup | Physical identifier lookup precedes SKU fallback; regression + live cashier journey |
+| High — recovery | Receipt delivery failure needed recovery without reselling | Saved PDF, queue/retry contract and atomic worker delivery; failure stays unsent |
+| High — readability | Legacy palette declarations caused self-referencing colors/invisible input boundaries | Shared literal base tokens, scoped theme overrides; revised screenshots |
+| High — accessibility | Dark controls/headings had insufficient contrast, customer select lacked a name, activity scrolling lacked focus | Shared contrast corrections, explicit name, focusable region; automated route/theme scans |
+| Medium — mobile | Long price clipped inside catalog card despite no document overflow | Wrapped name/price/action layout; revised 390px screenshot |
+| Medium — financial control | Recurring bills could not be paused without losing history | Audited pause/resume; payments blocked while paused; old entries preserved |
+
+## Verification evidence and limits
+
+- 69 unit, domain, regression and real-database transaction checks passed, with no skipped tests. Three additional service-worker tests pass for deliberate updates, scoped cache cleanup and protected request exclusion.
+- `npm run test:pwa:e2e` runs the original 18 authentication/security browser scenarios plus the PWA journeys in an isolated PostgreSQL database with fake email/AI providers. The test never accesses production business data or sends real messages.
+- 22 workspace routes × light/dark appearance × 375/390/430/768/1440 widths were checked for document overflow; 44 automated WCAG 2.2-relevant axe scans reported no violations in the tested states. This is not a complete accessibility certification of all dialogs/data/error combinations.
+- Screenshots were inspected for mobile repairs/expenses/Sell and desktop deliveries; additional route screenshots and machine-readable results are in `artifacts/pwa-review`. The development framework indicator may appear in captures; it is absent in production builds.
+- TypeScript, source ESLint and the production build are validation gates. Generated `.next-*` review bundles are excluded from source lint.
+- The new migration was applied only to the isolated review database. No production migration or provider deployment was performed.
+
+## Implemented but not fully externally verified
+
+Physical Safari/Home Screen installation, Face ID/OS PIN hardware, camera permissions/flashlight behavior, VoiceOver/large text, actual push/email arrival, worker deployment and thermal-label printing require the real target device/provider setup. Full partner settlement and trade-in UI journeys have transaction coverage but do not yet have the same browser end-to-end coverage as repairs/COD. Hardware checks are not replaced by virtual passkey tests or generated PDFs.
+
+## Partial or awaiting business decisions
+
+- The trade-in/return intake is real, but full exchange top-up allocation, refund authorization/accounting and cancellation/reconciliation of prior financing need an approved policy. Active financing is not silently canceled and unsafe stock return is blocked.
+- Expense/payroll records represent amounts approved and actually paid. Statutory payroll calculations, tax treatment and certified financial statements are not implemented without approved accounting rules. Finance summaries are explicitly estimates; catalog fallback costs/history coverage require reconciliation for legacy inventory.
+- Existing Lipa terms and configuration are preserved. Replacement 40% / one-to-six-month terms and financing multipliers await owner approval; no illustrative rate became production policy.
+- Bank transfer settlement accounts and Stanbic callback contract remain external dependencies. The existing disconnected status is retained; the system does not falsely claim to charge or verify a bank payment.
+- Independent app PIN, native secure storage/haptics and Expo are outside the PWA implementation. Platform passkeys may use Face ID, fingerprint or OS PIN; the server never receives biometric/PIN data.
+- Offline sale/payment submission is deliberately unsupported. OS process termination cannot guarantee immediate server notification; the lease bounds server access, rather than claiming a guaranteed background beacon or remote wipe.
+
+## Deployment handoff
+
+Apply `20261113170000_pwa_operations` through the established migration process, deploy the web app and receipt/notification worker together, configure canonical HTTPS and the existing owner/email/push settings, and grant new operation capabilities individually. Existing devices without a live lease must sign in again. Use Account → Check app services to distinguish configuration from actual delivery. Production reconciliation and the external acceptance checks remain required before a production-ready claim.
+
+---
+
+## Historical authentication review
+
 # UX QA report
 
 ## Current scope and sources — 2026-11-13

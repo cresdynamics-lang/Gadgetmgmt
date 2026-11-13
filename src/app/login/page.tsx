@@ -41,6 +41,7 @@ export default function LoginPage() {
   async function finish(ticket: string) {
     const result = await signIn("credentials", { ticket, redirect: false });
     if (!result || result.error) throw new Error("Your sign-in expired or this device was revoked. Please sign in again.");
+    try { sessionStorage.removeItem("gadgethub-lock-pending"); delete document.documentElement.dataset.lockPending; } catch {}
     const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
     const session = await sessionResponse.json();
     const callback = safeInternalPath(new URLSearchParams(window.location.search).get("callbackUrl"));

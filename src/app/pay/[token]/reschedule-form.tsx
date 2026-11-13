@@ -42,12 +42,12 @@ export function RescheduleForm({ token }: { token: string }) {
   }
 
   return <div className="mt-4 rounded-xl border border-[#8a5a12] px-4 py-3">
-    <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[#111111]">Need more time for a payment?</p><button type="button" onClick={toggleForm} className="text-xs font-semibold text-[#111111] underline underline-offset-2">{open ? "Close" : "Request a date change"}</button></div>
+    <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[var(--foreground)]">Need more time for a payment?</p><button type="button" onClick={toggleForm} className="text-xs font-semibold text-[var(--foreground)] underline underline-offset-2">{open ? "Close" : "Request a date change"}</button></div>
     {open ? <form onSubmit={submit} className="mt-3 space-y-3">
-      <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#111111]">Requested due date<input name="requestedDueDate" type="date" required min={minimumDate} className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#111111]" /></label>
-      <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#111111]">Reason<textarea name="reason" required minLength={10} maxLength={300} rows={2} className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-[#111111]" placeholder="Let us know briefly why you need a different date." /></label>
+      <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--foreground)]">Requested due date<input name="requestedDueDate" type="date" required min={minimumDate} className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-[var(--panel)] px-3 py-2.5 text-sm normal-case tracking-normal text-[var(--foreground)]" /></label>
+      <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--foreground)]">Reason<textarea name="reason" required minLength={10} maxLength={300} rows={2} className="mt-1.5 w-full rounded-lg border border-[#8a5a12] bg-[var(--panel)] px-3 py-2.5 text-sm normal-case tracking-normal text-[var(--foreground)]" placeholder="Let us know briefly why you need a different date." /></label>
       <button disabled={sending} className="rounded-lg bg-[#0a7d56] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-60">{sending ? "Sending…" : "Send for manager review"}</button>
     </form> : null}
-    {message ? <p role="status" className="mt-3 text-xs leading-5 text-[#111111]">{message}</p> : null}
+    {message ? <p role="status" className="mt-3 text-xs leading-5 text-[var(--foreground)]">{message}</p> : null}
   </div>;
 }
