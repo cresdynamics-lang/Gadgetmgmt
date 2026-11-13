@@ -1,14 +1,14 @@
 import { getCompanyEmailSettings } from "./email-settings";
 import type { NotificationChannel } from "@prisma/client";
 
-export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string }) {
+export async function deliverNotification(input: { channel: NotificationChannel; recipient: string; subject: string | null; body: string; idempotencyKey?: string }) {
   if (input.channel === "EMAIL") {
     const apiKey = process.env.RESEND_API_KEY;
     const { from } = await getCompanyEmailSettings();
     if (!apiKey || !from) throw new Error("Configure the company sender in Messages & alerts and connect the email service.");
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}) },
       signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({ from, to: [input.recipient], subject: input.subject ?? "GadgetHub update", text: input.body }),
     });

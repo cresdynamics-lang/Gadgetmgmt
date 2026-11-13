@@ -1,3 +1,4 @@
+import { deliverQueuedReceipt } from "../src/lib/receipt-delivery";
 import { pushEndpoint } from "../src/lib/push-endpoint";
 import { pushTransport } from "../src/lib/push-transport";
 import { getCompanyEmailSettings } from "../src/lib/email-settings";
@@ -10,6 +11,15 @@ const connection = notificationConnection();
 const queue = new Queue(notificationQueueName, { connection });
 
 async function sweep() {
+  await prisma.customerNotification.updateMany({where:{kind:"SALE_RECEIPT",status:"PROCESSING",updatedAt:{lt:new Date(Date.now()-120000)}},data:{status:"QUEUED"}});
+  const receipts=await prisma.customerNotification.findMany({where:{kind:"SALE_RECEIPT",status:"QUEUED",attempts:{lt:5}},select:{id:true},take:100,orderBy:{createdAt:"asc"}});
+  for(const receipt of receipts) {
+    const jobId=`receipt-${receipt.id}`;
+    const previous=await queue.getJob(jobId);
+    if(previous && ["completed","failed"].includes(await previous.getState()))await previous.remove();
+    await queue.add("receipt",{id:receipt.id},{jobId,attempts:5,backoff:{type:"exponential",delay:30000},removeOnComplete:{age:86400},removeOnFail:{age:604800}});
+  }
+
   const deliveries = await prisma.staffAlertDelivery.findMany({ where: { status: "QUEUED", alert: { scheduledAt: { lte: new Date() } } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, attempts: true } });
   for (const delivery of deliveries) {
     if (delivery.attempts >= 5) {
@@ -30,6 +40,7 @@ async function sweep() {
 
 const worker = new Worker(notificationQueueName, async (job) => {
   if (job.name === "sweep") return sweep();
+  if (job.name === "receipt") return deliverQueuedReceipt(job.data.id);
   const delivery = await prisma.staffAlertDelivery.findUnique({ where: { id: job.data.id }, include: { alert: { include: { user: { include: { pushSubscriptions: true } } } } } });
   if (!delivery || delivery.status !== "QUEUED") return;
   const { alert } = delivery;

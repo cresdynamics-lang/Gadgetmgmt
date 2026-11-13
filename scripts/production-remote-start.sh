@@ -155,7 +155,7 @@ rm -rf .web-context
 mkdir -p .web-context
 cp Dockerfile.web .web-context/Dockerfile
 cp package.json package-lock.json next.config.ts tsconfig.json .web-context/
-cp -a public prisma .next node_modules .web-context/
+cp -a public prisma .next node_modules worker .web-context/
 
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"

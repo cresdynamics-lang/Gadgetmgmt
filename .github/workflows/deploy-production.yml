@@ -74,6 +74,8 @@ jobs:
           rm -rf "$stage/.next/cache"
           cp -a public/. "$stage/public/"
           cp -a prisma/. "$stage/prisma/"
+          mkdir -p "$stage/worker"
+          npx esbuild scripts/notifications-worker.ts --bundle --platform=node --packages=external --outfile="$stage/worker/notifications.cjs"
           (cd "$stage" && npm ci --omit=dev)
           (cd "$stage" && "${GITHUB_WORKSPACE}/node_modules/.bin/prisma" generate)
           test -d "$stage/node_modules/@prisma/client"
@@ -281,6 +283,7 @@ jobs:
           rsync -az --delete -e "$rsync_ssh" "${stage}/node_modules/" "${remote}:${DEPLOY_PATH}/node_modules/"
           rsync -az -e "$rsync_ssh" "${stage}/public/" "${remote}:${DEPLOY_PATH}/public/"
           rsync -az -e "$rsync_ssh" "${stage}/prisma/" "${remote}:${DEPLOY_PATH}/prisma/"
+          rsync -az -e "$rsync_ssh" "${stage}/worker/" "${remote}:${DEPLOY_PATH}/worker/"
           rsync -az -e "$rsync_ssh" \
             "${stage}/package.json" \
             "${stage}/package-lock.json" \
@@ -382,6 +385,8 @@ jobs:
           scp_base compose.yaml "${remote}:${DEPLOY_PATH}/compose.runtime-candidate.yaml"
           scp_base scripts/apply-production-env.sh "${remote}:${DEPLOY_PATH}/bin/apply-production-env.sh"
           ssh_base "$remote" bash "${DEPLOY_PATH}/bin/apply-production-env.sh" "$DEPLOY_PATH"
+          scp_base scripts/migrate-production.mjs "${remote}:${DEPLOY_PATH}/bin/migrate-production.mjs"
+          ssh_base "$remote" "cd $quoted_path && .node/bin/node bin/migrate-production.mjs"
           scp_base scripts/production-remote-start.sh "${remote}:${DEPLOY_PATH}/bin/production-remote-start.sh"
           echo "Checking Node.js and the server environment file"
           ssh_base "$remote" "if command -v node >/dev/null 2>&1; then node -v; else echo NO_NODE; fi; if [ -f ${quoted_path}/.env ]; then echo HAS_ENV; else echo NO_ENV; fi"

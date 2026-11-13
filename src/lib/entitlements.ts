@@ -3,10 +3,13 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
   buildAccessMap,
+  CAPABILITY_CATALOG,
   canAccessPage as allowPage,
   canUseCapability as allowCapability,
   isAppRole,
-  isOwnerEntitlementPath,
+  normalizePages,
+  normalizeCapabilities,
+  applyPageFloors,
   type AccessCapability,
   type RoleGrant,
 } from "@/lib/access";
@@ -33,28 +36,21 @@ export const getAccessMap = cache(async () => {
   }
 });
 
-export async function readStoredGrant(role: string): Promise<RoleGrant> {
+// Staff access is explicit per person; shared role grants never authorize staff.
+export async function readStoredGrant(role: string, userId: string): Promise<RoleGrant> {
   if (!isAppRole(role)) return { pages: [], capabilities: [] };
-  try {
-    const grants = await getAccessMap();
-    return grants[role] ?? { pages: [], capabilities: [] };
-  } catch {
-    return { pages: [], capabilities: [] };
-  }
+  if (role === "OWNER") return { pages: ["*"], capabilities: CAPABILITY_CATALOG.map(item => item.id) };
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { accessPages: true, accessCapabilities: true, accessExpiresAt: true } });
+  if (user?.accessExpiresAt && user.accessExpiresAt <= new Date()) return { pages: [], capabilities: [] };
+  return { pages: applyPageFloors(role, normalizePages(user?.accessPages ?? [])), capabilities: normalizeCapabilities(user?.accessCapabilities ?? []) };
 }
 
-export async function canAccessPage(role: string, pathname: string) {
-  try {
-    return allowPage(role, pathname, await getAccessMap());
-  } catch {
-    return role === "OWNER" && isOwnerEntitlementPath(pathname);
-  }
+export async function canAccessPage(role: string, pathname: string, userId: string) {
+  const grant = await readStoredGrant(role, userId);
+  return allowPage(role, pathname, isAppRole(role) ? { [role]: grant } : {});
 }
 
-export async function canUseCapability(role: string, capability: AccessCapability) {
-  try {
-    return allowCapability(role, capability, await getAccessMap());
-  } catch {
-    return false;
-  }
+export async function canUseCapability(role: string, capability: AccessCapability, userId: string) {
+  const grant = await readStoredGrant(role, userId);
+  return allowCapability(role, capability, isAppRole(role) ? { [role]: grant } : {});
 }

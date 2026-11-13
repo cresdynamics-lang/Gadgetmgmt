@@ -14,28 +14,10 @@ async function main() {
     throw new Error("Set INITIAL_OWNER_EMAIL and a unique INITIAL_OWNER_PASSWORD of 12 to 72 characters before seeding.");
   }
 
-  const westlands = await prisma.branch.upsert({
-    where: { code: "WST" },
-    update: {},
-    create: {
-      name: "Westlands",
-      code: "WST",
-      address: "Westlands, Nairobi",
-      phone: "+254700100200",
-      email: "westlands@gadgethub.co.ke",
-    },
-  });
-
-  await prisma.branch.upsert({
-    where: { code: "CBD" },
-    update: {},
-    create: {
-      name: "CBD",
-      code: "CBD",
-      address: "City Centre, Nairobi",
-      phone: "+254700100201",
-      email: "cbd@gadgethub.co.ke",
-    },
+  // Seed only NUH for a new shop. Existing branches and stock are never moved.
+  const existingBranch = await prisma.branch.findFirst({ orderBy: { createdAt: "asc" } });
+  const westlands = existingBranch ?? await prisma.branch.create({
+    data: { name: "NUH", code: "NUH", address: process.env.INITIAL_SHOP_ADDRESS || "NUH", phone: process.env.INITIAL_SHOP_PHONE || "", email: ownerEmail },
   });
 
   const passwordHash = await bcrypt.hash(initialPassword, 12);

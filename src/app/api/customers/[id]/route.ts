@@ -22,7 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot access customer accounts." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "customers", session.user.id))) return NextResponse.json({ error: "Your role cannot access customer accounts." }, { status: 403 });
   const { id } = await params;
   const customer = await prisma.customer.findFirst({
     where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) },
@@ -62,7 +62,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot manage customer preferences." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "customers", session.user.id))) return NextResponse.json({ error: "Your role cannot manage customer preferences." }, { status: 403 });
   const parsed = customerUpdateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter valid customer details or reminder preferences." }, { status: 400 });
   const profileFields = ["name", "phone", "email", "creditLimit", "status"] as const;

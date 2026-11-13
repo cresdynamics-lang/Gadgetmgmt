@@ -1,8 +1,8 @@
 /* Only public offline assets are cached. Authenticated pages and APIs are never cached. */
-const STATIC_CACHE = "gadgethub-notifications-static-v1";
+const STATIC_CACHE = "gadgethub-notifications-static-v2";
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(["/notifications-offline.html", "/notifications-icon-192.png", "/notifications-icon-512.png"])));
-  self.skipWaiting();
+  if (!self.registration.active) self.skipWaiting();
 });
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
@@ -42,3 +42,5 @@ self.addEventListener("notificationclick", (event) => {
     return self.clients.openWindow(url);
   })());
 });
+
+self.addEventListener("message", event => { if (event.data?.type === "APPLY_UPDATE") self.skipWaiting(); });

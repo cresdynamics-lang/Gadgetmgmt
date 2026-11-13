@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { ownedStockValuation } from "@/lib/stock-valuation";
 import { auth } from "@/auth";
 import { presentDevice, tracksUnits } from "@/lib/device-units";
 import { canUseCapability } from "@/lib/entitlements";
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot access inventory." }, { status: 403, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot access inventory." }, { status: 403, headers: noStore });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403, headers: noStore });
 
   const canViewCost = session.user.role === "OWNER";
@@ -41,10 +42,12 @@ export async function GET(request: Request) {
     }),
   ]);
 
+  const valuation=canViewCost?await ownedStockValuation({branchId:session.user.branchId}):null;
   return NextResponse.json({
     canViewCost,
     items: items.map((item) => ({
       ...item,
+      ...(valuation?{ownedStockValue:valuation.byItem[item.id]}:{}),
       product: {
         ...item.product,
         tracksUnits: tracksUnits(item.product.category, item.product.unitTracking),
@@ -82,7 +85,7 @@ export async function PUT(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
     return NextResponse.json({ error: "Your role cannot set up products." }, { status: 403 });
@@ -151,7 +154,7 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
     return NextResponse.json({ error: "Your role cannot receive inventory." }, { status: 403 });

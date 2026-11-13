@@ -111,6 +111,8 @@ enum UnitStatus {
   SOLD
   IN_REPAIR
   RETURNED
+  WITH_PARTNER
+  QUARANTINED
 }
 
 enum DeviceCondition {
@@ -139,6 +141,11 @@ enum CosmeticGrade {
 }
 
 model Branch {
+  operations Operation[]
+  deviceEvents DeviceEvent[]
+  expenses ExpenseEntry[]
+  recurringBills RecurringBill[]
+
   id            String                 @id @default(cuid())
   name          String
   code          String                 @unique
@@ -162,9 +169,22 @@ model Branch {
 }
 
 model User {
+  operations Operation[]
+  deviceEvents DeviceEvent[]
+  expenses ExpenseEntry[]
+
   id                        String                    @id @default(cuid())
   name                      String
   email                     String                    @unique
+  failedSignIns             Int                       @default(0)
+  lockedAt                  DateTime?
+  biometricsAllowed         Boolean                   @default(false)
+  accessExpiresAt           DateTime?
+  accessPages               String[]                  @default([])
+  accessCapabilities        String[]                  @default([])
+  authDevices               AuthDevice[]
+  authChallenges            AuthChallenge[]
+  authEvents                AuthEvent[]
   passwordHash              String
   role                      UserRole                  @default(CASHIER)
   status                    UserStatus                @default(ACTIVE)
@@ -192,6 +212,7 @@ model RoleEntitlement {
 }
 
 model Customer {
+  marketingSource String?
   id                       String                     @id @default(cuid())
   name                     String
   phone                    String
@@ -218,6 +239,7 @@ model Customer {
 }
 
 model Product {
+  variantTargets VariantTarget[]
   id              String              @id @default(cuid())
   sku             String              @unique
   catalogItemId   String?
@@ -264,6 +286,8 @@ model InventoryItem {
 }
 
 model Sale {
+  operations Operation[]
+
   id              String                @id @default(cuid())
   invoiceNumber   String                @unique
   branchId        String
@@ -310,6 +334,7 @@ model SalePayment {
 }
 
 model SaleItem {
+  totalCost Int?
   id             String   @id @default(cuid())
   saleId         String
   sale           Sale     @relation(fields: [saleId], references: [id])
@@ -326,6 +351,11 @@ model SaleItem {
 }
 
 model StockUnit {
+  ownership String @default("SHOP")
+  ownerName String?
+  operations Operation[]
+  events DeviceEvent[]
+
   id                 String           @id @default(cuid())
   branchId           String
   branch             Branch           @relation(fields: [branchId], references: [id])
@@ -696,4 +726,165 @@ model NotificationRateLimit {
   key         String   @id
   windowStart DateTime
   count       Int
+}
+
+
+model AuthDevice {
+  activeUntil DateTime?
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  label String
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  revokedAt DateTime?
+  lockedAt DateTime?
+  passkeys AuthPasskey[]
+  @@index([userId, revokedAt])
+}
+
+model AuthPasskey {
+  id String @id
+  deviceId String
+  device AuthDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  publicKey Bytes
+  counter BigInt @default(0)
+  transports String[]
+  createdAt DateTime @default(now())
+}
+
+model AuthChallenge {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind String
+  value String
+  deviceId String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId, kind, createdAt])
+}
+
+model AuthEvent {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  action String
+  deviceLabel String
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+
+
+enum OperationKind {
+  REPAIR
+  DELIVERY
+  PARTNER
+  TRADE_IN
+  RETURN
+}
+
+model Operation {
+  partnerDirection String @default("OUT")
+  requestHash String
+  id String @id @default(cuid())
+  requestKey String @unique
+  kind OperationKind
+  status String
+  version Int @default(0)
+  branchId String
+  branch Branch @relation(fields: [branchId], references: [id])
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  unitId String
+  unit StockUnit @relation(fields: [unitId], references: [id])
+  saleId String?
+  sale Sale? @relation(fields: [saleId], references: [id])
+  party String
+  contact String?
+  destination String?
+  reference String?
+  details String
+  dueAt DateTime
+  codAmount Int @default(0)
+  paidAmount Int @default(0)
+  costAmount Int?
+  proof String?
+  inspection Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  closedAt DateTime?
+  @@index([branchId, kind, status, dueAt])
+  @@index([unitId, closedAt])
+}
+
+model DeviceEvent {
+  requestKey String? @unique
+  requestHash String?
+  id String @id @default(cuid())
+  branchId String
+  branch Branch @relation(fields: [branchId], references: [id])
+  unitId String
+  unit StockUnit @relation(fields: [unitId], references: [id])
+  userId String?
+  user User? @relation(fields: [userId], references: [id])
+  kind String
+  note String
+  saleId String?
+  operationId String?
+  amount Int?
+  createdAt DateTime @default(now())
+  @@index([unitId, createdAt])
+}
+
+model ExpenseEntry {
+  requestHash String
+  id String @id @default(cuid())
+  requestKey String @unique
+  branchId String
+  branch Branch @relation(fields: [branchId], references: [id])
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  category String
+  payee String
+  description String
+  amount Int
+  occurredAt DateTime
+  reference String
+  unitId String?
+  operationId String?
+  reversesId String? @unique
+  billId String?
+  period String?
+  createdAt DateTime @default(now())
+  @@index([branchId, occurredAt])
+  @@unique([billId, period])
+}
+
+model RecurringBill {
+  requestHash String
+  id String @id @default(cuid())
+  requestKey String @unique
+  branchId String
+  branch Branch @relation(fields: [branchId], references: [id])
+  title String
+  payee String
+  category String
+  amount Int
+  dueDay Int
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+}
+
+
+model VariantTarget {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id])
+  color String
+  storage String
+  targetAvailable Int
+  updatedAt DateTime @updatedAt
+  @@unique([productId,color,storage])
 }

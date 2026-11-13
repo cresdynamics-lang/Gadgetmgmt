@@ -32,7 +32,7 @@ export async function customerDirectory(user: DirectoryUser, input: { query?: st
     prisma.customer.findMany({
       where,
       select: {
-        id: true, name: true, phone: true, email: true, status: true, creditLimit: true,
+        id: true, name: true, phone: true, email: true, marketingSource: true, status: true, creditLimit: true,
         reliabilityScore: true, smsRemindersEnabled: true, emailRemindersEnabled: true,
         whatsappRemindersEnabled: true, remindersConsentAt: true, whatsappConsentAt: true,
         createdAt: true, branch: { select: { name: true } },

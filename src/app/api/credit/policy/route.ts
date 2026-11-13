@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can view Lipa policy." }, { status: 403 });
-  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot view Lipa policy." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit", session.user.id))) return NextResponse.json({ error: "Your role cannot view Lipa policy." }, { status: 403 });
   const branches = await prisma.branch.findMany({ where: session.user.role === "OWNER" ? { isActive: true } : { id: session.user.branchId ?? "" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const policies = await prisma.creditPolicy.findMany({ where: { branchId: { in: branches.map((branch) => branch.id) } } });
   return NextResponse.json({ branches, policies });
@@ -35,7 +35,7 @@ export async function PUT(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can change Lipa policy." }, { status: 403 });
-  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot change Lipa policy." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit", session.user.id))) return NextResponse.json({ error: "Your role cannot change Lipa policy." }, { status: 403 });
   const parsed = policySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter valid policy values." }, { status: 400 });
   const { branchId, ...data } = parsed.data;

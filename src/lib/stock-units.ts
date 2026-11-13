@@ -170,12 +170,13 @@ export async function recordStockUnit(
     });
   }
 
+  await transaction.deviceEvent.create({data:{branchId:input.branchId,unitId:unit.id,userId:input.userId,kind:identifying?"Device identified":"Device received",note:input.purchaseReference||"Physical identifier recorded"}});
   return { unit, product, identifiedExisting: identifying, stockOnHand: identifying ? inventory.stockOnHand : inventory.stockOnHand + 1 };
 }
 
 export async function moveStockUnit(
   transaction: Transaction,
-  input: { id: string; branchId: string; status: UnitStatus; location?: string | null },
+  input: { id: string; branchId: string; status: UnitStatus; location?: string | null; userId?: string },
 ) {
   const unit = await transaction.stockUnit.findFirst({
     where: { id: input.id, branchId: input.branchId },
@@ -230,6 +231,7 @@ export async function moveStockUnit(
     data: { status: input.status, ...(location !== undefined ? { location } : {}) },
   });
   if (moved.count !== 1) throw new StockUnitError(409, "This device changed while you were updating it. Refresh and try again.");
+  await transaction.deviceEvent.create({data:{branchId:input.branchId,unitId:unit.id,userId:input.userId,kind:"Stock custody changed",note:`${unit.status} → ${input.status}${location?` · ${location}`:""}`}});
   return { id: unit.id, status: input.status };
 }
 
@@ -276,6 +278,7 @@ export async function claimDevicesForSale(
     where: { branchId: input.branchId, productId: input.productId, status: "IN_STOCK" },
   });
   let remainingUnidentified = unidentifiedSellable(inventory.stockOnHand, inventory.reservedStock, inStockUnits);
+  const saleItem = await transaction.saleItem.findUniqueOrThrow({where:{id:input.saleItemId},select:{saleId:true}});
   const seen = new Set<string>();
 
   for (const raw of input.devices) {
@@ -283,6 +286,7 @@ export async function claimDevicesForSale(
     if ("stockUnitId" in claim && claim.stockUnitId) {
       if (seen.has(claim.stockUnitId)) throw new StockUnitError(409, "The same device is listed twice in this sale.");
       seen.add(claim.stockUnitId);
+      await assertSaleCustody(transaction,claim.stockUnitId);
       const taken = await transaction.stockUnit.updateMany({
         where: { id: claim.stockUnitId, branchId: input.branchId, productId: input.productId, status: "IN_STOCK" },
         data: input.hold
@@ -290,6 +294,7 @@ export async function claimDevicesForSale(
           : { status: "SOLD", soldAt: new Date(), saleItemId: input.saleItemId },
       });
       if (taken.count !== 1) throw new StockUnitError(409, "That device is no longer in stock. Scan it again.");
+      await recordSaleDeviceEvent(transaction,input.hold?"Sale reserved":"Device sold",claim.stockUnitId!,input,saleItem.saleId);
       continue;
     }
 
@@ -311,6 +316,7 @@ export async function claimDevicesForSale(
       }
       if (seen.has(existing.id)) throw new StockUnitError(409, "The same device is listed twice in this sale.");
       seen.add(existing.id);
+      await assertSaleCustody(transaction,existing.id);
       const taken = await transaction.stockUnit.updateMany({
         where: { id: existing.id, status: "IN_STOCK" },
         data: input.hold
@@ -318,6 +324,7 @@ export async function claimDevicesForSale(
           : { status: "SOLD", soldAt: new Date(), saleItemId: input.saleItemId },
       });
       if (taken.count !== 1) throw new StockUnitError(409, "That device is no longer in stock. Scan it again.");
+      await recordSaleDeviceEvent(transaction,input.hold?"Sale reserved":"Device sold",existing.id,input,saleItem.saleId);
       continue;
     }
 
@@ -325,7 +332,7 @@ export async function claimDevicesForSale(
       throw new StockUnitError(409, "Record this device in inventory before selling it. The IMEI is not on an in-stock unit.");
     }
     remainingUnidentified -= 1;
-    await transaction.stockUnit.create({
+    const createdUnit = await transaction.stockUnit.create({
       data: {
         branchId: input.branchId,
         productId: input.productId,
@@ -339,10 +346,13 @@ export async function claimDevicesForSale(
         activationLock: "UNKNOWN",
       },
     });
+    await recordSaleDeviceEvent(transaction,input.hold?"Sale reserved":"Device sold",createdUnit.id,input,saleItem.saleId);
   }
 }
 
 export async function completeSaleHold(transaction: Transaction, saleId: string) {
+  const units=await transaction.stockUnit.findMany({where:{status:"RESERVED",saleItem:{saleId}}});
+  for(const unit of units) await recordSaleDeviceEvent(transaction,"Sale settled",unit.id,{branchId:unit.branchId,userId:undefined},saleId);
   await transaction.stockUnit.updateMany({
     where: { status: "RESERVED", saleItem: { saleId } },
     data: { status: "SOLD", soldAt: new Date() },
@@ -350,8 +360,38 @@ export async function completeSaleHold(transaction: Transaction, saleId: string)
 }
 
 export async function releaseSaleHold(transaction: Transaction, saleId: string) {
+  const units=await transaction.stockUnit.findMany({where:{status:"RESERVED",saleItem:{saleId}}});
+  for(const unit of units) await transaction.deviceEvent.create({data:{branchId:unit.branchId,unitId:unit.id,kind:"Sale hold released",note:"Unsettled sale released by reconciliation",saleId}});
   await transaction.stockUnit.updateMany({
     where: { status: "RESERVED", saleItem: { saleId } },
     data: { status: "IN_STOCK", saleItemId: null },
   });
+}
+
+
+async function assertSaleCustody(transaction:Transaction,unitId:string) {
+  const unit=await transaction.stockUnit.findUniqueOrThrow({where:{id:unitId}});
+  if(!activationAllowsStock(unit.condition,unit.activationLock))throw new StockUnitError(409,"Activation lock is not clear. Inspect this device before selling it.");
+  const operation=await transaction.operation.findFirst({where:{unitId,closedAt:null}});
+  if(operation && !(operation.kind==="PARTNER" && operation.partnerDirection==="IN" && operation.status==="BORROWED_IN" && operation.costAmount && operation.costAmount>0))throw new StockUnitError(409,"Complete the open operation or obtain the approved supplier obligation before selling this device.");
+}
+async function recordSaleDeviceEvent(transaction:Transaction,kind:string,unitId:string,input:{branchId:string;userId?:string},saleId:string) {
+  await transaction.deviceEvent.create({data:{branchId:input.branchId,unitId,userId:input.userId,kind,note:"Sale lifecycle recorded",saleId}});
+  if(kind!=="Sale reserved")await transaction.operation.updateMany({where:{unitId,kind:"PARTNER",partnerDirection:"IN",status:"BORROWED_IN",closedAt:null},data:{status:"PAYABLE",saleId,version:{increment:1}}});
+}
+export async function unitLandedCost(transaction:Transaction,unitId:string,fallback:number) {
+  const unit=await transaction.stockUnit.findUniqueOrThrow({where:{id:unitId},select:{ownership:true}});
+  const borrowed=await transaction.operation.findFirst({where:{unitId,kind:"PARTNER",partnerDirection:"IN",closedAt:null},select:{costAmount:true}});
+  const purchase=await transaction.expenseEntry.findFirst({where:{unitId,category:"DEVICE_PURCHASE",amount:{gt:0},operationId:null},orderBy:{occurredAt:"desc"}})
+    ?? await transaction.expenseEntry.findFirst({where:{unitId,category:"DEVICE_PURCHASE",amount:{gt:0},description:{not:"Borrowed-device supplier settlement"}},orderBy:{occurredAt:"desc"}});
+  const costs=await transaction.expenseEntry.aggregate({where:{unitId,category:{in:["REPAIR","FREIGHT"]},...(purchase?{occurredAt:{gte:purchase.occurredAt}}:{})},_sum:{amount:true}});
+  const reversed=purchase?await transaction.expenseEntry.findUnique({where:{reversesId:purchase.id}}):null;
+  return Math.max(0,(borrowed?.costAmount??(reversed?0:purchase?.amount)??(unit.ownership==="PARTNER"?0:fallback))+(costs._sum.amount??0));
+}
+export async function snapshotSaleCosts(transaction:Transaction,saleId:string) {
+  const lines=await transaction.saleItem.findMany({where:{saleId},include:{stockUnits:{select:{id:true}},product:{select:{costPrice:true}}}});
+  for(const line of lines) {
+    const totalCost=line.stockUnits.length ? (await Promise.all(line.stockUnits.map(unit=>unitLandedCost(transaction,unit.id,line.product.costPrice)))).reduce((sum,cost)=>sum+cost,0) : line.product.costPrice*line.quantity;
+    await transaction.saleItem.update({where:{id:line.id},data:{totalCost,unitCost:Math.floor(totalCost/line.quantity)}});
+  }
 }

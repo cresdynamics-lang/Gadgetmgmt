@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "sales"))) return NextResponse.json({ error: "Your role cannot view sales." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "sales", session.user.id))) return NextResponse.json({ error: "Your role cannot view sales." }, { status: 403 });
   const { id } = await params;
   const sale = await prisma.sale.findFirst({
     where: { id, ...(session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" }) },

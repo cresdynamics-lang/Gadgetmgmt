@@ -13,7 +13,7 @@ const schema = z.object({ endpoint, keys: z.object({ p256dh: z.string().regex(/^
 async function handle(request: Request, remove: boolean) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!sameOrigin(request) || !(await canAccessPage(session.user.role, "/notifications"))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  if (!sameOrigin(request) || !(await canAccessPage(session.user.role, "/notifications", session.user.id))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
   await limitNotificationAction(session.user.id, "push-subscription", 30);
   const input = await readNotificationJson(request);
   if (remove) {
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   return notificationApi(async () => {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-    if (!(await canAccessPage(session.user.role, "/notifications"))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    if (!(await canAccessPage(session.user.role, "/notifications", session.user.id))) return NextResponse.json({ error: "Access denied" }, { status: 403 });
     const value = new URL(request.url).searchParams.get("endpoint");
     const subscribed = value && endpoint.safeParse(value).success
       ? Boolean(await prisma.pushSubscription.findFirst({ where: { userId: session.user.id, endpoint: value }, select: { id: true } })) : false;

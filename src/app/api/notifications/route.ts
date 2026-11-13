@@ -12,7 +12,7 @@ async function handleGET(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "notifications"))) return NextResponse.json({ error: "Your role cannot access message delivery." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "notifications", session.user.id))) return NextResponse.json({ error: "Your role cannot access message delivery." }, { status: 403 });
   // Customer reminders and reconciliation records contain owner-only financial data.
   // Staff messaging remains available through the independently authorized inbox.
   if (session.user.role !== "OWNER") return NextResponse.json({ messages: [], paymentReviews: [], counts: { queued: 0, sent: 0, failed: 0 }, jobRuns: [], automation: null, jobHealthFresh: false });

@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { compare } from "bcryptjs";
+import { cookies } from "next/headers";
+import { foregroundLeaseUntil, consumeChallenge, DEVICE_COOKIE, digest, permittedOwner } from "@/lib/auth-security";
 import { z } from "zod";
 
 import { readStoredGrant } from "@/lib/entitlements";
@@ -13,10 +14,7 @@ if (process.env.NODE_ENV === "production") {
   }
 }
 
-const credentialsSchema = z.object({
-  email: z.string().trim().email().transform((email) => email.toLowerCase()),
-  password: z.string().min(1),
-});
+const credentialsSchema = z.object({ ticket: z.string().min(32).max(128) });
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -24,24 +22,26 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   pages: { signIn: "/login" },
   providers: [
     Credentials({
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
+      credentials: { ticket: { type: "password" } },
       async authorize(credentials) {
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
-
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
-          include: { branch: { select: { name: true } } },
-        });
-
-        if (!user || user.status !== "ACTIVE") return null;
-        if (!(await compare(parsed.data.password, user.passwordHash))) return null;
+        const ticket = await prisma.authChallenge.findFirst({ where: { kind: "ticket", value: digest(parsed.data.ticket), expiresAt: { gt: new Date() } } });
+        if (!ticket?.deviceId || !await consumeChallenge(ticket.id, "ticket")) return null;
+        const token = (await cookies()).get(DEVICE_COOKIE)?.value;
+        const device = await prisma.authDevice.findFirst({ where: { id: ticket.deviceId, userId: ticket.userId, tokenHash: digest(token ?? ""), revokedAt: null } });
+        if (!device) return null;
+        const user = await prisma.user.findUnique({ where: { id: ticket.userId }, include: { branch: { select: { name: true } } } });
+        if (!user || user.status !== "ACTIVE" || user.lockedAt || !permittedOwner(user)) return null;
+        await prisma.$transaction([
+          prisma.user.update({ where: { id: user.id }, data: { failedSignIns: 0 } }),
+          prisma.authDevice.update({ where: { id: device.id }, data: { lastUsedAt: new Date(), lockedAt: null, activeUntil: foregroundLeaseUntil() } }),
+          prisma.authEvent.create({ data: { userId: user.id, action: "Signed in", deviceLabel: device.label } }),
+        ]);
 
         return {
           id: user.id,
+          deviceId: device.id,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -55,27 +55,31 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.userId = user.id;
+        token.deviceId = user.deviceId;
         token.role = user.role;
         token.branchId = user.branchId;
         token.branchName = user.branchName;
       } else if (typeof token.userId === "string" && token.userId) {
         const currentUser = await prisma.user.findUnique({
           where: { id: token.userId },
-          select: { role: true, status: true, branchId: true, branch: { select: { name: true } } },
+          select: { email: true, lockedAt: true, role: true, status: true, branchId: true, branch: { select: { name: true } } },
         });
-        if (!currentUser || currentUser.status !== "ACTIVE") return null;
+        if (!currentUser || currentUser.status !== "ACTIVE" || currentUser.lockedAt || !permittedOwner(currentUser)) return null;
+        const device = typeof token.deviceId === "string" ? await prisma.authDevice.findFirst({ where: { id: token.deviceId, userId: token.userId, revokedAt: null, lockedAt: null, activeUntil: { gt: new Date() } } }) : null;
+        if (!device) return null;
         token.role = currentUser.role;
         token.branchId = currentUser.branchId;
         token.branchName = currentUser.branch?.name ?? null;
       }
       const role = typeof token.role === "string" ? token.role : "";
-      const grant = await readStoredGrant(role);
+      const grant = await readStoredGrant(role, String(token.userId));
       token.pages = grant.pages;
       token.capabilities = grant.capabilities;
       return token;
     },
     session({ session, token }) {
       if (session.user) {
+        session.user.deviceId = typeof token.deviceId === "string" ? token.deviceId : "";
         session.user.id = typeof token.userId === "string" ? token.userId : "";
         session.user.role = typeof token.role === "string" ? token.role : "CASHIER";
         session.user.branchId = typeof token.branchId === "string" ? token.branchId : null;

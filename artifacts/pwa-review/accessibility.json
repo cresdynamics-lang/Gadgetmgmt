@@ -1,0 +1,222 @@
+[
+  {
+    "path": "/dashboard",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/sales",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/inventory",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/planner",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/devices",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/repairs",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/deliveries",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/partners",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/trade-ins",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/expenses",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/finance",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/customers",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/credit",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/layaway",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/staff",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/activity",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/notifications",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/settings",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/performance",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/assistant",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/insights",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/account",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "path": "/dashboard",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/sales",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/inventory",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/planner",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/devices",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/repairs",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/deliveries",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/partners",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/trade-ins",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/expenses",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/finance",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/customers",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/credit",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/layaway",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/staff",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/activity",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/notifications",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/settings",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/performance",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/assistant",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/insights",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "path": "/account",
+    "theme": "dark",
+    "violations": []
+  }
+]

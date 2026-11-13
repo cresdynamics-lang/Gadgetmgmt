@@ -16,6 +16,7 @@ export const PAGE_CATALOG = [
   { path: "/inventory", label: "Inventory" },
   { path: "/planner", label: "Stock planner" },
   { path: "/devices", label: "Devices" },
+  { path: "/trade-ins", label: "Trade-ins & returns" },
   { path: "/repairs", label: "Repairs" },
   { path: "/partners", label: "Partners" },
   { path: "/customers", label: "Customers" },
@@ -43,6 +44,11 @@ const legacyRolePages = {
 export type AccessPage = (typeof PAGE_CATALOG)[number]["path"];
 
 export const CAPABILITY_CATALOG = [
+  { id: "repairs", label: "Repairs", detail: "Assign repairs and record return inspections" },
+  { id: "deliveries", label: "Deliveries", detail: "Record handovers, proof and customer payments" },
+  { id: "partners", label: "Partners", detail: "Record device loans, returns and settlements" },
+  { id: "tradeIns", label: "Trade-ins & returns", detail: "Inspect and receive devices; valuations stay with the owner" },
+  { id: "costEntry", label: "Write-only costs", detail: "Record device costs without reading protected financial values" },
   { id: "sales", label: "Sales", detail: "View and record sales" },
   { id: "inventory", label: "Inventory", detail: "View stock. Creating products still follows the existing role rules." },
   { id: "customers", label: "Customers", detail: "View and create customer accounts" },
@@ -178,6 +184,8 @@ export function isOwnerEntitlementPath(pathname: string) {
 }
 
 export function canAccessPage(role: string, pathname: string, grants?: AccessMap) {
+  if (pathname === "/") return isAppRole(role);
+  if (pathname === "/account" || pathname.startsWith("/account/")) return isAppRole(role);
   if (isOwnerEntitlementPath(pathname)) return role === "OWNER";
   const stored = grants && isAppRole(role) ? grants[role]?.pages : undefined;
   const raw = stored ?? (isAppRole(role) ? defaultRoleGrants[role].pages : []);

@@ -26,3 +26,8 @@ test("a scanned SKU adds the product and refuses stock that is already gone", ()
   assert.deepEqual(matchSaleScan(catalogue, { imei: "353918052345678" }), { status: "unavailable", name: "iPhone 14 128GB" });
   assert.deepEqual(matchSaleScan(catalogue, { raw: "UNKNOWN" }), { status: "unknown" });
 });
+
+test("manual serial entry resolves the physical device before falling back to a catalog SKU", () => {
+  assert.deepEqual(matchSaleScan(catalogue, { raw: "F2LX-ABC123", productCode: "F2LX-ABC123" }), { status: "device", productId: "phone", identifier: "F2LX-ABC123" });
+  assert.deepEqual(matchSaleScan(catalogue, { raw: "353918052345678" }), { status: "unavailable", name: "iPhone 14 128GB" });
+});

@@ -22,6 +22,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const parsed = accessSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid role or account status." }, { status: 400 });
 
+  if (parsed.data.role === "OWNER") return NextResponse.json({ error: "Owner access cannot be assigned to staff." }, { status: 403, headers: noStore });
   const { id } = await context.params;
   if (id === session.user.id) return NextResponse.json({ error: "You cannot change your own administrator access." }, { status: 400 });
 

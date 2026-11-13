@@ -13,7 +13,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "layaway"))) return NextResponse.json({ error: "Your role cannot fulfill layaway orders." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "layaway", session.user.id))) return NextResponse.json({ error: "Your role cannot fulfill layaway orders." }, { status: 403 });
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   const { id } = await context.params;

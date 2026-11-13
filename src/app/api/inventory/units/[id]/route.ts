@@ -20,7 +20,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403, headers: noStore });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403, headers: noStore });
   if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
     return NextResponse.json({ error: "Your role cannot move devices." }, { status: 403, headers: noStore });
@@ -32,12 +32,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!parsed.success) return NextResponse.json({ error: "Choose a stock status for this device." }, { status: 400, headers: noStore });
 
   try {
-    const moved = await prisma.$transaction((transaction) => moveStockUnit(transaction, {
+    const moved = await prisma.$transaction(async (transaction) => {
+      if(await transaction.operation.findFirst({where:{unitId:id,closedAt:null}}))throw new StockUnitError(409,"Finish this device’s open workflow before editing its stock state.");
+      return moveStockUnit(transaction, {
+      userId:session.user.id,
       id,
       branchId: session.user.branchId!,
       status: parsed.data.status,
       location: parsed.data.location,
-    }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }); }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return NextResponse.json(moved, { headers: noStore });
   } catch (error) {
     if (error instanceof StockUnitError) return NextResponse.json({ error: error.message }, { status: error.status, headers: noStore });

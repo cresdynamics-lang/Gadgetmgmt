@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot access customers." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  if (!(await canUseCapability(session.user.role, "customers", session.user.id))) return NextResponse.json({ error: "Your role cannot access customers." }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
   const parsed = searchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid customer search." }, { status: 400, headers: { "Cache-Control": "no-store" } });

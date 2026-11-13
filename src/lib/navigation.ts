@@ -5,6 +5,7 @@ export const navItems = [
   { label: "Inventory", href: "/inventory" },
   { label: "Stock planner", href: "/planner" },
   { label: "Devices", href: "/devices" },
+  { label: "Trade-ins & returns", href: "/trade-ins" },
   { label: "Repairs", href: "/repairs" },
   { label: "Partners", href: "/partners" },
   { label: "Customers", href: "/customers" },
@@ -18,6 +19,6 @@ export const navItems = [
   { label: "Staff & Users", href: "/staff" },
   { label: "Activity", href: "/activity" },
   { label: "Messages & alerts", href: "/notifications" },
-  { label: "Role access", href: "/access" },
+  { label: "Team access", href: "/access" },
   { label: "Settings", href: "/settings" },
 ];

@@ -1,11 +1,4 @@
-import { Desk, DeskNote } from "@/components/desk";
-
+import { requirePage } from "@/lib/require-page";
+import { OperationsDesk } from "@/components/operations-desk";
 export const instant = false;
-
-export default function DeliveriesPage() {
-  return (
-    <Desk title="Deliveries" detail="Packed orders, riders, and deliveries that still need payment.">
-      <DeskNote>No deliveries are recorded. A sale is still completed in Sales. This desk stays empty until a delivery is recorded against an order.</DeskNote>
-    </Desk>
-  );
-}
+export default async function Page() { await requirePage("/deliveries"); return <OperationsDesk kind="DELIVERY"/>; }
