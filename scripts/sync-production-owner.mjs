@@ -14,7 +14,10 @@ try {
     where: { role: "OWNER", ...(email ? { email } : {}) },
     select: { id: true },
   });
-  if (owners.length !== 1) throw new Error("Configure INITIAL_OWNER_EMAIL to select exactly one existing owner.");
+  if (owners.length !== 1) {
+    console.error(`Owner selection matched ${owners.length} accounts; INITIAL_OWNER_EMAIL configured: ${Boolean(email)}.`);
+    throw new Error("Owner selection failed");
+  }
   const passwordHash = await bcrypt.hash(password, 12);
   const updated = await prisma.user.update({
     where: { id: owners[0].id },
@@ -23,7 +26,8 @@ try {
   });
   if (!(await bcrypt.compare(password, updated.passwordHash))) throw new Error("Owner password verification failed.");
   console.log("Owner password synchronized and verified successfully.");
-} catch {
+} catch (error) {
+  if (typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) console.error(`Database error code: ${error.code}`);
   console.error("Owner password synchronization failed. Check owner selection and database availability.");
   process.exitCode = 1;
 } finally {
