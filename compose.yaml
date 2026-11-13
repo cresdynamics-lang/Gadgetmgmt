@@ -10,6 +10,9 @@ services:
       - .env
       - .nextauth.env
       - .public-url.env
+      - path: .runtime.env
+        required: false
+        format: raw
     environment:
       NODE_ENV: production
       # Auth.js rewrites every request to NEXTAUTH_URL/AUTH_URL when set. A
