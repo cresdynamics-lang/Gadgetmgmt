@@ -132,3 +132,9 @@ Browser evidence: `artifacts/branding-review`. Five scenarios pass: original log
 Hardcoded personal administrator references have been replaced by “Administrator” across sign-in/recovery, verification emails, account security, access management, operation approvals, documentation and isolated fixtures. The owner’s shell label is Administrator; actual account IDs, financial history and role permissions are preserved.
 
 At the account holder’s explicit request, seed defaults and the deployment owner-email secret use `aabere70@gmail.com`. Runtime `AUTH_OWNER_EMAIL` follows the configured `INITIAL_OWNER_EMAIL` to prevent a stale environment setting blocking sign-in. A targeted synchronization can assert the expected identity and, only when explicitly requested, exercise the real password-to-email-code flow. Provider acceptance is distinguished from inbox receipt and completed authentication; OTPs and credentials are never logged.
+
+## Verified administrator email recovery
+
+Production diagnosis found that the generic Resend secret was empty, while the accounts key was valid and `gadgethubke.com` was verified. Runtime compatibility now uses the existing accounts credentials when the generic key is absent. Account verification, order receipts and staff notices select their corresponding configured transport, retaining the shared company-sender override and generic fallback for single-key deployments. Credentials are never returned in settings payloads.
+
+Production workflow `43503087754` verified the requested administrator identity and password, then received provider acceptance for a real sign-in code to `aabere70@gmail.com`. This establishes credential acceptance and provider acceptance, not inbox arrival or completed authentication. The account holder must request/enter a fresh code in their own browser. Seven runtime-configuration tests and 25 transport/auth/notification tests pass; lint, TypeScript and production build pass.

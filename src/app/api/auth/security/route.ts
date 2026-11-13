@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       });
       if (!reservation) return reply({ error: "A code was sent recently. Wait one minute before requesting another." }, 429);
       try {
-        await deliverNotification({ channel: "EMAIL", recipient: user.email, subject: "Your GadgetHub sign-in code", body: `Your sign-in code is ${reservation.code}. It expires in five minutes. If you did not request it, contact the Administrator. Never share this code.` });
+        await deliverNotification({ purpose: "accounts", channel: "EMAIL", recipient: user.email, subject: "Your GadgetHub sign-in code", body: `Your sign-in code is ${reservation.code}. It expires in five minutes. If you did not request it, contact the Administrator. Never share this code.` });
       } catch {
         await prisma.authChallenge.deleteMany({ where: { id: reservation.id } });
         return reply({ error: "The code could not be delivered. Try again shortly or contact the Administrator." }, 503);
