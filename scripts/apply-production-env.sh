@@ -19,14 +19,24 @@ YAML
 cleanup() { rm -f .runtime.env.candidate .runtime-preflight.yaml compose.runtime-candidate.yaml; }
 trap cleanup EXIT
 # Never print Prisma errors: they can include database connection strings.
-compose -f compose.runtime-candidate.yaml -f .runtime-preflight.yaml run --rm --no-deps -T nodejs node -e '
+if ! compose -f compose.runtime-candidate.yaml -f .runtime-preflight.yaml run --rm --no-deps -T nodejs node -e '
 const {PrismaClient}=require("@prisma/client");
 const p=new PrismaClient({log:[]});
 (async()=>{try { await p.$queryRawUnsafe("SELECT 1");
 const count=await p.user.count({where:{role:"OWNER",email:process.env.INITIAL_OWNER_EMAIL.trim().toLowerCase()}});
 if(count!==1) throw new Error("owner selection");
 console.log("Production database connection and owner selection verified.");
-} catch {console.error("Production database/owner preflight failed; running service was not changed.");process.exitCode=1;} finally {await p.$disconnect();}})();'
+} catch (error) {const code=error.code || error.errorCode; if(typeof code==="string" && /^[A-Z0-9_]+$/.test(code)) console.error("Database error code: "+code); console.error("Failure type: "+error.name); console.error("Production database/owner preflight failed; running service was not changed.");process.exitCode=1;} finally {await p.$disconnect();}})();'; then
+  echo "Database service diagnostics (no credentials):"
+  command -v psql || true
+  command -v pg_isready >/dev/null && pg_isready || true
+  if sudo -n -u postgres psql -Atqc 'SELECT current_user' 2>/dev/null; then
+    echo "Local PostgreSQL administrator access is available."
+  fi
+  if docker info >/dev/null 2>&1; then docker ps --format '{{.Names}} {{.Image}} {{.Ports}}';
+  else sudo -n docker ps --format '{{.Names}} {{.Image}} {{.Ports}}'; fi
+  exit 1
+fi
 cp compose.yaml compose.yaml.before-runtime
 had_runtime=0
 if [ -f .runtime.env ]; then cp .runtime.env .runtime.env.before-runtime; had_runtime=1; fi
