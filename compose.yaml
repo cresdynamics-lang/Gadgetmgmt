@@ -20,11 +20,14 @@ services:
       AUTH_URL: ""
       NEXTAUTH_TRUST_HOST: "true"
       AUTH_TRUST_HOST: "true"
-    expose:
-      - "3005"
+    network_mode: host
+    command: ["node", "./node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", "3005"]
     restart: unless-stopped
 
   cloudflared:
+    network_mode: host
+    extra_hosts:
+      - "nodejs:127.0.0.1"
     image: node:22.23.5-bookworm-slim
     user: "${HOST_UID}:${HOST_GID}"
     entrypoint: ["/usr/local/bin/cloudflared"]
