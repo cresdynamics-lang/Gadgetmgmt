@@ -84,7 +84,7 @@ export default function LoginPage() {
         <button type="submit" className="security-primary" disabled={pending}>{pending ? "Verifying…" : step === "code" ? <>Verify & sign in<ArrowRight size={18} aria-hidden="true"/></> : step === "choose" && supported ? <><Fingerprint size={20} aria-hidden="true"/>Sign in with Face ID or passkey</> : <>Continue<ArrowRight size={18} aria-hidden="true"/></>}</button>
       </form>
       {step === "choose" && supported ? <><div className="security-divider">or</div><button className="security-secondary" disabled={pending} onClick={()=>{setStep("password");setError("");}}>Use password</button><p className="security-detail">New device? Use your password and an email code first. On a verified device, use Face ID, your fingerprint, or your device PIN.</p></> : step === "code" || supported ? <button className="security-link" disabled={pending} onClick={()=>{setStep(step === "code" ? "password" : "choose");setError("");}}>{step === "code" ? "Back to password · request a new code" : supported ? "Use Face ID or passkey instead" : "Back"}</button> : <p className="security-detail">This browser does not support passkeys. Use your password and email verification.</p>}
-      <p className="security-detail">Need access or a locked account? Contact Victor to verify your identity and restore access.</p>
+      <p className="security-detail">Need access or a locked account? Contact the Administrator to verify your identity and restore access.</p>
     </div>
   </div></main>;
 }

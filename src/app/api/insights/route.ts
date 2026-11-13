@@ -79,7 +79,7 @@ export async function POST(request:Request) {
     const authorizedMetrics={period:metrics.period,generatedAt:metrics.generatedAt,financeVisible:metrics.financeVisible,sales:capabilities[0]?metrics.sales:undefined,inventory:capabilities[1]?metrics.inventory:undefined,credit:capabilities[2]?metrics.credit:undefined};
     const destinations=["/sales","/inventory","/credit","/customers","/notifications"];
     const allowedDestinations=(await Promise.all(destinations.map(async path=>await canAccessPage(role,path,session.user.id)?path:null))).filter((path):path is string=>Boolean(path));
-    if(!capabilities.some(Boolean)||!allowedDestinations.length)return Response.json({error:"Victor must grant operational data access before a briefing can be generated."},{status:403});
+    if(!capabilities.some(Boolean)||!allowedDestinations.length)return Response.json({error:"Administrator must grant operational data access before a briefing can be generated."},{status:403});
     const model = process.env.AI_INSIGHTS_MODEL || "gpt-4.1-mini";
     const modelResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",

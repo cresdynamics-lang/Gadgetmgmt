@@ -41,3 +41,16 @@ test("rejects inconsistent or missing database password credentials", () => {
 test("rejects newline injection into raw environment files", () => {
   assert.notEqual(prepare({ SMTP_PASS: "value\nNODE_OPTIONS=--inspect" }).status, 0);
 });
+
+test("administrator authorization follows the configured owner email rather than stale server settings", () => {
+  const r=prepare({INITIAL_OWNER_EMAIL:"aabere70@gmail.com",AUTH_OWNER_EMAIL:"old-owner@example.test"});
+  assert.equal(r.status,0,r.stderr);
+  assert.ok(r.contents.includes("INITIAL_OWNER_EMAIL=aabere70@gmail.com\n"));
+  assert.ok(r.contents.includes("AUTH_OWNER_EMAIL=aabere70@gmail.com\n"));
+  assert.ok(!r.contents.includes("old-owner@example.test"));
+});
+
+test("an explicit administrator email check prevents applying the wrong secret", () => {
+ assert.notEqual(prepare({EXPECTED_OWNER_EMAIL:"aabere70@gmail.com"}).status,0);
+ assert.equal(prepare({EXPECTED_OWNER_EMAIL:base.INITIAL_OWNER_EMAIL}).status,0);
+});

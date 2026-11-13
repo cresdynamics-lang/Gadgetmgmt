@@ -11,7 +11,7 @@ const base = 'http://localhost:3012';
 const database = 'postgresql://gadgethub:gadgethub@localhost:5432/gadgethub_auth_review';
 const prisma = new PrismaClient({ datasourceUrl: database });
 const run = Date.now().toString(36);
-const email = `victor-${run}@example.test`;
+const email = `administrator-${run}@example.test`;
 const password = 'Auth-review-password-2026!';
 const mailFile = `/tmp/gadgethub-auth-mail-${run}.json`;
 const productionReview=process.env.AUTH_REVIEW_PRODUCTION==='1';
@@ -26,7 +26,7 @@ const findings = [];
 function pass(name) { findings.push(name); console.log(`PASS ${name}`); }
 try {
   const branch = await prisma.branch.create({ data: { name: 'NUH auth review', code: `AUTH-${run}`, address: 'Isolated test', phone: '' } });
-  const owner = await prisma.user.create({ data: { name: 'Victor Review', email, passwordHash: await hash(password, 12), role: 'OWNER', branchId: branch.id } });
+  const owner = await prisma.user.create({ data: { name: 'Administrator Review', email, passwordHash: await hash(password, 12), role: 'OWNER', branchId: branch.id } });
   const staff = await prisma.user.create({ data: { name: 'Cashier Review', email: `cashier-${run}@example.test`, passwordHash: await hash(password, 12), role: 'CASHIER', branchId: branch.id } });
   const deadline = Date.now() + 180000;
   while (Date.now() < deadline) {

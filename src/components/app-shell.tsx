@@ -80,9 +80,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const menuDialog = useRef<HTMLDivElement>(null);
   const launcherInput = useRef<HTMLInputElement>(null);
   const page = navItems.find(({ href }) => pathname === href || (href !== "/dashboard" && pathname.startsWith(href)));
-  const displayName = session?.user?.name ?? "Team member";
-  const initials = displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   const role = session?.user.role ?? "";
+  const displayName = role === "OWNER" ? "Administrator" : session?.user?.name ?? "Team member";
+  const initials = displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
   const grants = sessionGrants(role, session?.user.pages, session?.user.capabilities);
   const primaryTabs = (primaryTabOrder[role] ?? primaryTabOrder.OWNER).filter((href) => canAccessPage(role, href, grants));
   const launcherNeedle = launcherQuery.trim().toLowerCase();

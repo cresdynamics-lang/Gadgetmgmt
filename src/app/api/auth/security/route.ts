@@ -18,7 +18,7 @@ const inputSchema = z.object({
   response: z.unknown().optional(),
 });
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-const denied = () => reply({ error: "Sign-in could not be verified. Check your details or ask Victor to unlock your account." }, 401);
+const denied = () => reply({ error: "Sign-in could not be verified. Check your details or ask the Administrator to unlock your account." }, 401);
 
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return reply({ error: "Open this form from GadgetHub." }, 403);
@@ -55,10 +55,10 @@ export async function POST(request: Request) {
       });
       if (!reservation) return reply({ error: "A code was sent recently. Wait one minute before requesting another." }, 429);
       try {
-        await deliverNotification({ channel: "EMAIL", recipient: user.email, subject: "Your GadgetHub sign-in code", body: `Your sign-in code is ${reservation.code}. It expires in five minutes. If you did not request it, contact Victor. Never share this code.` });
+        await deliverNotification({ channel: "EMAIL", recipient: user.email, subject: "Your GadgetHub sign-in code", body: `Your sign-in code is ${reservation.code}. It expires in five minutes. If you did not request it, contact the Administrator. Never share this code.` });
       } catch {
         await prisma.authChallenge.deleteMany({ where: { id: reservation.id } });
-        return reply({ error: "The code could not be delivered. Try again shortly or contact Victor." }, 503);
+        return reply({ error: "The code could not be delivered. Try again shortly or contact the Administrator." }, 503);
       }
       return reply({ challengeId: reservation.id, needsCode: true });
     }
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     if (!session?.user) return denied();
     const user = await prisma.user.findUnique({ where: { id: session.user.id } });
     const device = await knownDevice(session.user.id, token);
-    if (!user || !device || (user.role !== "OWNER" && !user.biometricsAllowed)) return reply({ error: "Victor must allow biometrics for this account first." }, 403);
+    if (!user || !device || (user.role !== "OWNER" && !user.biometricsAllowed)) return reply({ error: "Administrator must allow biometrics for this account first." }, 403);
     // Enrollment requires a recent password verification, even on an open session.
     if (input.action === "register-options") {
       if (!input.password || !await compare(input.password, user.passwordHash)) { await recordFailure(user.id, label); return denied(); }
