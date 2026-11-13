@@ -71,6 +71,13 @@ for (const key of keys) {
 for (const key of ["DATABASE_URL", "NEXTAUTH_SECRET", "INITIAL_OWNER_EMAIL", "INITIAL_OWNER_PASSWORD"]) {
   if (!process.env[key]) throw new Error(`Missing required runtime secret: ${key}`);
 }
+const database = new URL(process.env.DATABASE_URL);
+if (!["postgres:", "postgresql:"].includes(database.protocol) || !database.password) {
+  throw new Error("DATABASE_URL must include PostgreSQL password authentication");
+}
+if (decodeURIComponent(database.username) !== process.env.POSTGRES_USER || decodeURIComponent(database.password) !== process.env.POSTGRES_PASSWORD) {
+  throw new Error("DATABASE_URL credentials must match POSTGRES_USER and POSTGRES_PASSWORD");
+}
 if (process.env.NEXTAUTH_SECRET.length < 43) throw new Error("NEXTAUTH_SECRET is too short");
 for (const key of ["NEXTAUTH_URL", "APP_BASE_URL"]) {
   const url = new URL(process.env[key]);
