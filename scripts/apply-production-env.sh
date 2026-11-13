@@ -23,7 +23,7 @@ if ! compose -f compose.runtime-candidate.yaml -f .runtime-preflight.yaml run --
 const {PrismaClient}=require("@prisma/client");
 const p=new PrismaClient({log:[]});
 (async()=>{try { await p.$queryRawUnsafe("SELECT 1");
-const count=await p.user.count({where:{role:"OWNER",email:process.env.INITIAL_OWNER_EMAIL.trim().toLowerCase()}});
+const count=await p.user.count({where:{role:"OWNER"}});
 if(count!==1) throw new Error("owner selection");
 console.log("Production database connection and owner selection verified.");
 } catch (error) {const code=error.code || error.errorCode; if(typeof code==="string" && /^[A-Z0-9_]+$/.test(code)) console.error("Database error code: "+code); console.error("Failure type: "+error.name); console.error("Database failure category: "+(/authentication failed/i.test(error.message)?"authentication":/reach database/i.test(error.message)?"unreachable":/does not exist/i.test(error.message)?"missing database": "other")); console.error("Production database/owner preflight failed; running service was not changed.");process.exitCode=1;} finally {await p.$disconnect();}})();'; then

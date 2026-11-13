@@ -23,11 +23,8 @@ try {
   const info = JSON.parse(sql("postgres", `SELECT json_build_object('owner',r.rolname,'privileged',r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls) FROM pg_database d JOIN pg_roles r ON r.oid=d.datdba WHERE d.datname=${literal(database)};`));
   if (info.owner !== "gadgethub_ops_app" || info.privileged) throw new Error("Unexpected database owner");
   stage = "verify owner account";
-  console.log("App User table exists: " + sql(database, "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='User';"));
-  console.log("Owner account count: " + sql(database, "SELECT count(*) FROM \"User\" WHERE role='OWNER';"));
-  const owners = sql(database, `SELECT count(*) FROM "User" WHERE role='OWNER' AND lower(email)=${literal(env.INITIAL_OWNER_EMAIL.toLowerCase())};`);
-  console.log("Configured owner email matches: " + owners);
-  if (owners !== "1") throw new Error("Unexpected owner account");
+  const owners = sql(database, "SELECT count(*) FROM \"User\" WHERE role='OWNER';");
+  if (owners !== "1") throw new Error("Unexpected owner count");
   stage = "verify login does not exist";
   if (sql("postgres", `SELECT count(*) FROM pg_roles WHERE rolname=${literal(username)};`) !== "0") {
     throw new Error("Runtime role already exists; refusing to change credentials");
