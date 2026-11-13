@@ -20,9 +20,9 @@ test("only the configured identity can authenticate with owner privileges", () =
   const initial = process.env.INITIAL_OWNER_EMAIL;
   try {
     delete process.env.AUTH_OWNER_EMAIL; delete process.env.INITIAL_OWNER_EMAIL;
-    assert.equal(permittedOwner({ role: "OWNER", email: "victor@example.test" }), false);
-    process.env.AUTH_OWNER_EMAIL = "victor@example.test";
-    assert.equal(permittedOwner({ role: "OWNER", email: "VICTOR@example.test" }), true);
+    assert.equal(permittedOwner({ role: "OWNER", email: "administrator@example.test" }), false);
+    process.env.AUTH_OWNER_EMAIL = "administrator@example.test";
+    assert.equal(permittedOwner({ role: "OWNER", email: "ADMINISTRATOR@example.test" }), true);
     assert.equal(permittedOwner({ role: "OWNER", email: "other@example.test" }), false);
     assert.equal(permittedOwner({ role: "CASHIER", email: "staff@example.test" }), true);
   } finally {

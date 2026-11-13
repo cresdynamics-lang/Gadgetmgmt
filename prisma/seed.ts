@@ -6,8 +6,8 @@ import { defaultRoleGrants, ROLE_IDS } from "../src/lib/access";
 const prisma = new PrismaClient();
 
 async function main() {
-  const ownerName = process.env.INITIAL_OWNER_NAME?.trim() || "GadgetHub Owner";
-  const ownerEmail = process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase();
+  const ownerName = process.env.INITIAL_OWNER_NAME?.trim() || "Administrator";
+  const ownerEmail = process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase() || "aabere70@gmail.com";
   const initialPassword = process.env.INITIAL_OWNER_PASSWORD;
 
   if (!ownerEmail || !initialPassword || initialPassword.length < 12 || initialPassword.length > 72) {
@@ -23,10 +23,11 @@ async function main() {
   const passwordHash = await bcrypt.hash(initialPassword, 12);
 
   const ownerWithEmail = await prisma.user.findUnique({ where: { email: ownerEmail } });
-  const existingOwner = ownerWithEmail ?? await prisma.user.findFirst({
-    where: { role: "OWNER" },
-    orderBy: { createdAt: "asc" },
-  });
+  const owners = await prisma.user.findMany({ where: { role: "OWNER" } });
+  const existingOwner = owners.find(owner => owner.email.toLowerCase() === ownerEmail)
+    ?? (owners.length === 1 ? owners[0] : null);
+  if (owners.length > 1 && !existingOwner) throw new Error("Administrator account selection is ambiguous.");
+  if (ownerWithEmail && ownerWithEmail.id !== existingOwner?.id) throw new Error("The administrator email belongs to another account.");
 
   if (existingOwner) {
     await prisma.user.update({

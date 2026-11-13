@@ -47,12 +47,12 @@ export async function POST(request: Request) {
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
   if (!(await canUseCapability(session.user.role, "staff", session.user.id))) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403, headers: noStore });
 
-  if (session.user.role !== "OWNER") return NextResponse.json({ error: "Only Victor can provision staff accounts." }, { status: 403, headers: noStore });
+  if (session.user.role !== "OWNER") return NextResponse.json({ error: "Only the Administrator can provision staff accounts." }, { status: 403, headers: noStore });
   const parsed = staffSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400, headers: noStore });
   if (parsed.data.role === "OWNER") return NextResponse.json({ error: "The configured owner is the only owner account." }, { status: 403, headers: noStore });
   if (!canAssignStaffRole(session.user.role, parsed.data.role)) {
-    const message = "Only Victor can provision staff accounts.";
+    const message = "Only the Administrator can provision staff accounts.";
     return NextResponse.json({ error: message }, { status: 403, headers: noStore });
   }
 

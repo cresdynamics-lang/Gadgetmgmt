@@ -79,9 +79,9 @@ export async function updateOperation(tx:Tx,input:OperationUpdate,actor:Operatio
   let status=nextOperationState(operation.kind,operation.status,input.action);
   if(["DELIVER","PASS","FAIL","RETURN","SETTLE","ACCEPT","REJECT"].includes(input.action) && !input.proof?.trim())throw new OperationError(400,"Record the named handover, inspection result, or settlement proof.");
   if(operation.kind==="TRADE_IN" && input.action==="ACCEPT")await tx.stockUnit.update({where:{id:operation.unitId},data:{ownership:"SHOP",ownerName:operation.party,supplierName:operation.party}});
-  if(input.action==="VALUE" && (actor.role!=="OWNER" || !input.costAmount))throw new OperationError(403,"Victor must record the agreed supplier obligation before this borrowed device can be sold.");
-  if((input.costAmount!==undefined && !canWriteCosts) || (input.action==="SETTLE" && actor.role!=="OWNER") || (operation.kind==="TRADE_IN" && input.action==="ACCEPT" && actor.role!=="OWNER"))throw new OperationError(403,"Victor must approve valuation or settlement. Cost entry requires explicit permission.");
-  if(operation.kind==="TRADE_IN" && input.action==="ACCEPT" && !input.costAmount)throw new OperationError(400,"Victor must record the approved trade-in valuation.");
+  if(input.action==="VALUE" && (actor.role!=="OWNER" || !input.costAmount))throw new OperationError(403,"Administrator must record the agreed supplier obligation before this borrowed device can be sold.");
+  if((input.costAmount!==undefined && !canWriteCosts) || (input.action==="SETTLE" && actor.role!=="OWNER") || (operation.kind==="TRADE_IN" && input.action==="ACCEPT" && actor.role!=="OWNER"))throw new OperationError(403,"Administrator must approve valuation or settlement. Cost entry requires explicit permission.");
+  if(operation.kind==="TRADE_IN" && input.action==="ACCEPT" && !input.costAmount)throw new OperationError(400,"Administrator must record the approved trade-in valuation.");
   let paidAmount=operation.paidAmount;
   if(input.action==="COLLECT") {
     if(!input.amount || !input.method || !operation.saleId || input.amount>operation.codAmount-operation.paidAmount)throw new OperationError(400,"Enter a payment within the remaining COD obligation.");
@@ -98,7 +98,7 @@ export async function updateOperation(tx:Tx,input:OperationUpdate,actor:Operatio
   if((operation.kind==="REPAIR" && input.action==="PASS") || (operation.kind==="PARTNER" && operation.partnerDirection!=="IN" && input.action==="RETURN") || (["TRADE_IN","RETURN"].includes(operation.kind) && input.action==="ACCEPT")) {
     await moveStockUnit(tx,{id:operation.unitId,branchId:operation.branchId,status:"IN_STOCK",location:"Shop",userId:actor.id});
   }
-  if(input.costAmount!==undefined && actor.role!=="OWNER" && operation.kind!=="REPAIR") throw new OperationError(403,"Write-only costs apply to repair records; other financial changes require Victor.");
+  if(input.costAmount!==undefined && actor.role!=="OWNER" && operation.kind!=="REPAIR") throw new OperationError(403,"Write-only costs apply to repair records; other financial changes require Administrator approval.");
   if(operation.kind==="RETURN" && input.action==="ACCEPT" && operation.saleId && await tx.creditPlan.findFirst({where:{saleId:operation.saleId,balance:{gt:0}}})) throw new OperationError(409,"Reconcile the financed sale in Lipa before making this returned device available.");
   if(["TRADE_IN","RETURN"].includes(operation.kind) && input.action==="REJECT") await tx.stockUnit.update({where:{id:operation.unitId},data:{status:"RETURNED",location:`Returned to ${operation.party}`}});
   if(operation.kind==="PARTNER" && operation.partnerDirection==="IN" && input.action==="RETURN") await moveStockUnit(tx,{id:operation.unitId,branchId:operation.branchId,status:"RETURNED",location:operation.party});

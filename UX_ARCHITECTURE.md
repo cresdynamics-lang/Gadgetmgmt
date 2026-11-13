@@ -8,7 +8,7 @@ From the `lg` breakpoint the navigation sits in a persistent dark sidebar (`#0a0
 
 The shell lives in each page layout, so the sidebar and header stay up while a `loading.tsx` skeleton stands in for the server data. Dashboard and insights still read their figures on the server. The rest of the till already loads its lists in the browser after the shell is on screen.
 
-Access is granted one person at a time. Victor selects a staff account, enables the required screens and actions, and explicitly allows biometrics when appropriate. Staff start with no operational grants. The owner retains all screens; protected finance and Activity cannot be delegated. Server checks enforce the current individual grants on each request.
+Access is granted one person at a time. Administrator selects a staff account, enables the required screens and actions, and explicitly allows biometrics when appropriate. Staff start with no operational grants. The owner retains all screens; protected finance and Activity cannot be delegated. Server checks enforce the current individual grants on each request.
 
 ## Sell
 
@@ -31,7 +31,7 @@ Lipa rows are ordered by `compareLipaUrgency`: recovery, then the late stages, o
 
 ## Authentication slice — current branch
 
-The sign-in journey is email → device passkey when available, or password → emailed verification on a new device. A verified device can use password alone as fallback. New accounts are created by Victor; staff have no operational permissions until he grants screens and actions individually in Access. Account security is reachable independently of operational grants, including for newly provisioned staff. Users without a permitted dashboard land in Account security rather than a forbidden dead end.
+The sign-in journey is email → device passkey when available, or password → emailed verification on a new device. A verified device can use password alone as fallback. New accounts are created by Administrator; staff have no operational permissions until he grants screens and actions individually in Access. Account security is reachable independently of operational grants, including for newly provisioned staff. Users without a permitted dashboard land in Account security rather than a forbidden dead end.
 
 Account security lists live verified devices, identifies the current device, offers enrollment after password confirmation, and gives an inline revoke confirmation with a safe Cancel action. Device sessions are checked in the database on every authenticated server request. Authentication events join Activity. Device inventory remains the existing physical-stock Devices module; login devices use a separate Account security destination.
 

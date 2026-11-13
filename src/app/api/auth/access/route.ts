@@ -9,7 +9,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 export async function GET() {
   const session = await auth();
   if (!session?.user) return json({ error: "Sign in first." }, 401);
-  if (session.user.role !== "OWNER") return json({ error: "Only Victor can manage access." }, 403);
+  if (session.user.role !== "OWNER") return json({ error: "Only the Administrator can manage access." }, 403);
   return json(await prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, status: true, accessExpiresAt: true, accessPages: true, accessCapabilities: true, biometricsAllowed: true, lockedAt: true }, orderBy: { name: "asc" } }));
 }
 const schema = z.object({ expiresAt: z.iso.datetime().nullable().optional(), password: z.string().min(1).max(256), userId: z.string().cuid(), pages: z.array(z.string()).max(30), capabilities: z.array(z.string()).max(20), biometricsAllowed: z.boolean(), unlock: z.boolean().default(false) });
@@ -17,7 +17,7 @@ export async function PUT(request: Request) {
   if (!sameOrigin(request)) return json({ error: "Access denied." }, 403);
   const session = await auth();
   if (!session?.user) return json({ error: "Sign in first." }, 401);
-  if (session.user.role !== "OWNER") return json({ error: "Only Victor can manage access." }, 403);
+  if (session.user.role !== "OWNER") return json({ error: "Only the Administrator can manage access." }, 403);
   const input = schema.safeParse(await request.json().catch(() => null));
   if (!input.success) return json({ error: "Check the selected permissions." }, 400);
   const actor = await prisma.user.findUnique({ where: { id: session.user.id } });

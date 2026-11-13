@@ -7,6 +7,7 @@ const keys = [
   "NEXTAUTH_TRUST_HOST",
   "INITIAL_OWNER_NAME",
   "INITIAL_OWNER_EMAIL",
+  "AUTH_OWNER_EMAIL",
   "INITIAL_OWNER_PASSWORD",
   "DATABASE_URL",
   "POSTGRES_DB",
@@ -62,9 +63,12 @@ const keys = [
   "OPENROUTER_MODEL",
   "AI_QUESTIONS_PER_HOUR"
 ];
+if (process.env.EXPECTED_OWNER_EMAIL && process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase() !== process.env.EXPECTED_OWNER_EMAIL.trim().toLowerCase()) {
+  throw new Error("The configured owner email does not match the requested administrator identity");
+}
 const lines = [];
 for (const key of keys) {
-  const value = process.env[key] ?? "";
+  const value = key === "AUTH_OWNER_EMAIL" ? (process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase() ?? "") : process.env[key] ?? "";
   if (/[\r\n\0]/.test(value)) throw new Error(`Runtime setting ${key} must be a single line`);
   lines.push(`${key}=${value}`);
 }

@@ -74,7 +74,7 @@ The actual local Next.js application was exercised in Chromium against an isolat
 | P1 security | No three-failure lockout, owner alert, or sign-in audit. | Atomic failure counting locks accounts, revokes devices, creates an owner inbox/email alert, and appends authentication events to Activity. Audited operator recovery handles owner lockout. | Implemented; lockout/alert/audit verified |
 | P1 security | No biometric reopening or verified passkey registration. | Platform WebAuthn with required user verification, canonical origin/RP checks, one-use challenges, credential counters, and device binding. Enrollment requires a password. | Registration and authentication verified with virtual hardware |
 | P1 security | Backgrounded workspaces remained active. | Immediate local lock plus a server lock beacon; reopening requires authentication. | Server lock verified; physical iOS lifecycle/offline behavior not verified |
-| P1 usability | Original login had no email-verification or passkey workflow, and directed access requests to a manager. | Clear passkey-first entry, password fallback, numeric code entry with autofill, preserved input on errors, truthful pending states, and Victor recovery guidance. | Actual running forms reviewed; current test evidence in results |
+| P1 usability | Original login had no email-verification or passkey workflow, and directed access requests to a manager. | Clear passkey-first entry, password fallback, numeric code entry with autofill, preserved input on errors, truthful pending states, and Administrator recovery guidance. | Actual running forms reviewed; current test evidence in results |
 | P1 usability | Newly created staff without screen grants could land on a forbidden dashboard. | Login chooses an authorized destination or Account security, which remains available without operational grants. | Policy tested; broader role-specific journeys remain partial |
 | P2 usability | Account-security screenshots exposed a stale “Role access” shell title and small header controls. | Label changed to Team access; frequent header controls have 44px minimum targets. | Revised screenshots checked |
 | P2 accessibility | Mobile navigation lacked modal semantics, focus containment, and Escape dismissal. | Labeled modal navigation, trapped Tab navigation, Escape dismissal, focus restoration. | Implemented; browser check included |
@@ -107,7 +107,7 @@ Screenshots use explicitly isolated fixture accounts and records. The Next.js de
 
 ## Rollout requirements
 
-Apply the migration through the established deployment process. Configure Victor's owner email, the canonical HTTPS application origin, authentication secret, and working email delivery before rollout. Old sessions must sign in again. Existing staff lose inherited operational authorization until Victor grants their individual screens/actions. Fresh installations seed NUH; existing branch records and stock are preserved rather than silently consolidated. A shop consolidation, if needed, requires an explicit data-migration decision.
+Apply the migration through the established deployment process. Configure Administrator's owner email, the canonical HTTPS application origin, authentication secret, and working email delivery before rollout. Old sessions must sign in again. Existing staff lose inherited operational authorization until Administrator grants their individual screens/actions. Fresh installations seed NUH; existing branch records and stock are preserved rather than silently consolidated. A shop consolidation, if needed, requires an explicit data-migration decision.
 
 
 ## Production rollout and sidebar coverage — 2026-11-13
@@ -126,3 +126,9 @@ Original GadgetHub artwork from the user-supplied app.gadgethubke.com is used on
 A dismissible install card provides native browser installation when `beforeinstallprompt` is available, and explicit Safari Add to Home Screen instructions on iPhone/iPad. It hides in installed mode, remembers dismissal for seven days, yields to sign-in input focus/dialogs, and is suspended during connection/update notices. It never labels a requested installation as completed.
 
 Browser evidence: `artifacts/branding-review`. Five scenarios pass: original logo/five-width layout, sign-in focus, persisted dismissal, installed-mode suppression, and native-prompt handling with a clean accessibility scan. The native event is simulated; actual OS installation remains a physical-device check. Existing provider and accounting-policy limits still apply.
+
+## Administrator terminology and identity configuration
+
+Hardcoded personal administrator references have been replaced by “Administrator” across sign-in/recovery, verification emails, account security, access management, operation approvals, documentation and isolated fixtures. The owner’s shell label is Administrator; actual account IDs, financial history and role permissions are preserved.
+
+At the account holder’s explicit request, seed defaults and the deployment owner-email secret use `aabere70@gmail.com`. Runtime `AUTH_OWNER_EMAIL` follows the configured `INITIAL_OWNER_EMAIL` to prevent a stale environment setting blocking sign-in. A targeted synchronization can assert the expected identity and, only when explicitly requested, exercise the real password-to-email-code flow. Provider acceptance is distinguished from inbox receipt and completed authentication; OTPs and credentials are never logged.

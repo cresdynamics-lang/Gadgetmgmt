@@ -47,7 +47,7 @@ Before any checkout call:
 8. Run relevant regression tests, lint, type checking, build; document limitations; commit and push auth branch.
 9. Broader operational modules remain separate vertical slices after authentication: complete sale/receipt journey, device lineage, deliveries and partner obligations, then accounting/support. Do not represent read-only desks as complete workflows.
 
-Migration deliberately removes inherited staff authorization: Victor must grant each account explicitly. Configure AUTH_OWNER_EMAIL (or INITIAL_OWNER_EMAIL), canonical APP_BASE_URL, and the existing email service before rollout. No production database changes are performed by this review.
+Migration deliberately removes inherited staff authorization: Administrator must grant each account explicitly. Configure AUTH_OWNER_EMAIL (or INITIAL_OWNER_EMAIL), canonical APP_BASE_URL, and the existing email service before rollout. No production database changes are performed by this review.
 
 Final auth verification: 18 end-to-end browser/security scenarios and 48 focused/regression checks pass. Fresh NUH seeding was exercised twice in the isolated migration database and retained exactly one shop. The migration applies to the original schema. See UX_QA_REPORT.md and artifacts/auth-review/results.json for scope and limits.
 
@@ -55,7 +55,7 @@ Final auth verification: 18 end-to-end browser/security scenarios and 48 focused
 
 The product target is now an installable PWA, not an Expo/native client. WebAuthn provides platform Face ID/fingerprint/device PIN; native-only backlog items are replaced by browser-supported acceptance tests. No offline payment or customer-data queue is introduced.
 
-Execution: (1) app-wide service worker, safe offline/install/update behavior, themes and bounded foreground sessions; (2) persistent repair/delivery/partner/trade-in and device histories; (3) owner expense/payroll/recurring/marketing records and exports; (4) permission expiry and finance boundaries; (5) transaction, API, accessibility and responsive browser verification. Preserve existing Lipa policies until Victor approves changes. Physical iPhone, actual push/email delivery, and production accounting-policy decisions remain external acceptance gates rather than fabricated test successes.
+Execution: (1) app-wide service worker, safe offline/install/update behavior, themes and bounded foreground sessions; (2) persistent repair/delivery/partner/trade-in and device histories; (3) owner expense/payroll/recurring/marketing records and exports; (4) permission expiry and finance boundaries; (5) transaction, API, accessibility and responsive browser verification. Preserve existing Lipa policies until Administrator approves changes. Physical iPhone, actual push/email delivery, and production accounting-policy decisions remain external acceptance gates rather than fabricated test successes.
 
 
 ### PWA pass implementation and verification
