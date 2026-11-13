@@ -108,3 +108,10 @@ Screenshots use explicitly isolated fixture accounts and records. The Next.js de
 ## Rollout requirements
 
 Apply the migration through the established deployment process. Configure Victor's owner email, the canonical HTTPS application origin, authentication secret, and working email delivery before rollout. Old sessions must sign in again. Existing staff lose inherited operational authorization until Victor grants their individual screens/actions. Fresh installations seed NUH; existing branch records and stock are preserved rather than silently consolidated. A shop consolidation, if needed, requires an explicit data-migration decision.
+
+
+## Production rollout and sidebar coverage — 2026-11-13
+
+The release preflight now verifies every Prisma model column against the production database before startup, applies absent historical migrations in order after a private backup, and verifies a live notification-worker heartbeat. Production was missing notification, physical-device and legacy role-template prerequisites; additive migrations preserve existing records and individual grants.
+
+`AUTH_REVIEW_PRODUCTION=1 PWA_REVIEW=1 node scripts/auth/review.mjs` runs the compiled production build against isolated fixtures. The sidebar suite explicitly covers all 22 navigation entries plus Account security, verifies visible task content/headings/controls, checks browser runtime exceptions, and evaluates five widths in both themes. Live production data is not used to create test transactions. Real installed-iPhone/provider checks remain external acceptance gates.

@@ -14,10 +14,11 @@ const run = Date.now().toString(36);
 const email = `victor-${run}@example.test`;
 const password = 'Auth-review-password-2026!';
 const mailFile = `/tmp/gadgethub-auth-mail-${run}.json`;
-const artifactDir = resolve(process.env.PWA_REVIEW==='1'?'artifacts/pwa-review':'artifacts/auth-review');
+const productionReview=process.env.AUTH_REVIEW_PRODUCTION==='1';
+const artifactDir = resolve(productionReview?'artifacts/production-review':process.env.PWA_REVIEW==='1'?'artifacts/pwa-review':'artifacts/auth-review');
 mkdirSync(artifactDir, { recursive: true });
 const logFile = `/tmp/gadgethub-auth-server-${run}.log`;
-const server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--port', '3012'], { env: { ...process.env, DATABASE_URL: database, NEXT_DIST_DIR: process.env.PWA_REVIEW==='1'?'.next-pwa-review':'.next-auth-test-clean', APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base, AUTH_OWNER_EMAIL: email, NEXTAUTH_SECRET: 'isolated-review-secret-64-characters-long-for-authentication-only-2026', RESEND_API_KEY: 'auth-review-fake-key', EMAIL_FROM: 'GadgetHub <auth@example.test>', AUTH_REVIEW_MAIL_FILE: mailFile, AUTH_REVIEW_AI_FILE: process.env.AUTH_REVIEW_AI_FILE||`/tmp/gadgethub-ai-${run}.json`, OPENAI_API_KEY:'auth-review-fake-key', NODE_OPTIONS: `--import=${resolve('scripts/auth/test-bootstrap.mjs')}` }, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = spawn(process.execPath, ['node_modules/next/dist/bin/next', productionReview?'start':'dev', '--port', '3012'], { env: { ...process.env, DATABASE_URL: database, NEXT_DIST_DIR: productionReview?'.next':process.env.PWA_REVIEW==='1'?'.next-pwa-review':'.next-auth-test-clean', APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base, AUTH_OWNER_EMAIL: email, NEXTAUTH_SECRET: 'isolated-review-secret-64-characters-long-for-authentication-only-2026', RESEND_API_KEY: 'auth-review-fake-key', EMAIL_FROM: 'GadgetHub <auth@example.test>', AUTH_REVIEW_MAIL_FILE: mailFile, AUTH_REVIEW_AI_FILE: process.env.AUTH_REVIEW_AI_FILE||`/tmp/gadgethub-ai-${run}.json`, OPENAI_API_KEY:'auth-review-fake-key', NODE_OPTIONS: `--import=${resolve('scripts/auth/test-bootstrap.mjs')}` }, stdio: ['ignore', 'pipe', 'pipe'] });
 let logs = '';
 for (const stream of [server.stdout, server.stderr]) stream.on('data', chunk => { logs += chunk; writeFileSync(logFile, logs); });
 let browser;
@@ -37,13 +38,15 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   page.setDefaultTimeout(60000);
-  page.on('pageerror', error => console.log('BROWSER ERROR',error.message));
+  const runtimeErrors=[];page.on('pageerror', error => {runtimeErrors.push(error.message);console.log('BROWSER ERROR',error.message);});
   page.on('console', message => { if(message.type()==='error') console.log('BROWSER CONSOLE',message.text().slice(0,200)); });
   async function openWorkspace(name,path) {
     await page.getByRole('button',{name:'More',exact:true}).click();
     await page.getByRole('dialog',{name:'Navigation',exact:true}).getByRole('link',{name,exact:true}).click();
     await page.waitForURL(`**${path}`,{timeout:120000});
     await page.waitForLoadState('networkidle');
+    assert.deepEqual(runtimeErrors,[],`Runtime error on ${path}`);
+    assert.equal(await page.getByText('Application error:',{exact:false}).count(),0);
   }
   const post = (action, extra = {}) => context.request.post(base+'/api/auth/security', { headers: { Origin: base }, data: { action, ...extra } });
   for (const width of [375,390,430,768,1440]) {
