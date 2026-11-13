@@ -22,7 +22,7 @@ function Change({ value }: { value: number | null }) {
 export default async function InsightsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!(await canAccessPage(session.user.role, "/insights"))) notFound();
+  if (!(await canAccessPage(session.user.role, "/insights", session.user.id))) notFound();
   if (session.user.role !== "OWNER" && session.user.role !== "BRANCH_MANAGER") notFound();
   const scope = session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" };
   const data = presentBusinessInsights(await getBusinessInsights(scope), session.user.role);

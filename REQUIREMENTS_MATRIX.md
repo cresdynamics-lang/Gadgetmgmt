@@ -1,6 +1,6 @@
 # Requirements matrix
 
-Source of truth: `Gadget_Hub_Operations_System_v4.pdf`. The HTML prototype is a walkthrough. Where it disagrees with the running Next.js app or with an explicit shop decision, the app and that decision win. This pass did not replace the web app with React Native.
+Requirements authority: the user’s supplied master requirements and GitHub issue #29, including its comments. The named PDF and HTML are missing; the user authorized product judgment on 2026-11-13. Earlier rows below are historical implementation notes, not evidence that those files were inspected. Confirmed PDF business decisions take precedence when supplied. The Next.js web client remains; native iOS is a separate, unimplemented client.
 
 | Area | Spec | Decision | This branch |
 | --- | --- | --- | --- |
@@ -18,3 +18,43 @@ Source of truth: `Gadget_Hub_Operations_System_v4.pdf`. The HTML prototype is a 
 | Bank transfer tender | Named in the spec. Which accounts are still open. | Stanbic is the sales API, not a new staff tender type. | No `BANK` enum and no migration. |
 
 Per-account Lipa balances stay on the collection screen and in the credit API because a cashier cannot collect without the amount due. Shop-wide Lipa totals, revenue, profit, cost, and stock value do not.
+
+
+## Authentication branch traceability — 2026-11-13
+
+Status is conservative: source review alone does not establish workflow completion.
+
+| ID | Source | Feature | Role | Workflow | Business rule | UI location | Status | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AUTH-01 | #29 comment: new device | Password + emailed code | All | Password → 6-digit email code → session | Active account; one-use code; 5-minute expiry | Sign in | Implemented; evidence in auth-review/results.json | Wrong password/code denied; expired/replayed code denied; valid code signs in |
+| AUTH-02 | #29; master §8 | Face ID / passkey / device PIN | Owner; approved staff | Verify device → confirm password → enroll → OS verification | Required WebAuthn user verification; origin/RP checks; device-bound credential | Sign in; Account security | Implemented; evidence in auth-review/results.json | Virtual authenticator registration and sign-in; wrong origin/signature denied |
+| AUTH-03 | #29 | Device list and instant revoke | Owner; own devices for staff | List → revoke confirmation | Server rejects revoked devices on next request | Account security | Implemented; evidence in auth-review/results.json | Revoke session then call protected API; expect 401 |
+| AUTH-04 | #29 | Individual permission grants | Owner | Select person → screens/actions → save | Staff start with no grants; role grants do not authorize | Access | Implemented; evidence in auth-review/results.json | Direct API denied without individual capability; next request reflects removal |
+| AUTH-05 | #29 comment: three failures | Lockout and owner alert | All | Three failures → locked → owner identity check/unlock | Database atomic failure count; active sessions revoked | Sign in; Access; Alerts | Implemented; evidence in auth-review/results.json | Three wrong passwords/codes lock; owner alert created; unlock recovers |
+| AUTH-06 | #29 comment: activity | Sign-in audit | Owner | Sign in → Activity | Append-only sign-in/security events | Activity | Implemented; evidence in auth-review/results.json | Successful and failed sign-ins appear with user/device |
+| AUTH-07 | #29; master §6 | Victor-only finance | Owner | Configured identity signs in | OWNER requires configured email; other owners cannot authenticate | All finance paths | Partial; existing redaction tests | Staff JSON omits unitCost and protected aggregates |
+| AUTH-08 | #29 | Single NUH shop; future branches | Owner | Seed new installation | Do not rename or merge existing shops or move stock | Seed | Verified fresh and repeated seeding; one NUH shop | Fresh seed creates NUH only; existing branch records preserved |
+| AUTH-09 | master §8 | Foreground lock | All | Background → lock → authenticate to reopen | Must block server operations, not only hide content | Shell | Partial; server lock verified, physical lifecycle pending | Background then protected request is denied |
+| AUTH-10 | master §8 | Sensitive-action reauthentication | Owner | Fresh verification before access/revoke | Exact native policy absent | Security administration | Partial; enrollment/grants/revoke require password; complete policy pending | Stale session cannot perform privileged mutation without fresh verification |
+| IOS-01 | master §8, §14 | Native iPhone app | All | Native biometrics and secure storage | WebAuthn web client is not a native app | Separate client | Not implemented | Physical iPhone and native lifecycle tests |
+| POS-01 | master §7A | Scan → customer → payment → receipt | Cashier | Current Sell workflow | Eligible physical unit; payment validation; duplicate safety | Sell | Partial; existing tests | Complete persisted sale/receipt journey with database |
+| LIPA-01 | master §7B | Financing and collections | Cashier/manager | Quote → deposit → schedule → collect | Rates unapproved; 40% / 1–6 months conflict with live policy | Lipa | Conflicting / business decision | Approved policy drives server and client totals |
+| TRADE-01 | master §7C | Inspection and trade-in | Authorized staff | Identity → locks → condition → valuation | Reject locked/stolen/mismatched devices | Trade-ins | Missing | Persist inspection and device lineage; reject invalid locks |
+| INV-01 | master §7D | Physical-device passport | Inventory | Receive → identify → move → history | Variant differs from unique device; append-only lineage | Stock / Devices | Partial | Same identity survives repair/sale/return/partner movements |
+| REP-01 | master §7E | Repair operations | Inventory/manager | Assign → due → return inspection | Default turnaround needs source confirmation | Repairs | Partial read view | Persist assignment, inspection, cost permissions and stock return |
+| DEL-01 | master §7F | Delivery and COD accountability | Cashier/manager | Handover → proof → payment → close | Named responsibility for device and money | Deliveries | Missing write workflow | Cannot close without required proof/payment |
+| PART-01 | master §7G | Consignment and partner settlement | Manager/owner | Handover → due → return/settle | Preserve device ownership/history | Partners | Missing write workflow | Persist ownership, obligations, returns and audit |
+| FIN-01 | master §7H | Owner accounting and payroll | Owner | Authoritative entries → reports | Sales ≠ profit; corrections auditable | Finance / Expenses | Partial / payroll missing | Reconcile totals to entries; unauthorized payload inspection |
+| PLAN-01 | master §7I | Variant restocking | Inventory/owner | Review shortage → reasoning | No invented reorder thresholds | Planner | Partial | Variant and availability calculations match stored facts |
+| AI-01 | master §7J | Read-only authorized AI | Permitted staff | Ask → sourced answer → record | Redacted backend DTO; no writes | Assistant / Insights | Partial | Restricted data absent from model inputs and responses |
+| SUPPORT-01 | master §7K | Customers, performance, notifications | Permitted staff | Live lookup / message / review | Scope by individual grants and branch | Existing desks | Partial | Role/branch integration tests and actual browser tasks |
+| SUPPORT-02 | master §7K | Marketing, recurring bills, exports | Owner/authorized staff | Record → reconcile → report | Approval/accounting rules need source | Various | Missing or unverified | Source-specific acceptance tests required |
+| UX-01 | master §13 | Responsive / accessible interaction | All | 375/390/430/768/1440 widths | No clipped controls; 44px targets; keyboard/focus/error labels | Auth slice | Auth slice visually reviewed; broader app unverified | Browser screenshots, overflow, keyboard and error-state checks |
+
+### Open decisions and source limits
+
+- PIN uses the operating system’s screen-lock verification via WebAuthn; an independent application PIN is not implemented. Its length, recovery, and lock policy are unspecified.
+- WebAuthn may use Face ID, fingerprint, or device PIN. A website cannot require Face ID exclusively or inspect biometric data.
+- Desktop passkeys are enabled by platform capability; #29’s later-release wording conflicts with the broader current request.
+- Temporary permissions and exact step-up / foreground-lock policy require the missing source or a confirmed business decision.
+- Neither live customer data nor illustrative source values are used as fixtures. No finance rates or accounting policies are invented.

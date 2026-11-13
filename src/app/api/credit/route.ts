@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot access credit accounts." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit", session.user.id))) return NextResponse.json({ error: "Your role cannot access credit accounts." }, { status: 403 });
 
   const plans = await prisma.creditPlan.findMany({
     where: session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" },
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot record credit payments." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit", session.user.id))) return NextResponse.json({ error: "Your role cannot record credit payments." }, { status: 403 });
   const branchId = session.user.branchId;
   if (!branchId && session.user.role !== "OWNER") return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 

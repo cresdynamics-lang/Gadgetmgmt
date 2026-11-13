@@ -8,7 +8,7 @@ From the `lg` breakpoint the navigation sits in a persistent dark sidebar (`#0a0
 
 The shell lives in each page layout, so the sidebar and header stay up while a `loading.tsx` skeleton stands in for the server data. Dashboard and insights still read their figures on the server. The rest of the till already loads its lists in the browser after the shell is on screen.
 
-Role access is one role at a time. The owner picks Owner, Branch manager, Cashier, or Inventory lead, then turns screens and actions on for that role. Every screen stays with the owner. Insights stays with the owner and branch managers. Save still writes all four roles together, and the server still refuses a screen that is off.
+Access is granted one person at a time. Victor selects a staff account, enables the required screens and actions, and explicitly allows biometrics when appropriate. Staff start with no operational grants. The owner retains all screens; protected finance and Activity cannot be delegated. Server checks enforce the current individual grants on each request.
 
 ## Sell
 
@@ -27,3 +27,12 @@ Lipa rows are ordered by `compareLipaUrgency`: recovery, then the late stages, o
 ## Money boundary
 
 `canViewFinance` is true only for `OWNER`. `presentBusinessInsights` nulls revenue, collected money, profit, daily money, product sales value, Lipa overdue balance, and Lipa age buckets for every other role. Counts and units remain. `omitSaleCost` removes `unitCost` from sale JSON. The insights model receives that redacted payload and is told not to reconstruct the hidden figures. The dashboard does not render those amounts, and the AI briefing is limited to the owner and branch managers.
+
+
+## Authentication slice — current branch
+
+The sign-in journey is email → device passkey when available, or password → emailed verification on a new device. A verified device can use password alone as fallback. New accounts are created by Victor; staff have no operational permissions until he grants screens and actions individually in Access. Account security is reachable independently of operational grants, including for newly provisioned staff. Users without a permitted dashboard land in Account security rather than a forbidden dead end.
+
+Account security lists live verified devices, identifies the current device, offers enrollment after password confirmation, and gives an inline revoke confirmation with a safe Cancel action. Device sessions are checked in the database on every authenticated server request. Authentication events join Activity. Device inventory remains the existing physical-stock Devices module; login devices use a separate Account security destination.
+
+The web client uses platform WebAuthn with user verification. It does not collect Face ID images, device PINs, or claim native iOS behavior. Security-sensitive administration is separate from operational sales and inventory paths. Individual user grants supersede role-wide authorization.

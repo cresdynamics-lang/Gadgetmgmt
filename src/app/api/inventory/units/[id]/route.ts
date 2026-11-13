@@ -20,7 +20,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403, headers: noStore });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403, headers: noStore });
   if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
     return NextResponse.json({ error: "Your role cannot move devices." }, { status: 403, headers: noStore });

@@ -14,7 +14,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role) || !(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Only managers can review reschedule requests." }, { status: 403 });
+  if (!(["OWNER", "BRANCH_MANAGER"] as string[]).includes(session.user.role) || !(await canUseCapability(session.user.role, "credit", session.user.id))) return NextResponse.json({ error: "Only managers can review reschedule requests." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose approve or reject." }, { status: 400 });
   const { requestId } = await params;

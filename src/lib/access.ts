@@ -178,6 +178,7 @@ export function isOwnerEntitlementPath(pathname: string) {
 }
 
 export function canAccessPage(role: string, pathname: string, grants?: AccessMap) {
+  if (pathname === "/account" || pathname.startsWith("/account/")) return isAppRole(role);
   if (isOwnerEntitlementPath(pathname)) return role === "OWNER";
   const stored = grants && isAppRole(role) ? grants[role]?.pages : undefined;
   const raw = stored ?? (isAppRole(role) ? defaultRoleGrants[role].pages : []);

@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot access inventory." }, { status: 403, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot access inventory." }, { status: 403, headers: noStore });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403, headers: noStore });
 
   const canViewCost = session.user.role === "OWNER";
@@ -82,7 +82,7 @@ export async function PUT(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
     return NextResponse.json({ error: "Your role cannot set up products." }, { status: 403 });
@@ -151,7 +151,7 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "inventory"))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) return NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403 });
   if (!session.user.branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
   if (!["OWNER", "BRANCH_MANAGER", "INVENTORY_LEAD"].includes(session.user.role)) {
     return NextResponse.json({ error: "Your role cannot receive inventory." }, { status: 403 });

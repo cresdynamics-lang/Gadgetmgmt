@@ -900,3 +900,63 @@ header a:focus-visible { outline-color: var(--signal); }
   .workspace-content .sales-product-card,
   .workspace-content .staff-metrics > div { transition: none; }
 }
+
+/* Authentication and security share a compact, accessible component vocabulary. */
+.security-root, .security-stack {
+  --security-surface: #fff;
+  --security-text: #202521;
+  --security-muted: #606862;
+  --security-border: #dce2dc;
+  --security-soft: #edf5f0;
+  color: var(--security-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.security-root { min-height: 100dvh; background: #f4f6f3; padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); display: grid; place-items: center; }
+.security-login { width: 100%; max-width: 420px; }
+.security-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 40px; font-size: 19px; font-weight: 650; letter-spacing: -.035em; }
+.security-brand-mark { display: grid; place-items: center; height: 40px; width: 40px; border-radius: 12px; color: #fff; background: #0a7d56; }
+.security-stack { display: grid; gap: 24px; }
+.security-stack h2, .security-login h1 { margin: 0; font-size: clamp(28px, 5vw, 34px); font-weight: 650; letter-spacing: -.045em; line-height: 1.15; }
+.security-stack h3 { font-size: 19px; font-weight: 650; letter-spacing: -.025em; margin: 0; }
+.security-eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; font-weight: 600; color: var(--security-muted); }
+.security-detail { font-size: 14px; line-height: 1.6; color: var(--security-muted); margin-top: 8px; overflow-wrap: anywhere; }
+.security-panel { padding: 24px; border: 1px solid var(--security-border); border-radius: 20px; background: var(--security-surface); display: grid; gap: 16px; }
+.security-panel legend { float: left; width: 100%; font-size: 19px; font-weight: 650; }
+.security-field { display: grid; gap: 8px; font-size: 14px; font-weight: 600; }
+.security-field input, .security-field select { min-height: 48px; min-width: 0; width: 100%; padding: 12px 14px; border: 1px solid var(--security-border); border-radius: 12px; background: var(--security-surface); color: var(--security-text); font-size: 16px; font-weight: 400; }
+.security-field input:focus, .security-field select:focus { outline: 2px solid #0a7d56; outline-offset: 2px; }
+.security-primary, .security-secondary, .security-danger { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 20px; border-radius: 12px; font-weight: 600; font-size: 16px; text-align: center; }
+.security-primary { background: #0a7d56; color: #fff; }
+.security-primary:hover { background: #096846; }
+.security-secondary { border: 1px solid var(--security-border); background: var(--security-surface); color: var(--security-text); }
+.security-danger { background: #b3261e; color: #fff; }
+.security-primary:disabled, .security-secondary:disabled, .security-danger:disabled { opacity: .6; cursor: wait; }
+.security-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 4px; font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.security-error, .security-notice { border-radius: 12px; padding: 14px 16px; font-size: 14px; overflow-wrap: anywhere; }
+.security-error { background: #fdeceb; color: #9f2019; }
+.security-notice { background: var(--security-soft); color: #155639; }
+.security-device-list { margin: 0; padding: 0; list-style: none; }
+.security-device-list > li { padding: 20px 0; border-top: 1px solid var(--security-border); }
+.security-device-list > li:first-child { padding-top: 4px; border-top: 0; }
+.security-badge { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 20px; font-size: 12px; font-weight: 500; color: #155639; background: var(--security-soft); }
+.security-revoke { margin-top: 8px; color: #b3261e; }
+.security-confirm { display: grid; gap: 12px; margin-top: 12px; font-size: 14px; }
+.security-check { display: flex; gap: 12px; align-items: center; min-height: 48px; padding: 8px 0; font-size: 15px; cursor: pointer; }
+.security-check input { width: 20px; height: 20px; flex-shrink: 0; accent-color: #0a7d56; }
+.security-divider { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--security-muted); }
+.security-divider::before, .security-divider::after { content: ""; height: 1px; flex: 1; background: var(--security-border); }
+.security-code { font-size: 24px !important; letter-spacing: .4em; font-variant-numeric: tabular-nums; }
+@media (min-width: 640px) { .security-login { background: var(--security-surface); border: 1px solid var(--security-border); border-radius: 24px; padding: 36px; max-width: 464px; box-shadow: 0 12px 40px rgb(24 40 30 / 4%); } }
+@media (prefers-color-scheme: dark) {
+  .security-root, .security-root .security-stack { --security-surface: #202623; --security-text: #f0f4f0; --security-muted: #b4bfb6; --security-border: #424e46; --security-soft: #253d30; }
+  .security-root { background: #141a16; }
+  .security-root .security-notice, .security-root .security-badge { color: #b8e5cb; }
+  .security-root .security-error { background: #452420; color: #ffbcb5; }
+  .security-root .security-revoke { color: #ffbcb5; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }
+
+/* Frequent shell actions retain a full touch target on the security journeys. */
+header button, .side-nav nav a { min-height: 44px; min-width: 44px; }

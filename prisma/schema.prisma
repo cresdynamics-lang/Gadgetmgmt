@@ -165,6 +165,14 @@ model User {
   id                        String                    @id @default(cuid())
   name                      String
   email                     String                    @unique
+  failedSignIns             Int                       @default(0)
+  lockedAt                  DateTime?
+  biometricsAllowed         Boolean                   @default(false)
+  accessPages               String[]                  @default([])
+  accessCapabilities        String[]                  @default([])
+  authDevices               AuthDevice[]
+  authChallenges            AuthChallenge[]
+  authEvents                AuthEvent[]
   passwordHash              String
   role                      UserRole                  @default(CASHIER)
   status                    UserStatus                @default(ACTIVE)
@@ -696,4 +704,51 @@ model NotificationRateLimit {
   key         String   @id
   windowStart DateTime
   count       Int
+}
+
+
+model AuthDevice {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  label String
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  revokedAt DateTime?
+  lockedAt DateTime?
+  passkeys AuthPasskey[]
+  @@index([userId, revokedAt])
+}
+
+model AuthPasskey {
+  id String @id
+  deviceId String
+  device AuthDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  publicKey Bytes
+  counter BigInt @default(0)
+  transports String[]
+  createdAt DateTime @default(now())
+}
+
+model AuthChallenge {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind String
+  value String
+  deviceId String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId, kind, createdAt])
+}
+
+model AuthEvent {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  action String
+  deviceLabel String
+  createdAt DateTime @default(now())
+  @@index([createdAt])
 }

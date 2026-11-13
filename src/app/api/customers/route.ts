@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot access customers." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "customers", session.user.id))) return NextResponse.json({ error: "Your role cannot access customers." }, { status: 403 });
 
   const params = new URL(request.url).searchParams;
   if (["q", "email", "phone", "name"].some((key) => params.has(key))) {
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "customers"))) return NextResponse.json({ error: "Your role cannot create customers." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "customers", session.user.id))) return NextResponse.json({ error: "Your role cannot create customers." }, { status: 403 });
 
   const parsed = customerSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, phone, email and credit limit." }, { status: 400 });

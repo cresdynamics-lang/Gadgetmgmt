@@ -15,12 +15,14 @@ const movementLabel: Record<string, string> = {
 
 export default async function ActivityPage() {
   await requirePage("/activity");
-  const [sales, movements, alerts] = await Promise.all([
+  const [sales, movements, alerts, signIns] = await Promise.all([
     prisma.sale.findMany({ orderBy: { createdAt: "desc" }, take: 20, include: { cashier: { select: { name: true } } } }),
     prisma.inventoryMovement.findMany({ orderBy: { createdAt: "desc" }, take: 20, include: { product: { select: { name: true } }, user: { select: { name: true } } } }),
     prisma.staffAlert.findMany({ orderBy: { createdAt: "desc" }, take: 20, select: { id: true, title: true, createdAt: true, sender: { select: { name: true } } } }),
+    prisma.authEvent.findMany({ orderBy: { createdAt: "desc" }, take: 40, include: { user: { select: { name: true } } } }),
   ]);
   const events = [
+    ...signIns.map(event => ({ id: `auth-${event.id}`, at: event.createdAt, title: event.action, detail: `${event.user.name} · ${event.deviceLabel}` })),
     ...sales.map((sale) => ({ id: `sale-${sale.id}`, at: sale.createdAt, title: `Sale ${sale.invoiceNumber}`, detail: `${money(sale.total)} · ${sale.cashier.name}` })),
     ...movements.map((movement) => ({ id: `move-${movement.id}`, at: movement.createdAt, title: movementLabel[movement.type] ?? "Stock change", detail: `${movement.product.name} · ${movement.quantity} · ${movement.user.name}` })),
     ...alerts.map((alert) => ({ id: `alert-${alert.id}`, at: alert.createdAt, title: alert.title, detail: alert.sender?.name ?? "System" })),

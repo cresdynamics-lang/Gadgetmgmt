@@ -18,6 +18,6 @@ export const navItems = [
   { label: "Staff & Users", href: "/staff" },
   { label: "Activity", href: "/activity" },
   { label: "Messages & alerts", href: "/notifications" },
-  { label: "Role access", href: "/access" },
+  { label: "Team access", href: "/access" },
   { label: "Settings", href: "/settings" },
 ];

@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
-import { EntitlementEditor } from "./entitlement-editor";
+import { IndividualEditor } from "./individual-editor";
 
 export const instant = false;
 
@@ -11,6 +11,6 @@ export default async function AccessPage() {
   if (session.user.role !== "OWNER") notFound();
 
   return (
-    <EntitlementEditor />
+    <IndividualEditor />
   );
 }

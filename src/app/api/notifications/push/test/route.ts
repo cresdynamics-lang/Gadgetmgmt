@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   return notificationApi(async () => {
     const session = await auth();
     if (!session?.user) return Response.json({ error: "Authentication required" }, { status: 401 });
-    if (!sameOrigin(request) || !(await canAccessPage(session.user.role, "/notifications"))) return Response.json({ error: "Access denied" }, { status: 403 });
+    if (!sameOrigin(request) || !(await canAccessPage(session.user.role, "/notifications", session.user.id))) return Response.json({ error: "Access denied" }, { status: 403 });
     await limitNotificationAction(session.user.id, "push-test", 5);
     const input = z.object({ requestId: z.uuid() }).safeParse(await readNotificationJson(request));
     if (!input.success) return Response.json({ error: "A valid test request is required." }, { status: 400 });

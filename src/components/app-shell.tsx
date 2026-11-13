@@ -53,6 +53,7 @@ const iconByHref: Record<string, typeof LayoutDashboard> = {
 
 function Navigation({ pathname, role, grants, close }: { pathname: string; role: string; grants?: AccessMap; close?: () => void }) {
   return <nav aria-label="Main navigation" className="space-y-1.5">
+    <Link href="/account" onClick={close} className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-medium text-[#c9c9c4] hover:bg-[#1a1a19]"><ShieldCheck size={18} aria-hidden="true"/>Account security</Link>
     <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8a8a85]">Workspace</p>
     {navItems.filter(({ href }) => canAccessPage(role, href, grants)).map(({ label, href }) => {
       const Icon = iconByHref[href] ?? Package;
@@ -70,10 +71,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
+  const [screenLocked, setScreenLocked] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [launcherQuery, setLauncherQuery] = useState("");
   const [activeCommand, setActiveCommand] = useState(0);
+  const menuDialog = useRef<HTMLDivElement>(null);
   const launcherInput = useRef<HTMLInputElement>(null);
   const page = navItems.find(({ href }) => pathname === href || (href !== "/dashboard" && pathname.startsWith(href)));
   const displayName = session?.user?.name ?? "Team member";
@@ -108,11 +111,46 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.cancelAnimationFrame(frame);
   }, [launcherOpen, launcherQuery]);
 
+  useEffect(() => {
+    let locked = false;
+    const lockWhenHidden = () => {
+      if (document.visibilityState === "hidden") {
+        locked = true;
+        setScreenLocked(true);
+        navigator.sendBeacon("/api/auth/lock", new Blob(["{}"], { type: "application/json" }));
+      } else if (locked) {
+        window.location.replace(`/login?callbackUrl=${encodeURIComponent(window.location.pathname)}`);
+      }
+    };
+    document.addEventListener("visibilitychange", lockWhenHidden);
+    return () => document.removeEventListener("visibilitychange", lockWhenHidden);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const frame = requestAnimationFrame(() => menuDialog.current?.querySelector<HTMLElement>("button, a")?.focus());
+    const trap = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setMenuOpen(false); return; }
+      if (event.key !== "Tab") return;
+      const items = menuDialog.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])");
+      if (!items?.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", trap);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("keydown", trap); previous?.focus(); };
+  }, [menuOpen]);
+
   function chooseCommand(href: string) {
     setLauncherOpen(false);
     setLauncherQuery("");
     router.push(href);
   }
+
+  if (screenLocked) return <div className="security-root"><div className="security-login security-stack"><ShieldCheck aria-hidden="true"/><h1>Workspace locked</h1><p>Sign in again to return to your work.</p><Link className="security-primary" href="/login">Unlock workspace</Link></div></div>;
 
   return <div className="fixed inset-0 flex overflow-hidden bg-[#f4f4f2] text-[#0a0a0a]">
       <aside className="side-nav hidden h-full w-[248px] shrink-0 flex-col bg-[#0a0a0a] p-4 text-white lg:flex">
@@ -127,11 +165,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" onClick={() => void signOut({ redirectTo: "/login" })} aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button>
         </div>
       </aside>
-      {menuOpen && <div className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#0a0a0a]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full max-h-[100dvh] w-[290px] max-w-[85vw] flex-col bg-[#0a0a0a] p-4 text-white shadow-2xl"><div className="mb-8 flex shrink-0 items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border-2 border-white text-white"><Package className="h-5 w-5"/></span><span className="text-base font-semibold text-white">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><div className="side-nav-links min-h-0 flex-1"><Navigation pathname={pathname} role={role} grants={grants} close={() => setMenuOpen(false)}/></div><div className="mt-4 flex shrink-0 items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void signOut({ redirectTo: "/login" })} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
+      {menuOpen && <div ref={menuDialog} role="dialog" aria-modal="true" aria-label="Navigation" className="fixed inset-0 z-50 flex"><button aria-label="Close navigation" className="absolute inset-0 bg-[#0a0a0a]/55 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)}/><aside className="relative flex h-full max-h-[100dvh] w-[290px] max-w-[85vw] flex-col bg-[#0a0a0a] p-4 text-white shadow-2xl"><div className="mb-8 flex shrink-0 items-center justify-between px-2"><Link href="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border-2 border-white text-white"><Package className="h-5 w-5"/></span><span className="text-base font-semibold text-white">GadgetHub</span></Link><button onClick={() => setMenuOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4"/></button></div><div className="side-nav-links min-h-0 flex-1"><Navigation pathname={pathname} role={role} grants={grants} close={() => setMenuOpen(false)}/></div><div className="mt-4 flex shrink-0 items-center justify-between border-t border-white/10 px-2 pt-4"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white/80">{displayName}</p><p className="mt-1 truncate text-[10px] text-white/45">{session?.user.branchName ?? "No branch assigned"}</p></div><button onClick={() => void signOut({ redirectTo: "/login" })} title="Sign out" aria-label={`Sign out ${displayName}`} className="rounded-lg p-2 text-white/55 hover:bg-white/10 hover:text-white"><LogOut className="h-4 w-4"/></button></div></aside></div>}
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="z-20 flex min-h-[76px] shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-white px-4 sm:px-6 lg:px-9">
-          <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e6e6e2] bg-white text-[#111111] shadow-sm transition hover:bg-[#f4f4f2] lg:hidden"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#6b6b66] sm:flex"><span>GadgetHub</span><span className="text-[#6b6b66]">/</span><span className="text-[#111111]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#111111] sm:mt-1 sm:text-[21px]">{page?.label ?? "Dashboard"}</h1></div></div>
+          <div className="flex min-w-0 items-center gap-3"><button type="button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e6e6e2] bg-white text-[#111111] shadow-sm transition hover:bg-[#f4f4f2] lg:hidden"><Menu className="h-[18px] w-[18px]"/></button><div className="min-w-0"><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[.18em] text-[#6b6b66] sm:flex"><span>GadgetHub</span><span className="text-[#6b6b66]">/</span><span className="text-[#111111]">Operations</span></div><h1 className="truncate text-[19px] font-semibold tracking-[-.035em] text-[#111111] sm:mt-1 sm:text-[21px]">{page?.label ?? (pathname === "/account" ? "Account security" : "Dashboard")}</h1></div></div>
           <div className="flex items-center gap-2 sm:gap-3"><NotificationBell /><button type="button" onClick={() => { setActiveCommand(0); setLauncherOpen(true); setLauncherQuery(""); }} aria-label="Open quick navigation" className="flex h-9 items-center gap-2 rounded-xl border border-[var(--border)] bg-white px-2.5 text-[#111111] transition hover:border-[var(--signal)] hover:bg-[#ffffff] sm:px-3"><Search className="h-3.5 w-3.5"/><span className="hidden text-[11px] font-medium sm:inline">Jump to anything</span><kbd className="hidden rounded-md border border-[var(--border)] bg-[#f4f4f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#111111] sm:inline">⌘ K</kbd></button><div className="hidden items-center gap-2 rounded-full border border-[var(--border)] bg-[#ffffff] px-3 py-2 text-[11px] font-medium text-[#111111] md:flex"><span className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]"/>{session?.user.branchName ?? (role === "OWNER" ? "All branches" : "Branch not assigned")}</div><div className="hidden h-8 w-px bg-[var(--border)] sm:block"/><div className="flex items-center gap-2 sm:hidden"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span></div><div className="hidden items-center gap-2 sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent)]">{initials}</span><span className="hidden max-w-28 truncate text-xs font-semibold text-[#111111] xl:block">{displayName}</span><button type="button" onClick={() => void signOut({ redirectTo: "/login" })} aria-label={`Sign out ${displayName}`} className="inline-flex items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold text-[#111111] transition hover:bg-[#f4f4f2]"><LogOut className="h-3.5 w-3.5"/>Sign out</button></div></div>
         </header>
         <div className="app-scroll min-h-0 flex-1 overflow-y-auto pb-[4.75rem] lg:pb-0">

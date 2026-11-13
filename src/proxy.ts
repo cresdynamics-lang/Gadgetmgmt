@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { canAccessPage, hasSensitiveQuery, isOwnerEntitlementPath, isSensitiveQueryKey, publicAppUrl, safeInternalPath } from "@/lib/access";
-import { getAccessMap } from "@/lib/entitlements";
+import { sessionGrants } from "@/lib/access";
 
 function redirectTo(location: string) {
   return new Response(null, {
@@ -34,7 +34,7 @@ export default auth(async (request) => {
   if (request.auth?.user && pathname !== "/login" && !publicCustomerPayment) {
     let grants;
     try {
-      grants = await getAccessMap();
+      grants = sessionGrants(request.auth.user.role, request.auth.user.pages, request.auth.user.capabilities);
     } catch {
       if (request.auth.user.role === "OWNER" && isOwnerEntitlementPath(pathname)) return;
       return new Response("Page access could not be checked. Try again shortly.", { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" } });

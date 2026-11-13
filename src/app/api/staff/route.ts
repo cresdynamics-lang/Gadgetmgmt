@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   if (hasAnyQuery(request.url)) return NextResponse.json({ error: "Staff requests do not accept account details or other query parameters." }, { status: 400, headers: noStore });
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
-  if (!(await canUseCapability(session.user.role, "staff"))) return NextResponse.json({ error: "Your role cannot view staff accounts." }, { status: 403, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "staff", session.user.id))) return NextResponse.json({ error: "Your role cannot view staff accounts." }, { status: 403, headers: noStore });
 
   const users = await prisma.user.findMany({
     where: session.user.role === "OWNER" ? {} : { branchId: session.user.branchId ?? "" },
@@ -45,14 +45,14 @@ export async function POST(request: Request) {
   if (hasAnyQuery(request.url)) return NextResponse.json({ error: "Staff requests do not accept account details or other query parameters." }, { status: 400, headers: noStore });
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
-  if (!(await canUseCapability(session.user.role, "staff"))) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403, headers: noStore });
+  if (!(await canUseCapability(session.user.role, "staff", session.user.id))) return NextResponse.json({ error: "Your role cannot manage staff accounts." }, { status: 403, headers: noStore });
 
+  if (session.user.role !== "OWNER") return NextResponse.json({ error: "Only Victor can provision staff accounts." }, { status: 403, headers: noStore });
   const parsed = staffSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid name, email, role and password of at least 12 characters." }, { status: 400, headers: noStore });
+  if (parsed.data.role === "OWNER") return NextResponse.json({ error: "The configured owner is the only owner account." }, { status: 403, headers: noStore });
   if (!canAssignStaffRole(session.user.role, parsed.data.role)) {
-    const message = session.user.role === "BRANCH_MANAGER"
-      ? "Branch managers can create cashier or inventory lead accounts only."
-      : "Only the Gadgethub owner can create an owner or branch manager account.";
+    const message = "Only Victor can provision staff accounts.";
     return NextResponse.json({ error: message }, { status: 403, headers: noStore });
   }
 

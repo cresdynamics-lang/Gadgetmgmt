@@ -20,7 +20,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (session.user.role !== "OWNER" && session.user.role !== "BRANCH_MANAGER") return NextResponse.json({ error: "Your role cannot update branch settings." }, { status: 403 });
-  if (!(await canUseCapability(session.user.role, "branchSettings"))) return NextResponse.json({ error: "Your role cannot update branch settings." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "branchSettings", session.user.id))) return NextResponse.json({ error: "Your role cannot update branch settings." }, { status: 403 });
 
   const { id } = await context.params;
   if (session.user.role !== "OWNER" && session.user.branchId !== id) return NextResponse.json({ error: "You can only update your assigned branch." }, { status: 403 });

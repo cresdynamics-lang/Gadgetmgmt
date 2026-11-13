@@ -6,6 +6,6 @@ import { canAccessPage } from "@/lib/entitlements";
 export async function requirePage(pathname: string) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!(await canAccessPage(session.user.role, pathname))) notFound();
+  if (!(await canAccessPage(session.user.role, pathname, session.user.id))) notFound();
   return session;
 }

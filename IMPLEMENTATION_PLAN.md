@@ -27,9 +27,26 @@ Before any checkout call:
 
 - Lipa sample rates of 40% and 1–6 months, and the markup multipliers. The live policy and 4, 6, and 12 month terms stay.
 - A bank-transfer tender and named settlement accounts.
-- React Native, Face ID, trade-in, deliveries, partners, expenses, payroll, label printing, and a live socket layer.
+- React Native, native Face ID, trade-in, deliveries, partners, expenses, payroll, label printing, and a live socket layer.
 - Stripping each Lipa plan balance from the credit API. Collection needs that amount. Shop-wide totals stay hidden.
 
 ## Checks
 
 `npx tsc --noEmit` is clean. `npm run test:workflows` and `npm run test:access` cover scan matching, finance redaction, Lipa order, stock rank, Stanbic's closed status, and URL redaction. ESLint is clean on the files this branch edits.
+
+
+## Auth branch and UX review — ordered work
+
+1. Read #29 and comments; inspect installed Next.js auth guidance and existing data paths. Done.
+2. Extend traceability artifacts; mark missing PDF/HTML and business decisions. Done; user authorized product judgment.
+3. Inspect running login at representative widths before revising; capture evidence.
+4. Deliver database-backed email verification, passkeys, failure lockout, owner alerts, audit, and revocable devices.
+5. Enforce individual grants across server checks; restrict owner identity/provisioning; preserve finance redaction.
+6. Implement accessible login, Account security, individual Access controls, and accurate recovery/empty states.
+7. Verify with isolated database and WebAuthn virtual authenticator; verify error/replay/revocation/permissions; visually inspect revisions.
+8. Run relevant regression tests, lint, type checking, build; document limitations; commit and push auth branch.
+9. Broader operational modules remain separate vertical slices after authentication: complete sale/receipt journey, device lineage, deliveries and partner obligations, then accounting/support. Do not represent read-only desks as complete workflows.
+
+Migration deliberately removes inherited staff authorization: Victor must grant each account explicitly. Configure AUTH_OWNER_EMAIL (or INITIAL_OWNER_EMAIL), canonical APP_BASE_URL, and the existing email service before rollout. No production database changes are performed by this review.
+
+Final auth verification: 18 end-to-end browser/security scenarios and 48 focused/regression checks pass. Fresh NUH seeding was exercised twice in the isolated migration database and retained exactly one shop. The migration applies to the original schema. See UX_QA_REPORT.md and artifacts/auth-review/results.json for scope and limits.

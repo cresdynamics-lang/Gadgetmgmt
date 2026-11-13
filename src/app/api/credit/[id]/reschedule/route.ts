@@ -13,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "credit"))) return NextResponse.json({ error: "Your role cannot request a reschedule." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit", session.user.id))) return NextResponse.json({ error: "Your role cannot request a reschedule." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a future date and give a short reason." }, { status: 400 });
   const { id } = await params;

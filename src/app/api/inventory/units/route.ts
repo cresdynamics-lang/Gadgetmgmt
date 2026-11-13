@@ -39,7 +39,7 @@ const deviceSchema = z.object({
 async function authorize() {
   const session = await auth();
   if (!session?.user) return { error: NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore }) };
-  if (!(await canUseCapability(session.user.role, "inventory"))) {
+  if (!(await canUseCapability(session.user.role, "inventory", session.user.id))) {
     return { error: NextResponse.json({ error: "Your role cannot manage inventory." }, { status: 403, headers: noStore }) };
   }
   if (!session.user.branchId) return { error: NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403, headers: noStore }) };

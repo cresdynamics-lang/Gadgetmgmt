@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   if (rejected) return rejected;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (!(await canUseCapability(session.user.role, "credit")) || !["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can reconcile M-Pesa payments." }, { status: 403 });
+  if (!(await canUseCapability(session.user.role, "credit", session.user.id)) || !["OWNER", "BRANCH_MANAGER"].includes(session.user.role)) return NextResponse.json({ error: "Only owners and branch managers can reconcile M-Pesa payments." }, { status: 403 });
   const parsed = reconciliationSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Confirm the M-Pesa statement check and enter a valid receipt if missing." }, { status: 400 });
   const { token: requestId } = await params;
