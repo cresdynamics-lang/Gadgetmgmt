@@ -27,7 +27,15 @@ try {
   if (!(await bcrypt.compare(password, updated.passwordHash))) throw new Error("Owner password verification failed.");
   console.log("Owner password synchronized and verified successfully.");
 } catch (error) {
-  if (typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) console.error(`Database error code: ${error.code}`);
+  const code = error.code ?? error.errorCode;
+  if (typeof code === "string" && /^[A-Z0-9_]+$/.test(code)) console.error(`Database error code: ${code}`);
+  console.error(`Failure type: ${error.name}`);
+  let detail = String(error.message);
+  for (const value of [process.env.DATABASE_URL, password]) {
+    if (value) detail = detail.replaceAll(value, "[redacted]");
+  }
+  detail = detail.replace(/postgres(?:ql)?:\/\/\S+/g, "[redacted database URL]");
+  console.error(detail);
   console.error("Owner password synchronization failed. Check owner selection and database availability.");
   process.exitCode = 1;
 } finally {
