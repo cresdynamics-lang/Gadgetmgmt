@@ -88,6 +88,9 @@ jobs:
             sudo apt-get install -y --no-install-recommends rsync openssh-client
           fi
 
+      - name: Verify runtime secret handling
+        run: node --test scripts/production-env.test.mjs
+
       - name: Prepare production runtime secrets
         env:
           NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
@@ -431,6 +434,13 @@ jobs:
       - name: Delete the deploy key
         if: always()
         run: rm -rf "${RUNNER_TEMP}/deploy-ssh"
+
+      - name: Verify public owner sign-in and dashboard
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          INITIAL_OWNER_EMAIL: ${{ secrets.INITIAL_OWNER_EMAIL }}
+          INITIAL_OWNER_PASSWORD: ${{ secrets.INITIAL_OWNER_PASSWORD }}
+        run: node scripts/verify-production-owner.mjs
 
       - name: Remove temporary runtime secrets
         if: always()
