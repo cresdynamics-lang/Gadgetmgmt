@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { browserSupportsWebAuthn, startAuthentication } from "webauthn-browser";
-import { ArrowRight, Fingerprint, Mail, Package, ShieldCheck } from "lucide-react";
+import { ArrowRight, Fingerprint, Mail, ShieldCheck } from "lucide-react";
 import { hasSensitiveQuery, safeInternalPath } from "@/lib/access";
 
 type Step = "choose" | "password" | "code";
@@ -73,7 +74,7 @@ export default function LoginPage() {
     } finally { setPending(false); }
   }
   return <main className="security-root"><div className="security-login">
-    <div className="security-brand"><span className="security-brand-mark"><Package size={23} aria-hidden="true"/></span><span>GadgetHub</span></div>
+    <div className="security-brand"><span className="brand-logo-surface"><Image src="/brand/logo-on-dark.png" alt="GadgetHub" width={96} height={88} unoptimized priority/></span></div>
     <div className="security-stack">
       <div><p className="security-eyebrow"><ShieldCheck size={16} aria-hidden="true"/> Secure team access</p><h1>{step === "code" ? "Verify this device." : "Welcome back."}</h1><p className="security-detail">{step === "code" ? `Enter the six-digit code sent to ${email}. It expires in five minutes.` : "Sign in to your shop workspace."}</p></div>
       <form className="security-stack" onSubmit={event => void submit(event, step === "choose" && supported)} aria-busy={pending}>

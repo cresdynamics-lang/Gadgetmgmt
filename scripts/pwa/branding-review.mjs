@@ -1,0 +1,19 @@
+import {chromium,devices,expect} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import AxeBuilder from '@axe-core/playwright';
+const base='http://localhost:3013',dir='artifacts/branding-review';mkdirSync(dir,{recursive:true});
+const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});const results=[];const pass=name=>{results.push(name);console.log('PASS',name);};
+try{
+ const ios=await browser.newContext({...devices['iPhone 13'],browserName:'chromium'});const page=await ios.newPage();await page.goto(base+'/login',{waitUntil:'networkidle'});await page.getByRole('region',{name:'Install GadgetHub'}).waitFor();
+ await expect(page.getByRole('img',{name:'GadgetHub',exact:true})).toBeVisible();await expect.poll(()=>page.getByRole('img',{name:'GadgetHub',exact:true}).evaluate(img=>img.complete&&img.naturalWidth===860)).toBe(true);
+ for(const width of [375,390,430,768,1440]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:`${dir}/install-ios-${width}.png`,fullPage:true});}
+ await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'How to install',exact:true}).click();await expect(page.getByRole('region',{name:'Install GadgetHub'})).toContainText('Add to Home Screen');await page.screenshot({path:`${dir}/ios-instructions.png`,fullPage:true});pass('Original logo and iPhone installation guidance render without overflow at five widths');
+ await page.locator('#email').focus();await expect(page.getByRole('region',{name:'Install GadgetHub'})).toBeHidden();await page.locator('#email').blur();await expect(page.getByRole('region',{name:'Install GadgetHub'})).toBeVisible();pass('Installation guidance yields to sign-in focus');
+ await page.getByRole('button',{name:'Got it',exact:true}).click();await page.reload({waitUntil:'networkidle'});await expect(page.getByRole('region',{name:'Install GadgetHub'})).toHaveCount(0);pass('Dismissal persists across reloads');
+ const installed=await browser.newContext({...devices['iPhone 13']});await installed.addInitScript(()=>Object.defineProperty(navigator,'standalone',{get:()=>true}));const installedPage=await installed.newPage();await installedPage.goto(base+'/login',{waitUntil:'networkidle'});await expect(installedPage.getByRole('region',{name:'Install GadgetHub'})).toHaveCount(0);pass('Installed iPhone mode does not advertise installation');
+ const desktop=await browser.newContext({viewport:{width:1440,height:900}});const web=await desktop.newPage();await web.goto(base+'/login',{waitUntil:'networkidle'});
+ await web.evaluate(()=>{const event=new Event('beforeinstallprompt',{cancelable:true});Object.assign(event,{prompt:async()=>{window.promptInvoked=true;},userChoice:Promise.resolve({outcome:'accepted'})});window.dispatchEvent(event);});
+ await expect(web.getByRole('button',{name:'Install app',exact:true})).toBeVisible();const audit=await new AxeBuilder({page:web}).exclude('nextjs-portal').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();assert.deepEqual(audit.violations.map(v=>v.id),[]);await web.screenshot({path:`${dir}/install-desktop.png`,fullPage:true});await web.getByRole('button',{name:'Install app',exact:true}).click();assert.equal(await web.evaluate(()=>window.promptInvoked),true);await expect(web.getByRole('region',{name:'Install GadgetHub'})).toHaveCount(0);pass('Supported-browser Install invokes the native prompt; accepted request hides the card; accessibility scan passes');
+ writeFileSync(`${dir}/results.json`,JSON.stringify({results,limits:['Native OS installation and Safari Share UI require real-device confirmation. Browser install event is simulated; no installation success is fabricated.']},null,2));
+}finally{await browser.close();}
