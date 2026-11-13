@@ -99,6 +99,7 @@ jobs:
           TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           NEXT_AUTH_SECRET: ${{ secrets.NEXT_AUTH_SECRET }}
+          INITIAL_USER_PASSWORD: ${{ secrets.INITIAL_USER_PASSWORD || secrets.INITIAL_OWNER_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -113,6 +114,7 @@ jobs:
             NEXTAUTH_SECRET="$NEXT_AUTH_SECRET"
           fi
           unset NEXT_AUTH_SECRET
+          [ -n "${INITIAL_USER_PASSWORD-}" ] || { echo "Missing required deploy setting: INITIAL_USER_PASSWORD or INITIAL_OWNER_PASSWORD"; missing=1; }
           [ -n "${NEXTAUTH_SECRET-}" ] || { echo "Missing required deploy setting: NEXTAUTH_SECRET"; missing=1; }
           if [ "${missing}" -ne 0 ]; then
             exit 1
@@ -232,6 +234,11 @@ jobs:
             exit 1
           fi
 
+          owner_file="${ssh_dir}/owner-password"
+          printf '%s' "$INITIAL_USER_PASSWORD" > "$owner_file"
+          chmod 600 "$owner_file"
+          unset INITIAL_USER_PASSWORD
+
           auth_file="${ssh_dir}/nextauth-secret"
           printf '%s' "$NEXTAUTH_SECRET" > "$auth_file"
           unset NEXTAUTH_SECRET
@@ -300,6 +307,9 @@ jobs:
           rm -f "$token_file"
           scp_base "$auth_file" "${remote}:${DEPLOY_PATH}/.nextauth-secret"
           rm -f "$auth_file"
+          scp_base "$owner_file" "${remote}:${DEPLOY_PATH}/.initial-owner-password"
+          rm -f "$owner_file"
+          scp_base scripts/sync-production-owner.mjs "${remote}:${DEPLOY_PATH}/bin/sync-production-owner.mjs"
           scp_base scripts/production-remote-start.sh "${remote}:${DEPLOY_PATH}/bin/production-remote-start.sh"
           echo "Checking Node.js and the server environment file"
           ssh_base "$remote" "if command -v node >/dev/null 2>&1; then node -v; else echo NO_NODE; fi; if [ -f ${quoted_path}/.env ]; then echo HAS_ENV; else echo NO_ENV; fi"

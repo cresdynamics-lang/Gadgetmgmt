@@ -164,6 +164,17 @@ export HOST_GID="$(id -g)"
 echo "Starting the nodejs service and the tunnel. Tunnel target is http://nodejs:3005."
 compose up -d --build --force-recreate
 
+# Pass the deployment password over stdin, never through arguments, logs or app env.
+if [ ! -f .initial-owner-password ]; then
+  echo "Blocker: the deployment owner password was not supplied."
+  exit 1
+fi
+chmod 600 .initial-owner-password
+trap 'rm -f .initial-owner-password' EXIT
+compose exec -T nodejs node --input-type=module -e "$(cat bin/sync-production-owner.mjs)" < .initial-owner-password
+rm -f .initial-owner-password
+trap - EXIT
+
 wait_for_nodejs_ready
 code="$(local_login_status)"
 echo "local_login_http=${code}"
