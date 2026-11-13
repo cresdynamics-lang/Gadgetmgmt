@@ -1,3 +1,4 @@
+import { emailTransport } from "../src/lib/email-transport";
 import { deliverQueuedReceipt } from "../src/lib/receipt-delivery";
 import { pushEndpoint } from "../src/lib/push-endpoint";
 import { pushTransport } from "../src/lib/push-transport";
@@ -60,7 +61,7 @@ const worker = new Worker(notificationQueueName, async (job) => {
       if (!email.configured) throw new Error("Configure the company sender in Messages & alerts before sending email.");
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST", signal: AbortSignal.timeout(15_000),
-        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": delivery.id },
+        headers: { Authorization: `Bearer ${emailTransport("notifications").apiKey}`, "Content-Type": "application/json", "Idempotency-Key": delivery.id },
         body: JSON.stringify({ from: email.from, to: [alert.user.email], subject: alert.title, text: alert.body }),
       });
       if (!response.ok) {

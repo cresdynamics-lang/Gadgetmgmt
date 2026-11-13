@@ -54,3 +54,11 @@ test("an explicit administrator email check prevents applying the wrong secret",
  assert.notEqual(prepare({EXPECTED_OWNER_EMAIL:"aabere70@gmail.com"}).status,0);
  assert.equal(prepare({EXPECTED_OWNER_EMAIL:base.INITIAL_OWNER_EMAIL}).status,0);
 });
+
+test("runtime compatibility uses the accounts transport when the generic email secret is absent", () => {
+ const r=prepare({RESEND_API_KEY:"",RESEND_API_KEY_ACCOUNTS:"accounts-fixture-key",EMAIL_FROM:"",MAIL_FROM_ACCOUNTS:"accounts@example.test"});
+ assert.equal(r.status,0,r.stderr);
+ assert.ok(r.contents.includes("RESEND_API_KEY=accounts-fixture-key\n"));
+ assert.ok(r.contents.includes("EMAIL_FROM=accounts@example.test\n"));
+ assert.ok(!r.stdout.includes("accounts-fixture-key"));
+});

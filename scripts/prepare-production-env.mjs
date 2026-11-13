@@ -68,7 +68,10 @@ if (process.env.EXPECTED_OWNER_EMAIL && process.env.INITIAL_OWNER_EMAIL?.trim().
 }
 const lines = [];
 for (const key of keys) {
-  const value = key === "AUTH_OWNER_EMAIL" ? (process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase() ?? "") : process.env[key] ?? "";
+  const value = key === "AUTH_OWNER_EMAIL" ? (process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase() ?? "")
+    : key === "RESEND_API_KEY" ? (process.env.RESEND_API_KEY || process.env.RESEND_API_KEY_ACCOUNTS || "")
+    : key === "EMAIL_FROM" ? (process.env.EMAIL_FROM || process.env.MAIL_FROM_ACCOUNTS || process.env.MAIL_FROM || "")
+    : process.env[key] ?? "";
   if (/[\r\n\0]/.test(value)) throw new Error(`Runtime setting ${key} must be a single line`);
   lines.push(`${key}=${value}`);
 }
