@@ -29,6 +29,7 @@ const migrations=[
  ['20261111120000_notification_rate_limits','NotificationRateLimit'],
  ['20261113120000_device_auth','AuthDevice'],
  ['20261113170000_pwa_operations','Operation'],
+ ['20261113180000_role_entitlement_baseline','RoleEntitlement'],
 ];
 for(const [name,sentinel,column] of migrations){
  const body=readFileSync(`prisma/migrations/${name}/migration.sql`,'utf8');const checksum=createHash('sha256').update(body).digest('hex');
