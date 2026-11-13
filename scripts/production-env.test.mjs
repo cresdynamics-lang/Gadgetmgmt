@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 
 const base = {
   DATABASE_URL: "postgresql://app:secret@localhost:5432/app",
-  POSTGRES_USER: "app", POSTGRES_PASSWORD: "secret",
+  POSTGRES_USER: "app", POSTGRES_PASSWORD: "secret", POSTGRES_DB: "app",
   NEXTAUTH_SECRET: "x".repeat(43), INITIAL_OWNER_EMAIL: "owner@example.com",
   INITIAL_OWNER_PASSWORD: "literal$VALUE#with\"quotes'and\\slashes",
   NEXTAUTH_URL: "https://development.gadgethubke.com",
@@ -36,6 +36,7 @@ test("rejects localhost callback URLs", () => {
 test("rejects inconsistent or missing database password credentials", () => {
   assert.notEqual(prepare({ DATABASE_URL: "postgresql://app@localhost:5432/app" }).status, 0);
   assert.notEqual(prepare({ POSTGRES_PASSWORD: "different" }).status, 0);
+  assert.notEqual(prepare({ POSTGRES_DB: "different" }).status, 0);
 });
 test("rejects newline injection into raw environment files", () => {
   assert.notEqual(prepare({ SMTP_PASS: "value\nNODE_OPTIONS=--inspect" }).status, 0);

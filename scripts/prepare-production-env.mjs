@@ -75,8 +75,8 @@ const database = new URL(process.env.DATABASE_URL);
 if (!["postgres:", "postgresql:"].includes(database.protocol) || !database.password) {
   throw new Error("DATABASE_URL must include PostgreSQL password authentication");
 }
-if (decodeURIComponent(database.username) !== process.env.POSTGRES_USER || decodeURIComponent(database.password) !== process.env.POSTGRES_PASSWORD) {
-  throw new Error("DATABASE_URL credentials must match POSTGRES_USER and POSTGRES_PASSWORD");
+if (decodeURIComponent(database.username) !== process.env.POSTGRES_USER || decodeURIComponent(database.password) !== process.env.POSTGRES_PASSWORD || decodeURIComponent(database.pathname.slice(1)) !== process.env.POSTGRES_DB) {
+  throw new Error("DATABASE_URL must match POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB");
 }
 if (process.env.NEXTAUTH_SECRET.length < 43) throw new Error("NEXTAUTH_SECRET is too short");
 for (const key of ["NEXTAUTH_URL", "APP_BASE_URL"]) {
