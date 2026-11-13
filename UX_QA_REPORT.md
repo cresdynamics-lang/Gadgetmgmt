@@ -118,3 +118,11 @@ The release preflight now verifies every Prisma model column against the product
 
 
 Production-mode evidence: all 23 destinations passed visible-content checks in both themes, all 46 automated accessibility scans reported zero violations, and the complete authentication/PWA workflow suite passed. Evidence is in `artifacts/production-review`. Public deployment is validated separately by schema preflight, service/worker readiness and unauthenticated public endpoint probes; no live financial test transactions are created.
+
+## Brand and installation prompt — 2026-11-13
+
+Original GadgetHub artwork from the user-supplied app.gadgethubke.com is used on sign-in, desktop/mobile navigation, browser icons and PWA/notification icons. Static brand files are public so sign-in never depends on an authenticated image request. The public-only service-worker cache version changed to refresh older app icons.
+
+A dismissible install card provides native browser installation when `beforeinstallprompt` is available, and explicit Safari Add to Home Screen instructions on iPhone/iPad. It hides in installed mode, remembers dismissal for seven days, yields to sign-in input focus/dialogs, and is suspended during connection/update notices. It never labels a requested installation as completed.
+
+Browser evidence: `artifacts/branding-review`. Five scenarios pass: original logo/five-width layout, sign-in focus, persisted dismissal, installed-mode suppression, and native-prompt handling with a clean accessibility scan. The native event is simulated; actual OS installation remains a physical-device check. Existing provider and accounting-policy limits still apply.

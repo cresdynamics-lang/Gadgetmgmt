@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { registerNotificationWorker } from "@/lib/notification-events";
 
 const subscribeConnection = (listener: () => void) => {
@@ -40,8 +41,7 @@ export function PwaLifecycle() {
     navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload(), { once: true });
     waiting.postMessage({ type: "APPLY_UPDATE" });
   }
-  if (online && !waiting && !notice) return null;
-  return <aside className="pwa-status" aria-label="App status"><p role="status">{!online ? "You’re offline. Transactions are not submitted or queued. Reconnect before saving." : waiting ? "An app update is ready. Save your work before restarting." : notice}</p>{online && waiting && <button type="button" onClick={update}>Update & restart</button>}{online && notice && <button type="button" onClick={()=>setNotice("")}>Dismiss</button>}</aside>;
+  return <><PwaInstallPrompt suspended={!online||Boolean(waiting)||Boolean(notice)}/>{(!online||waiting||notice)&&<aside className="pwa-status" aria-label="App status"><p role="status">{!online ? "You’re offline. Transactions are not submitted or queued. Reconnect before saving." : waiting ? "An app update is ready. Save your work before restarting." : notice}</p>{online && waiting && <button type="button" onClick={update}>Update & restart</button>}{online && notice && <button type="button" onClick={()=>setNotice("")}>Dismiss</button>}</aside>}</>;
 }
 export function PwaSettings() {
   const [message, setMessage] = useState("");

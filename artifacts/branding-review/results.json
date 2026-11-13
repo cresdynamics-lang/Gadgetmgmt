@@ -1,0 +1,12 @@
+{
+  "results": [
+    "Original logo and iPhone installation guidance render without overflow at five widths",
+    "Installation guidance yields to sign-in focus",
+    "Dismissal persists across reloads",
+    "Installed iPhone mode does not advertise installation",
+    "Supported-browser Install invokes the native prompt; accepted request hides the card; accessibility scan passes"
+  ],
+  "limits": [
+    "Native OS installation and Safari Share UI require real-device confirmation. Browser install event is simulated; no installation success is fabricated."
+  ]
+}

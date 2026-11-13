@@ -40,7 +40,9 @@
     ".next-auth-test-clean/types/**/*.ts",
     ".next-auth-test-clean/dev/types/**/*.ts",
     ".next-pwa-review/types/**/*.ts",
-    ".next-pwa-review/dev/types/**/*.ts"
+    ".next-pwa-review/dev/types/**/*.ts",
+    ".next-brand-review/types/**/*.ts",
+    ".next-brand-review/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
