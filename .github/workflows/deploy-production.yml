@@ -164,7 +164,7 @@ jobs:
           TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           NEXT_AUTH_SECRET: ${{ secrets.NEXT_AUTH_SECRET }}
-          INITIAL_USER_PASSWORD: ${{ secrets.INITIAL_USER_PASSWORD || secrets.INITIAL_OWNER_PASSWORD }}
+          INITIAL_USER_PASSWORD: ${{ secrets.INITIAL_OWNER_PASSWORD || secrets.INITIAL_USER_PASSWORD }}
         run: |
           set -euo pipefail
 
