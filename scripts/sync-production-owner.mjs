@@ -10,22 +10,26 @@ if (password.length < 12 || Buffer.byteLength(password, "utf8") > 72 || /[\r\n]/
 const prisma = new PrismaClient();
 try {
   const email = process.env.INITIAL_OWNER_EMAIL?.trim().toLowerCase();
-  const owners = await prisma.user.findMany({
-    where: { role: "OWNER", ...(email ? { email } : {}) },
-    select: { id: true },
-  });
-  if (owners.length !== 1) {
-    console.error(`Owner selection matched ${owners.length} accounts; INITIAL_OWNER_EMAIL configured: ${Boolean(email)}.`);
-    throw new Error("Owner selection failed");
-  }
+  const name = process.env.INITIAL_OWNER_NAME?.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Configure a valid INITIAL_OWNER_EMAIL");
   const passwordHash = await bcrypt.hash(password, 12);
-  const updated = await prisma.user.update({
-    where: { id: owners[0].id },
-    data: { passwordHash, status: "ACTIVE" },
-    select: { passwordHash: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const owners = await tx.user.findMany({ where: { role: "OWNER" }, select: { id: true, email: true } });
+    const owner = owners.find((candidate) => candidate.email.toLowerCase() === email)
+      ?? (owners.length === 1 ? owners[0] : null);
+    if (!owner) throw new Error("Owner account selection is ambiguous or missing");
+    const conflicting = await tx.user.findUnique({ where: { email }, select: { id: true } });
+    if (conflicting && conflicting.id !== owner.id) throw new Error("Configured owner email belongs to another account");
+    return tx.user.update({
+      where: { id: owner.id },
+      data: { email, ...(name ? { name } : {}), passwordHash, status: "ACTIVE" },
+      select: { email: true, passwordHash: true, status: true, role: true },
+    });
   });
-  if (!(await bcrypt.compare(password, updated.passwordHash))) throw new Error("Owner password verification failed.");
-  console.log("Owner password synchronized and verified successfully.");
+  if (updated.email !== email || updated.status !== "ACTIVE" || updated.role !== "OWNER" || !(await bcrypt.compare(password, updated.passwordHash))) {
+    throw new Error("Owner account verification failed");
+  }
+  console.log("Owner email, active status and password synchronized and verified successfully.");
 } catch (error) {
   const code = error.code ?? error.errorCode;
   if (typeof code === "string" && /^[A-Z0-9_]+$/.test(code)) console.error(`Database error code: ${code}`);

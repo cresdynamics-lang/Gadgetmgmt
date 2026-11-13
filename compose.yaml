@@ -10,14 +10,15 @@ services:
       - .env
       - .nextauth.env
       - .public-url.env
+      - path: .runtime.env
+        required: false
+        format: raw
     environment:
       NODE_ENV: production
-      # Auth.js rewrites every request to NEXTAUTH_URL/AUTH_URL when set. A
-      # localhost value from .env would send login redirects and the
-      # authjs.callback-url cookie to http://localhost:3000 through the tunnel.
-      # Leave them empty so the public host comes from the request headers.
-      NEXTAUTH_URL: ""
-      AUTH_URL: ""
+      # Use the public origin even when Cloudflare forwards an internal Host header.
+      # Credentials callbacks and session redirects must never use localhost.
+      NEXTAUTH_URL: "https://development.gadgethubke.com"
+      AUTH_URL: "https://development.gadgethubke.com"
       NEXTAUTH_TRUST_HOST: "true"
       AUTH_TRUST_HOST: "true"
     network_mode: host

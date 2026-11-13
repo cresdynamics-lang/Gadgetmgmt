@@ -145,11 +145,10 @@ case "$seeded_base" in
 esac
 chmod 600 .public-url.env
 
-# Auth.js treats NEXTAUTH_URL/AUTH_URL as the request origin. A localhost value
-# in .env would send login redirects and the authjs.callback-url cookie off the
-# tunnel. Compose clears those two variables; keep APP_BASE_URL for callbacks.
+# Compose pins authentication to the public HTTPS origin so an internal tunnel
+# Host header or stale localhost value cannot redirect sign-ins off the site.
 if grep -Eq '^(NEXTAUTH_URL|AUTH_URL)=https?://(localhost|127\.0\.0\.1)(:[0-9]+)?/?$' .env 2>/dev/null; then
-  echo "Ignoring localhost NEXTAUTH_URL/AUTH_URL from .env. The public host comes from the tunnel request."
+  echo "Ignoring localhost NEXTAUTH_URL/AUTH_URL from .env. Compose uses the public HTTPS origin."
 fi
 
 rm -rf .web-context
