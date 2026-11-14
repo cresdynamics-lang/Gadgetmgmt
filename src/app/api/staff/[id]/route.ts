@@ -6,6 +6,8 @@ import { auth } from "@/auth";
 import { hasAnyQuery } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
+import { sameOrigin } from "@/lib/staff-alerts";
+
 const accessSchema = z.object({
   role: z.enum(["OWNER", "BRANCH_MANAGER", "CASHIER", "INVENTORY_LEAD"]).optional(),
   status: z.enum(["ACTIVE", "OFF_SHIFT", "SUSPENDED"]).optional(),
@@ -14,6 +16,7 @@ const accessSchema = z.object({
 const noStore = { "Cache-Control": "no-store" };
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Access denied." }, { status: 403, headers: noStore });
   if (hasAnyQuery(request.url)) return NextResponse.json({ error: "Staff requests do not accept account details or other query parameters." }, { status: 400, headers: noStore });
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Authentication required" }, { status: 401, headers: noStore });
@@ -31,12 +34,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const user = await transaction.user.findUnique({ where: { id } });
       if (!user) return null;
 
-      const nextRole = parsed.data.role ?? user.role;
-      const nextStatus = parsed.data.status ?? user.status;
-      if (user.role === "OWNER" && (nextRole !== "OWNER" || nextStatus !== "ACTIVE")) {
-        const activeOwners = await transaction.user.count({ where: { role: "OWNER", status: "ACTIVE" } });
-        if (activeOwners <= 1) throw new Error("LAST_ACTIVE_ADMIN");
-      }
+      if (user.role === "OWNER") throw new Error("PROTECTED_OWNER");
 
       return transaction.user.update({
         where: { id },
@@ -48,8 +46,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!updatedUser) return NextResponse.json({ error: "Staff account was not found." }, { status: 404 });
     return NextResponse.json(updatedUser);
   } catch (error) {
-    if (error instanceof Error && error.message === "LAST_ACTIVE_ADMIN") {
-      return NextResponse.json({ error: "At least one active administrator must remain." }, { status: 409 });
+    if (error instanceof Error && error.message === "PROTECTED_OWNER") {
+      return NextResponse.json({ error: "Owner accounts cannot be blocked, demoted or changed by another account." }, { status: 403 });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
       return NextResponse.json({ error: "Another administrator changed account access. Refresh and retry." }, { status: 409 });

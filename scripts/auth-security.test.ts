@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { accountPasswordSchema, generateAccountPassword } from "../src/lib/account-password";
+import { signInAllowed } from "../src/lib/sign-in-methods";
 import { authOrigin, pinDigest, codeDigest, digest, emailCode, opaqueToken, permittedOwner } from "../src/lib/auth-security";
 import { hasSensitiveQuery, safeInternalPath, applyPageFloors, canManageBusinessSettings, canAccessPage, normalizeCapabilities, normalizePages } from "../src/lib/access";
 
@@ -15,7 +17,7 @@ test("verification code hashes bind the code to its challenge and server secret"
   } finally { if (original === undefined) delete process.env.NEXTAUTH_SECRET; else process.env.NEXTAUTH_SECRET = original; }
 });
 
-test("only the configured identity can authenticate with owner privileges", () => {
+test("only the configured identity or an explicitly approved Owner can authenticate with owner privileges", () => {
   const before = process.env.AUTH_OWNER_EMAIL;
   const initial = process.env.INITIAL_OWNER_EMAIL;
   try {
@@ -24,6 +26,8 @@ test("only the configured identity can authenticate with owner privileges", () =
     process.env.AUTH_OWNER_EMAIL = "administrator@example.test";
     assert.equal(permittedOwner({ role: "OWNER", email: "ADMINISTRATOR@example.test" }), true);
     assert.equal(permittedOwner({ role: "OWNER", email: "other@example.test" }), false);
+    assert.equal(permittedOwner({ role: "OWNER", email: "approved@example.test", ownerApprovedAt: new Date() }), true);
+    assert.equal(permittedOwner({ role: "OWNER", email: "unapproved@example.test", ownerApprovedAt: null }), false);
     assert.equal(permittedOwner({ role: "CASHIER", email: "staff@example.test" }), true);
   } finally {
     if (before === undefined) delete process.env.AUTH_OWNER_EMAIL; else process.env.AUTH_OWNER_EMAIL = before;
@@ -82,4 +86,24 @@ test("app PINs cannot be forwarded in callback URLs",()=>{
  assert.equal(hasSensitiveQuery(new URLSearchParams("pin=004269")),true);
  assert.equal(hasSensitiveQuery(new URLSearchParams("confirmPin=004269")),true);
  assert.equal(safeInternalPath("/settings?app_pin=004269"),null);
+});
+
+
+test("administrator credentials cannot be forwarded through sign-in callbacks",()=>{
+  for(const key of ["actorPassword","actor_password","initialPassword","initial_password"])assert.equal(safeInternalPath(`/settings?${key}=secret`),null);
+});
+
+test("generated account passwords use secure randomness and obey the hashing byte limit",()=>{
+  const passwords=Array.from({length:30},generateAccountPassword);assert.equal(new Set(passwords).size,30);
+  for(const password of passwords){assert.equal(password.length,24);assert.match(password,/^[A-Za-z0-9_-]+$/);assert.equal(accountPasswordSchema.safeParse(password).success,true);}
+  assert.equal(accountPasswordSchema.safeParse("short").success,false);assert.equal(accountPasswordSchema.safeParse("🔑".repeat(24)).success,false);
+});
+test("employee sign-in requires both account and device permission for the actual method",()=>{
+  const policy={pinAllowed:true,passwordAllowed:true,biometricsAllowed:true};
+  for(const [method,key] of [["PIN","pinAllowed"],["PASSWORD","passwordAllowed"],["BIOMETRIC","biometricsAllowed"]] as const){
+    assert.equal(signInAllowed({role:"CASHIER",...policy},policy,method),true);
+    assert.equal(signInAllowed({role:"CASHIER",...policy,[key]:false},policy,method),false);
+    assert.equal(signInAllowed({role:"CASHIER",...policy},{...policy,[key]:false},method),false);
+  }
+  assert.equal(signInAllowed({role:"CASHIER",...policy},policy,"UNKNOWN"),false);
 });

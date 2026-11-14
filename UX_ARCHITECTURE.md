@@ -53,7 +53,7 @@ Focused operational journeys:
 
 The service worker stores only a public offline page and app icons. Business operations remain online; interrupted requests retain idempotency keys and explain recovery. Updates wait for an explicit restart. Backgrounding covers the workspace immediately and attempts server locking; a short server lease bounds suspension/offline failure. Reopening requires authentication. The web client cannot guarantee a network beacon on an OS kill.
 
-WebAuthn delegates Face ID/fingerprint/device PIN to the OS. Independent application PINs, native secure storage and native haptics are not claimed. Account provides installation, appearance and owner service-readiness controls. Provider configuration and actual delivery are reported separately.
+WebAuthn delegates Face ID/fingerprint/screen-lock PIN to the OS. The separately approved six-digit application PIN is verified online by the server and bound to the verified browser. Native secure storage and native haptics are not claimed. Settings contains Account security, installation, appearance and owner service-readiness controls. Provider configuration and actual delivery are reported separately.
 
 
 ## Settings information architecture — 2026-11-14
@@ -66,3 +66,15 @@ Settings is a single navigation destination for every authenticated role. It gro
 The sign-in page recognizes only the browser’s opaque verified-device cookie. A configured device opens with an email hint and app PIN as the primary action; password plus emailed code is the setup/recovery path. Unknown devices verify ownership before PIN selection. Six digits, confirmation, a masked numeric field and preserved leading zeroes support quick retail use. Face ID/passkeys remain optional under existing approvals.
 
 PIN setup requires a fresh, expiring ownership receipt bound to the same user and device cookie. Recovery reuses that device record and advances its credential version, ending earlier sessions/tickets for that device. Failed PIN attempts are serialized on the server before comparison and use the existing three-failure account lockout. Settings exposes only whether the current device has a PIN; credential hashes and versions are never exposed there. Business authorization and financial step-up rules remain independent of the sign-in method.
+
+
+## Approved additional Owners
+The configured Owner can create an additional Owner from Staff & users → Add a teammate → Owner, confirming their current password. Creation is audited and requires an active branch. The new Owner completes password/email verification and chooses their own device PIN; approved Owners receive full Owner access. Owners cannot change another Owner’s role, status, permissions or device access. Protected accounts are presented as read-only in staff and access management; peer devices are excluded from device management. Only the configured Owner provisions further Owners. Automatic security lockout remains separate from administrative blocking; locked Owners require verified server-operator recovery.
+
+
+## Employee credentials and permitted sign-in methods
+Create account: type or securely generate a password → choose whether to email credentials → save → report provider acceptance separately from unconfirmed email. If email is unconfirmed or not requested, a dismissible private handover panel retains the entered password only in page memory. Stored passwords remain hashes and cannot be retrieved later.
+
+Administrators reset employee passwords with current-password confirmation. Reset preserves role/status/permissions, clears security lockout and revokes existing devices, PIN sessions and pending challenges. Owners’ passwords remain protected from peer resets. The employee verifies the new password and emailed code before creating a fresh device PIN.
+
+Team access controls account-level PIN/password/biometric permission. Settings → Account security → employee device controls can restrict those defaults further. Both policies are enforced when issuing/redeeming tickets and on existing session requests. Password-and-email verification can authorize PIN enrollment when password workspace sign-in is disabled; it cannot issue a password session in that case. Biometric-only use requires a previously enrolled passkey; allow PIN or password during first enrollment. Web device identity is the verified browser cookie, not hardware attestation: a newly verified browser follows employee defaults.

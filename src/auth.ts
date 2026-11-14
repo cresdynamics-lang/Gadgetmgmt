@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { cookies } from "next/headers";
 import { foregroundLeaseUntil, consumeChallenge, DEVICE_COOKIE, digest, permittedOwner } from "@/lib/auth-security";
+import { signInAllowed } from "@/lib/sign-in-methods";
 import { z } from "zod";
 
 import { readStoredGrant } from "@/lib/entitlements";
@@ -32,7 +33,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const device = await prisma.authDevice.findFirst({ where: { id: ticket.deviceId, userId: ticket.userId, tokenHash: digest(token ?? ""), revokedAt: null } });
         if (!device || (ticket.credentialVersion??0)!==device.pinVersion) return null;
         const user = await prisma.user.findUnique({ where: { id: ticket.userId }, include: { branch: { select: { name: true } } } });
-        if (!user || user.status !== "ACTIVE" || user.lockedAt || !permittedOwner(user)) return null;
+        if (!user || user.status !== "ACTIVE" || user.lockedAt || !permittedOwner(user) || !signInAllowed(user,device,ticket.authMethod)) return null;
         await prisma.$transaction([
           prisma.user.update({ where: { id: user.id }, data: { failedSignIns: 0 } }),
           prisma.authDevice.update({ where: { id: device.id }, data: { lastUsedAt: new Date(), lockedAt: null, activeUntil: foregroundLeaseUntil() } }),
@@ -43,6 +44,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           id: user.id,
           deviceId: device.id,
           pinVersion: device.pinVersion,
+          authMethod: ticket.authMethod,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -58,17 +60,18 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.userId = user.id;
         token.deviceId = user.deviceId;
         token.pinVersion = user.pinVersion;
+        token.authMethod = user.authMethod;
         token.role = user.role;
         token.branchId = user.branchId;
         token.branchName = user.branchName;
       } else if (typeof token.userId === "string" && token.userId) {
         const currentUser = await prisma.user.findUnique({
           where: { id: token.userId },
-          select: { email: true, lockedAt: true, role: true, status: true, branchId: true, branch: { select: { name: true } } },
+          select: { pinAllowed:true,passwordAllowed:true,biometricsAllowed:true,ownerApprovedAt: true, email: true, lockedAt: true, role: true, status: true, branchId: true, branch: { select: { name: true } } },
         });
         if (!currentUser || currentUser.status !== "ACTIVE" || currentUser.lockedAt || !permittedOwner(currentUser)) return null;
         const device = typeof token.deviceId === "string" ? await prisma.authDevice.findFirst({ where: { id: token.deviceId, userId: token.userId, revokedAt: null, lockedAt: null, activeUntil: { gt: new Date() } } }) : null;
-        if (!device || (token.pinVersion??0)!==device.pinVersion) return null;
+        if (!device || (token.pinVersion??0)!==device.pinVersion || !signInAllowed(currentUser,device,typeof token.authMethod==="string"?token.authMethod:"PASSWORD")) return null;
         token.role = currentUser.role;
         token.branchId = currentUser.branchId;
         token.branchName = currentUser.branch?.name ?? null;

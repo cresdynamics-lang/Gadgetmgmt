@@ -53,7 +53,7 @@ Status is conservative: source review alone does not establish workflow completi
 
 ### Open decisions and source limits
 
-- PIN uses the operating system’s screen-lock verification via WebAuthn; an independent application PIN is not implemented. Its length, recovery, and lock policy are unspecified.
+- The later approved AUTH-PIN requirements define a six-digit device/browser app PIN with password/email recovery and the existing three-attempt lockout. WebAuthn screen-lock verification remains a separate operating-system credential.
 - WebAuthn may use Face ID, fingerprint, or device PIN. A website cannot require Face ID exclusively or inspect biometric data.
 - Desktop passkeys are enabled by platform capability; #29’s later-release wording conflicts with the broader current request.
 - Temporary permissions and exact step-up / foreground-lock policy require the missing source or a confirmed business decision.
@@ -99,3 +99,24 @@ Settings consolidation: AUTH-02/AUTH-03 now appear under **Settings → Account 
 | AUTH-PIN-02 | User ownership-verification instruction; existing #29 lockout | PIN recovery and revocation | Account holder / Administrator recovery | Password + email code → reset → sign in | Expiring one-use ownership receipt; invalidate old PIN/session/tickets; serialized failed attempts; existing lockout policy retained | Sign in; Account security section | Implemented and verified in isolated production-build browser/API tests | Expired/replayed setup denied; old sessions/tickets rejected; concurrent failures stop at three |
 
 This approves an application PIN for the PWA, superseding earlier statements that only the operating system’s PIN is supported. Native OS PIN/biometrics remain separate platform credentials. No offline PIN authentication or native secure-enclave claim is made.
+
+
+## PIN presentation and additional Owners — approved user instructions, 2026-11-14
+
+| Requirement ID | Source | Feature | User role | Workflow | Business rule | UI location | Status | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AUTH-UI-01 | Explicit user instruction | Six separated PIN boxes | Verified user | Enter, paste, edit or reveal six digits → unlock | Mask by default; preserve leading zeroes and native keyboard behavior | Sign-in and PIN setup | Implemented and verified in isolated production-build browser/API tests | Paste/edit/reveal; six widths; accessibility scans; successful PIN unlock |
+| AUTH-UI-02 | Explicit user instruction | Eye controls for entered secrets | Authorized users | Reveal or conceal entered password | No server-secret retrieval; conceal on leaving field/background | Password forms across app | Implemented and verified in isolated production-build browser/API tests | Toggle retains value; keyboard accessible; form submissions still work |
+| AUTH-OWNER-01 | Explicit user instruction | Additional approved Owners | Configured Owner | Create Owner → confirm current password → new Owner verifies email and creates PIN | Only configured Owner provisions Owners; explicit approval and audit; no implicit approval of legacy rows | Staff & users | Implemented and verified in isolated production-build browser/API tests | Actual browser creation; password required; approved sign-in/full grants; other roles denied |
+| AUTH-OWNER-02 | Explicit user instruction | Owner peer protection | All Owners | View protected Owner without account-control actions | No peer suspension/demotion/deletion/access expiry/device revocation; security lockout retained | Staff, Team access, Account security and APIs | Implemented and verified in isolated production-build browser/API tests | Attempts rejected in both directions; devices hidden; account and sessions unchanged |
+
+
+## Employee credential administration — explicit user instructions, 2026-11-14
+
+| Requirement ID | Source | Feature | User role | Workflow | Business rule | UI location | Status | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AUTH-CRED-01 | Explicit user request | Manual/generated initial passwords and optional credential email | Administrator | Create account → choose password → opt into email → verify status | Cryptographic generation; hash-only storage; no stored-secret retrieval; email acceptance is not inbox receipt | Staff & users | Implemented and verified in isolated production-build browser/API tests | Generated/typed passwords work; email/opt-out/unconfirmed failure; duplicate account rejected |
+| AUTH-CRED-02 | Explicit user request; Owner peer protection | Administrator password reset | Administrator / employee | Confirm Administrator password → reset → email/private handover → employee ownership verification | Employee role/status preserved; old devices, PIN sessions and challenges invalidated; no peer Owner reset | Staff → Reset password | Implemented and verified in isolated production-build browser/API tests | Old password/PIN/session/code rejected; new password/email/PIN works; staff/Owner-target resets denied |
+| AUTH-METHOD-01 | Explicit user instruction | Account and device authentication methods | Administrator / employee | Set employee defaults → restrict individual device → sign in with allowed method | PIN/password/biometric require both permissions; ownership verification grants no disabled password session | Team access; Settings → Account security; sign-in | Implemented and verified in isolated production-build browser/API tests | Real UI saves; disabled method rejects login and existing session; PIN-only ownership setup has no password ticket; device biometrics denied despite account permission |
+
+The explicit additional-Owner instruction supersedes earlier single-configured-Owner restrictions: only the configured Owner provisions further Owners, but explicitly approved Owners can authenticate and receive full Owner access. Owner peer protection remains enforced.

@@ -1,12 +1,15 @@
 {
-  "date": "2026-11-14T06:41:59.634Z",
+  "date": "2026-11-14T08:08:27.224Z",
   "findings": [
     "Login renders without overflow and with 44px targets at five viewport widths",
+    "Password visibility can be toggled without changing its value and conceals on leaving the field",
     "Failed sign-in displays a recoverable error and preserves email",
     "Cross-origin authentication rejected",
     "New device requires emailed code and resend is throttled",
     "Expired and incorrect email codes cannot authenticate",
+    "Six-box PIN entry supports leading-zero paste, native editing, reveal and conceal",
     "Password and email ownership verification lead to confirmed six-digit PIN setup, preserving leading zeroes",
+    "PIN setup and unlock have clean accessibility scans and no overflow at six widths in both themes",
     "Verified-device PIN unlock works without email; unverified devices and unproven PIN changes are rejected",
     "Verification code cannot be replayed",
     "Login ticket is single-use and successful sign-in audited",
@@ -19,6 +22,9 @@
     "Individual grants persist and finance screen cannot be delegated",
     "Permission changes apply to existing sessions and staff inventory JSON excludes buying costs",
     "Individual permission editor saves grants through its actual browser controls",
+    "Additional Owner security lockout remains enforced and directs recovery to the server operator",
+    "Configured Owner provisions an audited Owner through the UI; that Owner verifies email and PIN, receives finance access, and both peers reject suspension, demotion, permission changes, deletion and device revocation",
+    "Generated and manual account passwords, credential emails and failure recovery, administrator reset, old-session/PIN/code invalidation, and employee/device method policies work through actual controls",
     "Server-backed workspace lock blocks subsequent authenticated requests",
     "Revoke ends access on the next API request",
     "Concurrent wrong PINs stop at three failures, lock the account, revoke devices and alert the Administrator"

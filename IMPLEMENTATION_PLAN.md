@@ -70,3 +70,19 @@ Remaining external acceptance work: real iPhone installed-mode/Face ID/camera/Vo
 
 
 App PIN instruction: add device PIN hashes/credential versions and additive migration; make password + email ownership verification mandatory for setup/recovery; provide primary PIN unlock and optional WebAuthn; preserve verified sessions during rollout; verify replay/expiry/reset/concurrency/lockout and user-visible Settings flows before deployment. No production migration is applied until the reviewed release workflow runs.
+
+
+## Six-box PIN and protected Owners
+1. Reuse native semantic inputs behind masked PIN boxes; add reveal/conceal controls across password forms.
+2. Persist explicit approval for additional Owners, keeping unapproved historical Owner rows unable to sign in.
+3. Allow configured-Owner provisioning with password confirmation and an audit event; reject peer account and device mutations on the server.
+4. Verify native PIN editing, reveal privacy, responsive layouts, accessibility, additional-Owner authentication and both directions of peer protection.
+5. Apply the additive approval-column migration before releasing the application; leave production account creation to the configured Owner.
+
+
+## Employee credential delivery and method policy
+1. Add secure generated/manual password inputs and explicit credential-email options.
+2. Send directly through the accounts email service after the account/reset transaction commits; never persist plaintext passwords in app logs or queues.
+3. Add administrator-confirmed employee password reset, with device/challenge invalidation and Owner peer protection.
+4. Add account and device sign-in policy fields and method-bound tickets/sessions; keep ownership-only verification from bypassing disabled password sign-in.
+5. Verify invitation, opt-out, provider failure, reset, revoked old credentials and policy changes in an isolated running production build; rerun operations/PWA checks.
