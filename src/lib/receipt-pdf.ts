@@ -12,8 +12,11 @@ export type SaleReceiptData = {
   cashier: { name: string };
   customer: { name: string; phone: string } | null;
   saleItems: { quantity: number; unitPrice: number; total: number; product: { name: string; sku: string } }[];
-  payments: { amount: number; method: string }[];
+  payments: { amount: number; method: string; reference?: string | null }[];
 };
+
+const paymentLabels: Record<string, string> = { CASH: "Cash", BANK: "Bank transfer", CARD: "Card", MPESA: "M-Pesa", TRADE_IN: "Trade-in credit" };
+const paymentLabel = (method: string) => paymentLabels[method] ?? method;
 
 export type LayawayReceiptData = {
   id: string;
@@ -244,7 +247,7 @@ export function createSaleReceiptPdf(receipt: SaleReceiptData) {
   doc.setFontSize(8);
   doc.text("PAYMENT DETAILS", margin, y);
   const paymentLines = receipt.payments.length
-    ? receipt.payments.map((payment) => `${payment.method === "MPESA" ? "M-Pesa" : payment.method}  ${money(payment.amount)}`)
+    ? receipt.payments.map((payment) => `${paymentLabel(payment.method)}${payment.reference ? ` ${payment.reference}` : ""}  ${money(payment.amount)}`)
     : ["Credit sale - payment outstanding"];
   doc.setTextColor(...muted);
   doc.setFont("helvetica", "normal");
@@ -296,7 +299,7 @@ export function createLayawayPaymentReceiptPdf(
   pdf.line("Order total", money(order.totalAmount));
   pdf.section("Installment");
   pdf.line("Received", money(payment.amount));
-  pdf.line("Method", payment.method);
+  pdf.line("Method", paymentLabel(payment.method));
   if (payment.reference) pdf.line("Reference", payment.reference);
   pdf.line("Paid to date", money(order.totalAmount - balanceAfterPayment));
   pdf.line("Balance after payment", money(balanceAfterPayment));

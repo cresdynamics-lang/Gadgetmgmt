@@ -4,6 +4,7 @@ import { isCapitalCost } from "@/lib/expenses";
 import Link from "next/link";
 
 import { Desk, DeskNote } from "@/components/desk";
+import { PaymentTicks } from "@/components/payment-ticks";
 import { getBusinessInsights } from "@/lib/business-insights";
 import { presentBusinessInsights } from "@/lib/finance-visibility";
 import { requirePage } from "@/lib/require-page";
@@ -32,6 +33,8 @@ export default async function FinancePage() {
   const customers=await prisma.customer.findMany({where:{id:{in:attributed.flatMap(row=>row.customerId?[row.customerId]:[])}},select:{id:true,marketingSource:true}});
   const sources=new Map<string,{count:number;total:number}>();
   for(const row of attributed){const source=customers.find(customer=>customer.id===row.customerId)?.marketingSource||"Unattributed";const bucket=sources.get(source)||{count:0,total:0};bucket.count+=row._count;bucket.total+=row._sum.total??0;sources.set(source,bucket);}
+  const pendingPayments=await prisma.salePayment.findMany({where:{requiresVerification:true,verifiedAt:null,method:{in:["MPESA","BANK"]},sale:{status:{not:"VOIDED"}}},select:{id:true,amount:true,method:true,reference:true,createdAt:true,sale:{select:{invoiceNumber:true,cashier:{select:{name:true}},customer:{select:{name:true}},branch:{select:{name:true}}}}},orderBy:{createdAt:"asc"},take:200});
+  const tradeInCredit=await prisma.salePayment.aggregate({where:{method:"TRADE_IN",verifiedAt:null,sale:{status:{not:"VOIDED"}}},_sum:{amount:true},_count:true});
   return (
     <Desk title="Finance" detail="Shop sales, collected money, and estimated gross profit. Only the owner can open this desk.">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -52,6 +55,8 @@ export default async function FinancePage() {
           </article>
         ))}
       </div>
+      <PaymentTicks payments={pendingPayments.map(payment=>({id:payment.id,amount:payment.amount,method:payment.method as "MPESA"|"BANK",reference:payment.reference,createdAt:payment.createdAt.toISOString(),invoiceNumber:payment.sale.invoiceNumber,seller:payment.sale.cashier.name,client:payment.sale.customer?.name??null,branch:payment.sale.branch.name}))}/>
+      {tradeInCredit._count ? <DeskNote>{tradeInCredit._count} trade-in credit{tradeInCredit._count===1?"":"s"} worth {money(tradeInCredit._sum.amount??0)} wait for inspection. Accept or reject them in <Link href="/trade-ins" className="security-link">Trade-ins</Link>; a rejected trade-in reopens the balance on its sale.</DeskNote> : null}
       <section className="security-panel"><h3>Customer-stated marketing attribution</h3><p className="security-detail">Last 30 days. Source is what the customer stated, not inferred advertising causation. Marketing expenses are recorded separately.</p>{[...sources].map(([source,row])=><div className="workflow-row" key={source}><span>{source} · {row.count} sales</span><strong>{money(row.total)}</strong></div>)}</section>
       <DeskNote>Stock basis uses approved per-device entries where available and catalog cost for unidentified stock. Reconcile any count disagreements before relying on it. Estimated net result uses recorded sale-cost coverage and operating expenses. Inventory purchases and unit-linked capital costs are excluded from operating expenses to avoid double deduction. Payroll uses approved actual payments; no statutory calculation is invented. <Link href="/expenses" className="security-link">Review expenses and corrections</Link> <Link href="/insights" className="font-semibold text-[var(--accent-text)]">Open business insights</Link> for the longer read.</DeskNote>
     </Desk>

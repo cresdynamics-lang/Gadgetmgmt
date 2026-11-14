@@ -19,6 +19,8 @@
     "db:test-layaway-transaction": "node --env-file=.env --import tsx scripts/test-layaway-transaction.ts",
     "test:catalog-csv": "node --import tsx --test scripts/catalog-csv.test.ts",
     "test:money-allocation": "node --import tsx --test scripts/money-allocation.test.ts",
+    "test:money-in": "node --import tsx --test scripts/money-in.test.ts",
+    "test:money-in:e2e": "node --env-file=.env --import tsx scripts/money-in/review.ts",
     "test:receipt-pdf": "node --import tsx --test scripts/receipt-pdf.test.ts",
     "test:credit-lifecycle": "node --import tsx --test scripts/credit-lifecycle.test.ts",
     "notifications:worker": "node --env-file=.env --import tsx scripts/notifications-worker.ts",

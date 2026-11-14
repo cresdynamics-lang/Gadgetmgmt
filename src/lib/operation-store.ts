@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type OperationKind } from "@prisma/client";
 import { snapshotSaleCosts, moveStockUnit, recordStockUnit, StockUnitError } from "@/lib/stock-units";
 import { normalizeImei, normalizeSerial } from "@/lib/device-units";
+import { recordSaleEvents, referenceProblem, requiresOwnerTick } from "@/lib/money-in";
 import { nextOperationState, OperationError, validateInspection, type OperationCreate, type OperationUpdate } from "@/lib/operations";
 type Tx=Prisma.TransactionClient;
 export type OperationActor={id:string;role:string;branchId:string|null};
@@ -85,13 +86,15 @@ export async function updateOperation(tx:Tx,input:OperationUpdate,actor:Operatio
   let paidAmount=operation.paidAmount;
   if(input.action==="COLLECT") {
     if(!input.amount || !input.method || !operation.saleId || input.amount>operation.codAmount-operation.paidAmount)throw new OperationError(400,"Enter a payment within the remaining COD obligation.");
-    if(input.method==="MPESA" && !/^[A-Z0-9]{6,32}$/i.test(input.reference??""))throw new OperationError(400,"Enter the verified M-Pesa confirmation code.");
+    const collectProblem=referenceProblem(input.method,input.reference);
+    if(collectProblem)throw new OperationError(400,collectProblem);
     if(input.reference && await tx.salePayment.findFirst({where:{reference:input.reference.toUpperCase()}}))throw new OperationError(409,"That payment reference is already recorded.");
     const sale=await tx.sale.findUnique({where:{id:operation.saleId}});
     if(!sale || sale.status==="VOIDED" || input.amount>sale.total-sale.paidAmount)throw new OperationError(409,"The sale balance changed. Reconcile it before collecting.");
     const updated=await tx.sale.updateMany({where:{id:sale.id,paidAmount:sale.paidAmount,status:sale.status},data:{paidAmount:{increment:input.amount},status:sale.paidAmount+input.amount===sale.total?"PAID":"PARTIAL"}});
     if(!updated.count)throw new OperationError(409,"The sale changed. Refresh before collecting.");
-    await tx.salePayment.create({data:{saleId:sale.id,amount:input.amount,method:input.method,reference:input.reference?.toUpperCase()}});
+    await tx.salePayment.create({data:{saleId:sale.id,amount:input.amount,method:input.method,reference:input.reference?.toUpperCase(),requiresVerification:requiresOwnerTick(input.method)}});
+    await recordSaleEvents(tx,sale,actor.id,[{kind:"Payment recorded",note:`Cash on delivery collected by ${operation.party} · ${input.method}${input.reference?` ${input.reference.toUpperCase()}`:""}${requiresOwnerTick(input.method)?" · waiting for owner tick":""}`,amount:input.amount}]);
     paidAmount+=input.amount;
   }
   if(input.action==="CLOSE" && (operation.paidAmount<operation.codAmount || !operation.proof))throw new OperationError(409,"Record delivery proof and reconcile all COD money before closing.");
@@ -100,6 +103,7 @@ export async function updateOperation(tx:Tx,input:OperationUpdate,actor:Operatio
   }
   if(input.costAmount!==undefined && actor.role!=="OWNER" && operation.kind!=="REPAIR") throw new OperationError(403,"Write-only costs apply to repair records; other financial changes require Administrator approval.");
   if(operation.kind==="RETURN" && input.action==="ACCEPT" && operation.saleId && await tx.creditPlan.findFirst({where:{saleId:operation.saleId,balance:{gt:0}}})) throw new OperationError(409,"Reconcile the financed sale in Lipa before making this returned device available.");
+  if(operation.kind==="TRADE_IN" && operation.saleId && ["ACCEPT","REJECT"].includes(input.action)) await settleTradeInCredit(tx,{saleId:operation.saleId,accepted:input.action==="ACCEPT",actorId:actor.id,valuation:input.costAmount,proof:input.proof});
   if(["TRADE_IN","RETURN"].includes(operation.kind) && input.action==="REJECT") await tx.stockUnit.update({where:{id:operation.unitId},data:{status:"RETURNED",location:`Returned to ${operation.party}`}});
   if(operation.kind==="PARTNER" && operation.partnerDirection==="IN" && input.action==="RETURN") await moveStockUnit(tx,{id:operation.unitId,branchId:operation.branchId,status:"RETURNED",location:operation.party});
   if(operation.kind==="PARTNER" && operation.partnerDirection==="IN" && input.action==="SETTLE") {
@@ -113,10 +117,11 @@ export async function updateOperation(tx:Tx,input:OperationUpdate,actor:Operatio
     const unit=await tx.stockUnit.findUnique({where:{id:operation.unitId}});
     if(unit?.status!=="WITH_PARTNER")throw new OperationError(409,"The partner-held device changed.");
     if(!input.amount || !input.method)throw new OperationError(400,"Record the actual partner payment amount and method.");
-    if(input.method==="MPESA" && !/^[A-Z0-9]{6,32}$/i.test(input.reference??""))throw new OperationError(400,"Enter the verified M-Pesa reference.");
+    const settleProblem=referenceProblem(input.method,input.reference);
+    if(settleProblem)throw new OperationError(400,settleProblem);
     if(input.reference && await tx.salePayment.findFirst({where:{reference:input.reference.toUpperCase()}}))throw new OperationError(409,"That payment reference is already recorded.");
     const product=await tx.product.findUniqueOrThrow({where:{id:unit.productId}});
-    const sale=await tx.sale.create({data:{invoiceNumber:`GH-PARTNER-${input.requestKey.replaceAll("-","").slice(0,16).toUpperCase()}`,branchId:operation.branchId,cashierId:actor.id,total:input.amount,paidAmount:input.amount,status:"PAID",paymentMethod:input.method,saleItems:{create:{productId:unit.productId,quantity:1,unitPrice:input.amount,unitCost:product.costPrice,total:input.amount}},payments:{create:{amount:input.amount,method:input.method,reference:input.reference?.toUpperCase()}}},include:{saleItems:{select:{id:true}}}});
+    const sale=await tx.sale.create({data:{invoiceNumber:`GH-PARTNER-${input.requestKey.replaceAll("-","").slice(0,16).toUpperCase()}`,branchId:operation.branchId,cashierId:actor.id,total:input.amount,paidAmount:input.amount,status:"PAID",paymentMethod:input.method,saleItems:{create:{productId:unit.productId,quantity:1,unitPrice:input.amount,unitCost:product.costPrice,total:input.amount}},payments:{create:{amount:input.amount,method:input.method,reference:input.reference?.toUpperCase(),requiresVerification:requiresOwnerTick(input.method)}}},include:{saleItems:{select:{id:true}}}});
     await tx.stockUnit.update({where:{id:operation.unitId},data:{status:"SOLD",saleItemId:sale.saleItems[0].id,soldAt:new Date(),location:operation.party}});
     await tx.operation.update({where:{id:operation.id},data:{saleId:sale.id}});
     await snapshotSaleCosts(tx,sale.id);
@@ -127,6 +132,24 @@ export async function updateOperation(tx:Tx,input:OperationUpdate,actor:Operatio
   await tx.deviceEvent.create({data:{requestKey:input.requestKey,requestHash:hash,branchId:operation.branchId,unitId:operation.unitId,userId:actor.id,kind:`${operation.kind} ${input.action}`,note:input.proof??input.note??input.action,operationId:operation.id,saleId:operation.saleId,amount:input.costAmount}});
   if(input.costAmount && input.action!=="VALUE")await tx.expenseEntry.create({data:{requestKey:input.requestKey,requestHash:hash,branchId:operation.branchId,userId:actor.id,category:operation.kind==="REPAIR"?"REPAIR":operation.kind==="DELIVERY"?"DELIVERY":operation.kind==="RETURN"?"REFUND":"DEVICE_PURCHASE",payee:operation.party,description:`${operation.kind} cost`,amount:input.costAmount,occurredAt:new Date(),reference:input.reference??operation.reference??operation.id,unitId:operation.unitId,operationId:operation.id}});
   return await tx.operation.findUniqueOrThrow({where:{id:operation.id}});
+}
+/** A trade-in sale carries the device as credit until the owner accepts or rejects it at inspection. */
+async function settleTradeInCredit(tx:Tx,input:{saleId:string;accepted:boolean;actorId:string;valuation?:number;proof?:string}) {
+  const sale=await tx.sale.findUnique({where:{id:input.saleId},select:{id:true,branchId:true,total:true,paidAmount:true,status:true}});
+  if(!sale)return;
+  const credits=await tx.salePayment.findMany({where:{saleId:sale.id,method:"TRADE_IN",verifiedAt:null}});
+  if(!credits.length)return;
+  const credit=credits.reduce((sum,payment)=>sum+payment.amount,0);
+  const money=(amount:number)=>`KES ${amount.toLocaleString("en-KE")}`;
+  if(input.accepted) {
+    await tx.salePayment.updateMany({where:{id:{in:credits.map(payment=>payment.id)}},data:{verifiedAt:new Date(),verifiedById:input.actorId}});
+    await recordSaleEvents(tx,sale,input.actorId,[{kind:"Trade-in accepted",note:`Owner accepted the traded-in device. Credit ${money(credit)} confirmed${input.valuation && input.valuation!==credit?` (stock valuation ${money(input.valuation)})`:""}.`,amount:credit}]);
+    return;
+  }
+  const updated=await tx.sale.updateMany({where:{id:sale.id,paidAmount:sale.paidAmount},data:{paidAmount:{decrement:credit},status:"PARTIAL"}});
+  if(!updated.count)throw new OperationError(409,"The linked sale changed. Refresh before rejecting this trade-in.");
+  await tx.salePayment.deleteMany({where:{id:{in:credits.map(payment=>payment.id)}}});
+  await recordSaleEvents(tx,sale,input.actorId,[{kind:"Trade-in rejected",note:`Trade-in credit ${money(credit)} removed. Collect ${money(sale.total-sale.paidAmount+credit)} from the client.${input.proof?` ${input.proof}`:""}`,amount:-credit}]);
 }
 export function operationFailure(error:unknown) {
   if(error instanceof OperationError || error instanceof StockUnitError)return {status:error.status,error:error.message};

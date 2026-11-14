@@ -55,10 +55,10 @@ const iconByHref: Record<string, typeof LayoutDashboard> = {
 function Navigation({ pathname, role, grants, close }: { pathname: string; role: string; grants?: AccessMap; close?: () => void }) {
   return <nav aria-label="Main navigation" className="space-y-1.5">
     <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8a8a85]">Workspace</p>
-    {navItems.filter(({ href }) => canAccessPage(role, href, grants)).map(({ label, href }) => {
+    {navItems.filter(({ href }) => canAccessPage(role, href, grants)).map(({ label, href, parent }) => {
       const Icon = iconByHref[href] ?? Package;
       const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
-      return <Link key={href} href={href} onClick={close} aria-current={active ? "page" : undefined} className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors duration-150 ${active ? "bg-[#1f1f1e] text-white" : "text-[#c9c9c4] hover:bg-[#1a1a19] hover:text-white"}`}>
+      return <Link key={href} href={href} onClick={close} aria-current={active ? "page" : undefined} className={`group flex items-center gap-3 rounded-xl ${parent ? "ml-5 border-l border-[#2a2a28] pl-3" : "px-3"} pr-3 py-2.5 text-[13px] font-medium transition-colors duration-150 ${active ? "bg-[#1f1f1e] text-white" : "text-[#c9c9c4] hover:bg-[#1a1a19] hover:text-white"}`}>
         <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-[var(--accent-text)]" : "text-[#8a8a85] group-hover:text-white"}`} strokeWidth={1.8}/>
         <span className="flex-1">{label}</span>
         {active && <span className="h-1.5 w-1.5 rounded-full bg-[#0fa36e]"/>}

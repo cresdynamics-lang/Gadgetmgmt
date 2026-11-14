@@ -15,21 +15,24 @@ const movementLabel: Record<string, string> = {
 
 export default async function ActivityPage() {
   await requirePage("/activity");
-  const [sales, movements, alerts, signIns] = await Promise.all([
+  const [sales, movements, alerts, signIns, saleEvents] = await Promise.all([
     prisma.sale.findMany({ orderBy: { createdAt: "desc" }, take: 20, include: { cashier: { select: { name: true } } } }),
     prisma.inventoryMovement.findMany({ orderBy: { createdAt: "desc" }, take: 20, include: { product: { select: { name: true } }, user: { select: { name: true } } } }),
     prisma.staffAlert.findMany({ orderBy: { createdAt: "desc" }, take: 20, select: { id: true, title: true, createdAt: true, sender: { select: { name: true } } } }),
     prisma.authEvent.findMany({ orderBy: { createdAt: "desc" }, take: 40, include: { user: { select: { name: true } } } }),
+    prisma.saleEvent.findMany({ orderBy: { createdAt: "desc" }, take: 60, include: { user: { select: { name: true } }, sale: { select: { invoiceNumber: true } } } }),
   ]);
+  const loggedSales = new Set(saleEvents.map((event) => event.saleId));
   const events = [
     ...signIns.map(event => ({ id: `auth-${event.id}`, at: event.createdAt, title: event.action, detail: `${event.user.name} · ${event.deviceLabel}` })),
-    ...sales.map((sale) => ({ id: `sale-${sale.id}`, at: sale.createdAt, title: `Sale ${sale.invoiceNumber}`, detail: `${money(sale.total)} · ${sale.cashier.name}` })),
+    ...saleEvents.map((event) => ({ id: `sale-event-${event.id}`, at: event.createdAt, title: `${event.kind} · ${event.sale.invoiceNumber}`, detail: `${event.note}${event.amount !== null ? ` · ${money(event.amount)}` : ""}${event.user ? ` · ${event.user.name}` : ""}` })),
+    ...sales.filter((sale) => !loggedSales.has(sale.id)).map((sale) => ({ id: `sale-${sale.id}`, at: sale.createdAt, title: `Sale ${sale.invoiceNumber}`, detail: `${money(sale.total)} · ${sale.cashier.name}` })),
     ...movements.map((movement) => ({ id: `move-${movement.id}`, at: movement.createdAt, title: movementLabel[movement.type] ?? "Stock change", detail: `${movement.product.name} · ${movement.quantity} · ${movement.user.name}` })),
     ...alerts.map((alert) => ({ id: `alert-${alert.id}`, at: alert.createdAt, title: alert.title, detail: alert.sender?.name ?? "System" })),
-  ].sort((left, right) => right.at.getTime() - left.at.getTime()).slice(0, 40);
+  ].sort((left, right) => right.at.getTime() - left.at.getTime()).slice(0, 60);
 
   return (
-    <Desk title="Activity" detail="Recent sales, stock changes, and staff alerts. Only the owner can open this log. Entries are not edited here.">
+    <Desk title="Activity" detail="Every sale step (invoice, payment, receipt, owner tick, trade-in), stock changes, sign-ins and staff alerts. Only the owner can open this log. Entries are not edited here.">
       {events.length ? (
         <div className="divide-y divide-[var(--border)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)]">
           {events.map((event) => (
