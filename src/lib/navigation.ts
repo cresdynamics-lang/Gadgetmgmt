@@ -1,11 +1,11 @@
-export const navItems = [
+export const navItems: { label: string; href: string; parent?: string }[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Sales (POS)", href: "/sales" },
+  { label: "Trade-ins & returns", href: "/trade-ins", parent: "/sales" },
   { label: "Deliveries", href: "/deliveries" },
   { label: "Inventory", href: "/inventory" },
   { label: "Stock planner", href: "/planner" },
   { label: "Devices", href: "/devices" },
-  { label: "Trade-ins & returns", href: "/trade-ins" },
   { label: "Repairs", href: "/repairs" },
   { label: "Partners", href: "/partners" },
   { label: "Customers", href: "/customers" },

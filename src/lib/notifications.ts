@@ -2,7 +2,7 @@ import { emailTransport, type EmailPurpose } from "./email-transport";
 import { getCompanyEmailSettings } from "./email-settings";
 import type { NotificationChannel } from "@prisma/client";
 
-export async function deliverNotification(input: { purpose?: EmailPurpose; channel: NotificationChannel; recipient: string; subject: string | null; body: string; idempotencyKey?: string }) {
+export async function deliverNotification(input: { purpose?: EmailPurpose; channel: NotificationChannel; recipient: string; subject: string | null; body: string; idempotencyKey?: string; attachments?: { filename: string; content: string }[] }) {
   if (input.channel === "EMAIL") {
     const {apiKey} = emailTransport(input.purpose);
     const { from } = await getCompanyEmailSettings(input.purpose);
@@ -11,7 +11,7 @@ export async function deliverNotification(input: { purpose?: EmailPurpose; chann
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}) },
       signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({ from, to: [input.recipient], subject: input.subject ?? "GadgetHub update", text: input.body }),
+      body: JSON.stringify({ from, to: [input.recipient], subject: input.subject ?? "GadgetHub update", text: input.body, ...(input.attachments?.length ? { attachments: input.attachments } : {}) }),
     });
     if (!response.ok) throw new Error(`Email provider returned ${response.status}.`);
     return;

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
@@ -14,6 +14,10 @@ import { proportionalIntegerShare } from "@/lib/money-allocation";
 import { deliverNotification } from "@/lib/notifications";
 import { normalizeKenyanPhone } from "@/lib/mpesa";
 import { prisma } from "@/lib/prisma";
+import { inspectionSchema, OperationError } from "@/lib/operations";
+import { createOperation } from "@/lib/operation-store";
+import { effectiveDepositPercent, recordSaleEvents, referenceProblem, requiresOwnerTick, saleReceiptEmail, tenderLabels } from "@/lib/money-in";
+import { deliverQueuedReceipt } from "@/lib/receipt-delivery";
 
 export async function GET(request: Request) {
   const rejected = rejectSensitiveQuery(request);
@@ -24,7 +28,7 @@ export async function GET(request: Request) {
   const branchId = session.user.branchId;
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
-  const [products, customers, creditPolicy, devices] = await Promise.all([
+  const [products, customers, creditPolicy, devices, seller] = await Promise.all([
     prisma.product.findMany({
       where: { branchId },
       select: {
@@ -51,6 +55,7 @@ export async function GET(request: Request) {
       where: { branchId, status: "IN_STOCK" },
       select: { id: true, productId: true, imei: true, imei2: true, serialNumber: true },
     }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { name: true } }),
   ]);
 
   const blockedUnits=await prisma.stockUnit.findMany({where:{branchId,status:"IN_STOCK",operations:{some:{kind:"PARTNER",partnerDirection:"IN",status:"BORROWED_IN",closedAt:null,costAmount:null}}},select:{id:true,productId:true}});
@@ -63,7 +68,8 @@ export async function GET(request: Request) {
       available: Math.max(0, (inventory[0]?.stockOnHand ?? 0) - (inventory[0]?.reservedStock ?? 0) - blockedUnits.filter(unit=>unit.productId===product.id).length),
     })),
     customers,
-    creditPolicy: creditPolicy ?? { minimumDepositPercent: 20, defaultCreditLimit: 0 },
+    seller: { name: seller?.name ?? session.user.name ?? "Signed-in seller" },
+    creditPolicy: { minimumDepositPercent: effectiveDepositPercent(creditPolicy?.minimumDepositPercent), defaultCreditLimit: creditPolicy?.defaultCreditLimit ?? 0 },
     stanbic: stanbicSalesStatus(),
   });
 }
@@ -73,6 +79,9 @@ const deviceClaimSchema = z.object({
   imei: z.string().trim().max(20).optional(),
   serialNumber: z.string().trim().max(40).optional(),
 }).strict();
+
+const tender = z.enum(["CASH", "MPESA", "CARD", "BANK"]);
+const reference = z.string().trim().toUpperCase().min(4).max(40);
 
 const checkoutSchema = z.object({
   items: z.array(z.object({
@@ -88,18 +97,28 @@ const checkoutSchema = z.object({
     phone: z.string().trim().min(7).max(30),
     email: z.union([z.string().trim().email().max(254), z.literal("")]).optional(),
   }).strict().optional(),
-  paymentMethod: z.enum(["CASH", "MPESA", "CARD", "CREDIT", "SPLIT", "PAY_LINK", "COD"]),
+  paymentMethod: z.enum(["CASH", "MPESA", "CARD", "BANK", "CREDIT", "TRADE_IN", "SPLIT", "PAY_LINK", "COD"]),
   creditTermMonths: z.union([z.literal(4), z.literal(6), z.literal(12)]).optional(),
   creditDepositAmount: z.number().int().positive().max(2_000_000_000).optional(),
-  creditDepositMethod: z.enum(["CASH", "MPESA", "CARD"]).optional(),
-  creditDepositReference: z.string().trim().toUpperCase().min(6).max(32).optional(),
+  creditDepositMethod: tender.optional(),
+  creditDepositReference: reference.optional(),
   imei: z.string().trim().regex(/^\d{14,16}$/).optional(),
-  paymentReference: z.string().trim().toUpperCase().min(6).max(32).optional(),
+  paymentReference: reference.optional(),
   paymentBreakdown: z.array(z.object({
-    method: z.enum(["CASH", "MPESA", "CARD"]),
+    method: tender,
     amount: z.number().int().positive().max(2_000_000_000),
-    reference: z.string().trim().toUpperCase().min(6).max(32).optional(),
-  }).strict()).min(2).max(3).optional(),
+    reference: reference.optional(),
+  }).strict()).min(2).max(4).optional(),
+  tradeIn: z.object({
+    requestKey: z.uuid(),
+    productId: z.string().cuid(),
+    identifier: z.string().trim().min(6).max(40),
+    value: z.number().int().positive().max(2_000_000_000),
+    inspection: inspectionSchema,
+    notes: z.string().trim().max(500).optional(),
+    topUpMethod: tender.optional(),
+    topUpReference: reference.optional(),
+  }).strict().optional(),
   discountAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
   taxAmount: z.number().int().nonnegative().max(2_000_000_000).default(0),
 }).strict().superRefine((data, context) => {
@@ -109,27 +128,34 @@ const checkoutSchema = z.object({
   if (data.paymentMethod === "SPLIT" && !data.paymentBreakdown) {
     context.addIssue({ code: "custom", path: ["paymentBreakdown"], message: "Split tenders require a payment breakdown." });
   }
-  if (data.paymentMethod === "MPESA" && !data.paymentReference) {
-    context.addIssue({ code: "custom", path: ["paymentReference"], message: "Enter the M-Pesa confirmation code before recording the sale." });
-  }
-  if (data.paymentMethod !== "MPESA" && data.paymentReference) {
-    context.addIssue({ code: "custom", path: ["paymentReference"], message: "An M-Pesa confirmation code is only valid for an M-Pesa payment." });
+  if (["CASH", "MPESA", "CARD", "BANK"].includes(data.paymentMethod)) {
+    const problem = referenceProblem(data.paymentMethod as z.infer<typeof tender>, data.paymentReference);
+    if (problem) context.addIssue({ code: "custom", path: ["paymentReference"], message: problem });
+  } else if (data.paymentReference) {
+    context.addIssue({ code: "custom", path: ["paymentReference"], message: "A payment reference is only valid for a full payment." });
   }
   if (data.paymentMethod === "SPLIT") {
     for (const [index, payment] of (data.paymentBreakdown ?? []).entries()) {
-      if (payment.method === "MPESA" && !payment.reference) {
-        context.addIssue({ code: "custom", path: ["paymentBreakdown", index, "reference"], message: "Enter the M-Pesa confirmation code for that part of the payment." });
-      }
-      if (payment.method !== "MPESA" && payment.reference) {
-        context.addIssue({ code: "custom", path: ["paymentBreakdown", index, "reference"], message: "A confirmation code is only recorded for M-Pesa." });
-      }
+      const problem = referenceProblem(payment.method, payment.reference);
+      if (problem) context.addIssue({ code: "custom", path: ["paymentBreakdown", index, "reference"], message: problem });
     }
+  }
+  if (data.paymentMethod === "TRADE_IN") {
+    if (!data.tradeIn) context.addIssue({ code: "custom", path: ["tradeIn"], message: "Record the device being traded in and its agreed value." });
+    else if (data.tradeIn.topUpMethod) {
+      const problem = referenceProblem(data.tradeIn.topUpMethod, data.tradeIn.topUpReference);
+      if (problem) context.addIssue({ code: "custom", path: ["tradeIn", "topUpReference"], message: problem });
+    } else if (data.tradeIn.topUpReference) {
+      context.addIssue({ code: "custom", path: ["tradeIn", "topUpReference"], message: "Choose how the top-up was paid." });
+    }
+  } else if (data.tradeIn) {
+    context.addIssue({ code: "custom", path: ["tradeIn"], message: "Trade-in details are only valid for a trade-in sale." });
   }
   if (data.paymentMethod !== "SPLIT" && data.paymentBreakdown) {
     context.addIssue({ code: "custom", path: ["paymentBreakdown"], message: "Payment breakdown is only valid for split tenders." });
   }
-  if (["CREDIT","COD"].includes(data.paymentMethod) && !data.customerId && !data.newCustomer) {
-    context.addIssue({ code: "custom", path: ["newCustomer"], message: "Add or select a customer for a Lipa plan." });
+  if (["CREDIT","COD","TRADE_IN"].includes(data.paymentMethod) && !data.customerId && !data.newCustomer) {
+    context.addIssue({ code: "custom", path: ["newCustomer"], message: "Add or select the customer for this sale." });
   }
   if (data.paymentMethod === "PAY_LINK" && (!data.payerPhone || data.payerConsent !== true)) {
     context.addIssue({ code: "custom", path: ["payerPhone"], message: "Enter the payer’s number and confirm they agreed to receive the payment link." });
@@ -140,11 +166,9 @@ const checkoutSchema = z.object({
   if (data.paymentMethod === "CREDIT" && (!data.creditTermMonths || !data.creditDepositAmount || !data.creditDepositMethod)) {
     context.addIssue({ code: "custom", path: ["creditTermMonths"], message: "Choose a loan term, deposit amount and deposit payment method." });
   }
-  if (data.paymentMethod === "CREDIT" && data.creditDepositMethod === "MPESA" && !data.creditDepositReference) {
-    context.addIssue({ code: "custom", path: ["creditDepositReference"], message: "Enter the verified M-Pesa transaction code for the deposit." });
-  }
-  if (data.paymentMethod === "CREDIT" && data.creditDepositMethod !== "MPESA" && data.creditDepositReference) {
-    context.addIssue({ code: "custom", path: ["creditDepositReference"], message: "An M-Pesa transaction code is only valid for an M-Pesa deposit." });
+  if (data.paymentMethod === "CREDIT" && data.creditDepositMethod) {
+    const problem = referenceProblem(data.creditDepositMethod, data.creditDepositReference);
+    if (problem) context.addIssue({ code: "custom", path: ["creditDepositReference"], message: problem });
   }
   if (data.imei && (data.paymentMethod !== "CREDIT" || data.items.length !== 1 || data.items[0].quantity !== 1)) {
     context.addIssue({ code: "custom", path: ["imei"], message: "Enter one IMEI only for a single-unit Lipa sale." });
@@ -164,7 +188,10 @@ export async function POST(request: Request) {
   if (!branchId) return NextResponse.json({ error: "Your account is not assigned to a branch." }, { status: 403 });
 
   const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "The checkout details are invalid." }, { status: 400 });
+  if (!parsed.success) {
+    const custom = parsed.error.issues.find((issue) => issue.code === "custom");
+    return NextResponse.json({ error: custom?.message ?? "The checkout details are invalid." }, { status: 400 });
+  }
   const payerPhone = parsed.data.paymentMethod === "PAY_LINK" ? normalizeKenyanPhone(parsed.data.payerPhone ?? "") : null;
   if (parsed.data.paymentMethod === "PAY_LINK" && !payerPhone) return NextResponse.json({ error: "Enter a valid Kenyan mobile number for the payer." }, { status: 400 });
   const paymentBaseUrl = (process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/$/, "");
@@ -234,12 +261,13 @@ export async function POST(request: Request) {
         customerId = createdCustomer.id;
       }
 
+      let saleCustomer: { id: string; name: string; phone: string; email: string | null } | null = null;
       if (customerId) {
-        const customer = await transaction.customer.findFirst({
+        saleCustomer = await transaction.customer.findFirst({
           where: { id: customerId, branchId, status: "ACTIVE" },
-          select: { id: true, creditLimit: true },
+          select: { id: true, name: true, phone: true, email: true },
         });
-        if (!customer) throw new Error("CUSTOMER_UNAVAILABLE");
+        if (!saleCustomer) throw new Error("CUSTOMER_UNAVAILABLE");
       }
 
       for (const { inventory, quantity, product } of lineItems) {
@@ -259,6 +287,22 @@ export async function POST(request: Request) {
       if (!Number.isSafeInteger(total) || total < 1 || total > 2_147_483_647) throw new Error("SALE_AMOUNT_OUT_OF_RANGE");
       const paidAmount = parsed.data.paymentMethod === "CREDIT" ? parsed.data.creditDepositAmount! : (parsed.data.paymentMethod === "PAY_LINK" || parsed.data.paymentMethod === "COD") ? 0 : total;
       if (paidAmount > total) throw new Error("DEPOSIT_EXCEEDS_TOTAL");
+      const tradeIn = parsed.data.tradeIn;
+      const topUp = tradeIn ? total - tradeIn.value : 0;
+      if (tradeIn && topUp < 0) throw new Error("TRADE_IN_EXCEEDS_TOTAL");
+      if (tradeIn && topUp > 0 && !tradeIn.topUpMethod) throw new Error("TOP_UP_METHOD_REQUIRED");
+      const paymentLines: { amount: number; method: "CASH" | "MPESA" | "CARD" | "BANK" | "TRADE_IN"; reference: string | null }[] =
+        parsed.data.paymentMethod === "PAY_LINK" || parsed.data.paymentMethod === "COD" ? []
+        : parsed.data.paymentMethod === "SPLIT" ? parsed.data.paymentBreakdown!.map((payment) => ({ amount: payment.amount, method: payment.method, reference: payment.reference ?? null }))
+        : parsed.data.paymentMethod === "CREDIT" ? [{ amount: paidAmount, method: parsed.data.creditDepositMethod!, reference: parsed.data.creditDepositReference ?? null }]
+        : parsed.data.paymentMethod === "TRADE_IN" ? [
+          { amount: tradeIn!.value, method: "TRADE_IN", reference: null },
+          ...(topUp > 0 ? [{ amount: topUp, method: tradeIn!.topUpMethod!, reference: tradeIn!.topUpReference ?? null }] : []),
+        ]
+        : [{ amount: total, method: parsed.data.paymentMethod, reference: parsed.data.paymentReference ?? null }];
+      const references = paymentLines.map((line) => line.reference).filter((value): value is string => Boolean(value));
+      if (new Set(references).size !== references.length) throw new Error("DUPLICATE_PAYMENT_REFERENCE");
+      if (references.length && await transaction.salePayment.findFirst({ where: { reference: { in: references } }, select: { id: true } })) throw new Error("DUPLICATE_PAYMENT_REFERENCE");
       if (parsed.data.paymentMethod === "CREDIT" && customerId) {
         const customer = await transaction.customer.findFirst({ where: { id: customerId, branchId }, select: { creditLimit: true, status: true } });
         if (customer?.status === "CREDIT_HOLD") throw new Error("CUSTOMER_CREDIT_HOLD");
@@ -266,7 +310,7 @@ export async function POST(request: Request) {
           transaction.creditPolicy.findUnique({ where: { branchId }, select: { minimumDepositPercent: true, defaultCreditLimit: true } }),
           transaction.creditPlan.aggregate({ where: { branchId, customerId, balance: { gt: 0 } }, _sum: { balance: true } }),
         ]);
-        const depositPercent = policy?.minimumDepositPercent ?? 20;
+        const depositPercent = effectiveDepositPercent(policy?.minimumDepositPercent);
         if (paidAmount * 100 < total * depositPercent) throw new Error("DEPOSIT_BELOW_POLICY");
         const creditLimit = customer?.creditLimit || policy?.defaultCreditLimit || 0;
         if (creditLimit > 0 && (exposure._sum.balance ?? 0) + total - paidAmount > creditLimit) throw new Error("CREDIT_LIMIT_EXCEEDED");
@@ -314,13 +358,9 @@ export async function POST(request: Request) {
               total: lineTotal,
             })),
           },
-          ...((parsed.data.paymentMethod === "PAY_LINK" || parsed.data.paymentMethod === "COD") ? {} : { payments: {
-            create: parsed.data.paymentMethod === "SPLIT"
-              ? parsed.data.paymentBreakdown!
-              : parsed.data.paymentMethod === "CREDIT"
-                ? [{ amount: paidAmount, method: parsed.data.creditDepositMethod!, reference: parsed.data.creditDepositReference || null }]
-                : [{ amount: total, method: parsed.data.paymentMethod, ...(parsed.data.paymentReference ? { reference: parsed.data.paymentReference } : {}) }],
-          } }),
+          ...(paymentLines.length ? { payments: {
+            create: paymentLines.map((line) => ({ ...line, requiresVerification: requiresOwnerTick(line.method) })),
+          } } : {}),
         },
         include: {
           customer: { select: { name: true, phone: true } },
@@ -330,6 +370,7 @@ export async function POST(request: Request) {
           payments: true,
         },
       });
+      if (!saleCustomer && customerId) saleCustomer = await transaction.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true, phone: true, email: true } });
 
       for (const line of createdSale.saleItems) {
         const product = products.find((item) => item.id === line.productId);
@@ -468,8 +509,75 @@ export async function POST(request: Request) {
         })),
       });
 
-      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId };
+      let tradeInOperationId: string | null = null;
+      if (tradeIn && saleCustomer) {
+        const operation = await createOperation(transaction, {
+          requestKey: tradeIn.requestKey,
+          kind: "TRADE_IN",
+          partnerDirection: "OUT",
+          productId: tradeIn.productId,
+          identifier: tradeIn.identifier,
+          party: saleCustomer.name,
+          contact: saleCustomer.phone,
+          saleId: createdSale.id,
+          reference: createdSale.invoiceNumber,
+          details: `Traded in against ${createdSale.invoiceNumber} for KES ${tradeIn.value.toLocaleString("en-KE")}${tradeIn.notes ? ` · ${tradeIn.notes}` : ""}`.slice(0, 1000),
+          dueAt: new Date(receiptDate.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+          codAmount: 0,
+          inspection: tradeIn.inspection,
+        }, { id: session.user.id, role: session.user.role, branchId });
+        tradeInOperationId = operation.id;
+      }
+
+      const money = (amount: number) => `KES ${amount.toLocaleString("en-KE")}`;
+      const waiting = createdSale.payments.filter((payment) => payment.requiresVerification);
+      const events: { kind: string; note: string; amount?: number }[] = [
+        { kind: "Sale recorded", note: `${createdSale.invoiceNumber} · ${createdSale.saleItems.map((item) => `${item.product.name} × ${item.quantity}`).join(", ")} · seller ${createdSale.cashier.name}`, amount: total },
+        { kind: "Invoice created", note: `${createdSale.invoiceNumber} · ${parsed.data.paymentMethod.replace("_", " ").toLowerCase()} sale`, amount: total },
+        ...(parsed.data.newCustomer && saleCustomer ? [{ kind: "Client created", note: `${saleCustomer.name} · ${saleCustomer.phone}` }] : []),
+        ...createdSale.payments.map((payment) => ({ kind: "Payment recorded", note: `${tenderLabels[payment.method]}${payment.reference ? ` ${payment.reference}` : ""}${payment.requiresVerification ? " · waiting for owner tick" : ""}`, amount: payment.amount })),
+        ...(tradeInOperationId ? [{ kind: "Trade-in opened", note: `${tradeIn!.identifier} sent to inspection · credit ${money(tradeIn!.value)}`, amount: tradeIn!.value }] : []),
+      ];
+
+      let receiptNotificationId: string | null = null;
+      if (paymentLines.length && saleCustomer?.email) {
+        const email = saleReceiptEmail({ ...createdSale, payments: createdSale.payments });
+        const notification = await transaction.customerNotification.create({
+          data: { branchId, customerId: saleCustomer.id, kind: "SALE_RECEIPT", channel: "EMAIL", recipient: saleCustomer.email, subject: email.subject, body: email.body, dedupeKey: `receipt:${createdSale.id}:checkout` },
+          select: { id: true },
+        });
+        receiptNotificationId = notification.id;
+        events.push({ kind: "Receipt queued", note: `PDF receipt emailed to ${saleCustomer.email}` });
+      } else if (paymentLines.length) {
+        events.push({ kind: "Receipt ready", note: "No client email on file. Print the receipt or send it from the receipt screen." });
+      }
+      await recordSaleEvents(transaction, createdSale, session.user.id, events);
+
+      const owners = await transaction.user.findMany({ where: { role: "OWNER", status: "ACTIVE" }, select: { id: true } });
+      if (owners.length) {
+        await transaction.staffAlert.createMany({
+          data: owners.filter((owner) => owner.id !== session.user.id || waiting.length > 0).map((owner) => ({
+            userId: owner.id,
+            senderId: session.user.id,
+            title: `${waiting.length ? "Tick needed · " : ""}Sale ${createdSale.invoiceNumber} · ${money(total)}`.slice(0, 160),
+            body: [
+              `${createdSale.cashier.name} sold ${createdSale.saleItems.map((item) => `${item.product.name} × ${item.quantity}`).join(", ")} at ${createdSale.branch.name}.`,
+              ...createdSale.payments.map((payment) => `${tenderLabels[payment.method]}${payment.reference ? ` ${payment.reference}` : ""}: ${money(payment.amount)}${payment.requiresVerification ? " (waiting for your tick in Finance)" : ""}`),
+              ...(createdSale.payments.length ? [] : ["No money recorded yet."]),
+            ].join("\n").slice(0, 4000),
+          })),
+        });
+      }
+
+      return { sale: createdSale, creditPlanLinks, salePaymentLink, payerNotificationId, receiptNotificationId };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    if (sale.receiptNotificationId) {
+      const receiptId = sale.receiptNotificationId;
+      after(async () => {
+        try { await deliverQueuedReceipt(receiptId); } catch { /* The notification worker retries queued receipts. */ }
+      });
+    }
 
     let payerMessage: { recipient: string; status: "SENT" | "FAILED" | "QUEUED" } | null = null;
     if (sale.payerNotificationId) {
@@ -494,7 +602,7 @@ export async function POST(request: Request) {
         console.error("Payment link was created, but immediate SMS delivery could not be recorded", sale.payerNotificationId, deliveryError instanceof Error ? deliveryError.message : "unknown error");
       }
     }
-    return NextResponse.json({ ...omitSaleCost(sale.sale, session.user.role), creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage }, { status: 201 });
+    return NextResponse.json({ ...omitSaleCost(sale.sale, session.user.role), receiptEmail: sale.receiptNotificationId ? "QUEUED" : null, creditPlanLinks: sale.creditPlanLinks, salePaymentLink: sale.salePaymentLink, payerMessage }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("INSUFFICIENT_STOCK:")) {
       return NextResponse.json({ error: `Insufficient stock for ${error.message.slice("INSUFFICIENT_STOCK:".length)}.` }, { status: 409 });
@@ -507,6 +615,10 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "IMEI_ALREADY_REGISTERED") return NextResponse.json({ error: "This IMEI is already attached to a Lipa account." }, { status: 409 });
     if (error instanceof Error && error.message === "INVALID_PAID_AMOUNT") return NextResponse.json({ error: "Use two distinct payment methods whose amounts add up to the sale total." }, { status: 400 });
     if (error instanceof Error && error.message === "SALE_AMOUNT_OUT_OF_RANGE") return NextResponse.json({ error: "Sale total exceeds the supported integer amount or contains an invalid price." }, { status: 400 });
+    if (error instanceof Error && error.message === "TRADE_IN_EXCEEDS_TOTAL") return NextResponse.json({ error: "The trade-in value cannot be more than the sale total. The shop does not pay out cash on a trade-in." }, { status: 400 });
+    if (error instanceof Error && error.message === "TOP_UP_METHOD_REQUIRED") return NextResponse.json({ error: "Choose how the client paid the top-up." }, { status: 400 });
+    if (error instanceof Error && error.message === "DUPLICATE_PAYMENT_REFERENCE") return NextResponse.json({ error: "That M-Pesa code or bank reference is already recorded on another payment." }, { status: 409 });
+    if (error instanceof OperationError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof StockUnitError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json({ error: "This IMEI or serial is already on record." }, { status: 409 });

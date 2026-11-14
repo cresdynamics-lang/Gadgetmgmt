@@ -9,7 +9,9 @@ export async function getCompanyEmailSettings(purpose:EmailPurpose="notification
   const environmentName = environmentFrom.includes("<") ? environmentFrom.split("<")[0].trim().replace(/^"|"$/g, "") : "GadgetHub";
   const senderEmail = saved?.senderEmail || environmentAddress;
   const senderName = saved?.senderName || environmentName;
-  const from = saved ? `${JSON.stringify(saved.senderName)} <${saved.senderEmail}>` : environmentFrom;
+  // A sender set for one purpose (e.g. MAIL_FROM_ORDERS for receipts from info@gadgethubke.com) wins over the shared company sender.
+  const purposeFrom = process.env[`MAIL_FROM_${purpose.toUpperCase()}`]?.trim();
+  const from = purposeFrom || (saved ? `${JSON.stringify(saved.senderName)} <${saved.senderEmail}>` : environmentFrom);
   const apiKeyConfigured = Boolean(transport.apiKey);
   return { from, senderEmail, senderName, apiKeyConfigured, configured: Boolean(apiKeyConfigured && from), testMode: senderEmail.toLowerCase().endsWith("@resend.dev") };
 }

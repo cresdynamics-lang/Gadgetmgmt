@@ -141,9 +141,9 @@ enum CosmeticGrade {
 }
 
 model Branch {
-  operations Operation[]
-  deviceEvents DeviceEvent[]
-  expenses ExpenseEntry[]
+  operations     Operation[]
+  deviceEvents   DeviceEvent[]
+  expenses       ExpenseEntry[]
   recurringBills RecurringBill[]
 
   id            String                 @id @default(cuid())
@@ -169,9 +169,9 @@ model Branch {
 }
 
 model User {
-  operations Operation[]
+  operations   Operation[]
   deviceEvents DeviceEvent[]
-  expenses ExpenseEntry[]
+  expenses     ExpenseEntry[]
 
   id                        String                    @id @default(cuid())
   name                      String
@@ -202,6 +202,8 @@ model User {
   layawayPaymentsReceived   LayawayPayment[]          @relation("LayawayReceivedBy")
   creditSubmissionsReviewed CreditPaymentSubmission[] @relation("CreditSubmissionReviewer")
   stockUnits                StockUnit[]
+  verifiedSalePayments      SalePayment[]             @relation("SalePaymentVerifier")
+  saleEvents                SaleEvent[]               @relation("SaleEventActor")
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
 }
@@ -215,7 +217,7 @@ model RoleEntitlement {
 }
 
 model Customer {
-  marketingSource String?
+  marketingSource          String?
   id                       String                     @id @default(cuid())
   name                     String
   phone                    String
@@ -242,7 +244,7 @@ model Customer {
 }
 
 model Product {
-  variantTargets VariantTarget[]
+  variantTargets  VariantTarget[]
   id              String              @id @default(cuid())
   sku             String              @unique
   catalogItemId   String?
@@ -291,29 +293,30 @@ model InventoryItem {
 model Sale {
   operations Operation[]
 
-  id              String                @id @default(cuid())
-  invoiceNumber   String                @unique
+  id              String              @id @default(cuid())
+  invoiceNumber   String              @unique
   branchId        String
-  branch          Branch                @relation(fields: [branchId], references: [id])
+  branch          Branch              @relation(fields: [branchId], references: [id])
   cashierId       String
-  cashier         User                  @relation(fields: [cashierId], references: [id])
+  cashier         User                @relation(fields: [cashierId], references: [id])
   customerId      String?
-  customer        Customer?             @relation(fields: [customerId], references: [id])
+  customer        Customer?           @relation(fields: [customerId], references: [id])
   total           Int
-  discountAmount  Int                   @default(0)
-  taxAmount       Int                   @default(0)
-  paidAmount      Int                   @default(0)
-  paymentMethod   String                @default("CASH")
-  status          SaleStatus            @default(PAID)
+  discountAmount  Int                 @default(0)
+  taxAmount       Int                 @default(0)
+  paidAmount      Int                 @default(0)
+  paymentMethod   String              @default("CASH")
+  status          SaleStatus          @default(PAID)
   saleItems       SaleItem[]
   payments        SalePayment[]
+  events          SaleEvent[]
   creditPlans     CreditPlan[]
   paymentRequests PaymentRequest[]
-  layawayOrderId  String?               @unique
-  layawayOrder    LayawayOrder?         @relation(fields: [layawayOrderId], references: [id])
+  layawayOrderId  String?             @unique
+  layawayOrder    LayawayOrder?       @relation(fields: [layawayOrderId], references: [id])
   movements       InventoryMovement[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   @@index([branchId, createdAt])
 }
@@ -322,78 +325,103 @@ enum TenderMethod {
   CASH
   MPESA
   CARD
+  BANK
+  TRADE_IN
 }
 
 model SalePayment {
-  id        String       @id @default(cuid())
-  saleId    String
-  sale      Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  amount    Int
-  method    TenderMethod
-  reference String?
-  createdAt DateTime     @default(now())
+  id                   String       @id @default(cuid())
+  saleId               String
+  sale                 Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  amount               Int
+  method               TenderMethod
+  reference            String?
+  /// M-Pesa and bank entries wait for the owner's tick before they count as confirmed money.
+  requiresVerification Boolean      @default(false)
+  verifiedAt           DateTime?
+  verifiedById         String?
+  verifiedBy           User?        @relation("SalePaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  createdAt            DateTime     @default(now())
 
   @@index([saleId, createdAt])
+  @@index([requiresVerification, verifiedAt])
+}
+
+/// Append-only trail of every step of a sale, shown in the owner's Activity log.
+model SaleEvent {
+  id        String   @id @default(cuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  branchId  String
+  userId    String?
+  user      User?    @relation("SaleEventActor", fields: [userId], references: [id], onDelete: SetNull)
+  kind      String
+  note      String
+  amount    Int?
+  createdAt DateTime @default(now())
+
+  @@index([saleId, createdAt])
+  @@index([createdAt])
 }
 
 model SaleItem {
-  totalCost Int?
-  id             String   @id @default(cuid())
+  totalCost      Int?
+  id             String      @id @default(cuid())
   saleId         String
-  sale           Sale     @relation(fields: [saleId], references: [id])
+  sale           Sale        @relation(fields: [saleId], references: [id])
   productId      String
-  product        Product  @relation(fields: [productId], references: [id])
+  product        Product     @relation(fields: [productId], references: [id])
   quantity       Int
   unitPrice      Int
-  unitCost       Int      @default(0)
-  discountAmount Int      @default(0)
-  taxAmount      Int      @default(0)
+  unitCost       Int         @default(0)
+  discountAmount Int         @default(0)
+  taxAmount      Int         @default(0)
   total          Int
   stockUnits     StockUnit[]
-  createdAt      DateTime @default(now())
+  createdAt      DateTime    @default(now())
 }
 
 model StockUnit {
-  ownership String @default("SHOP")
-  ownerName String?
+  ownership  String        @default("SHOP")
+  ownerName  String?
   operations Operation[]
-  events DeviceEvent[]
+  events     DeviceEvent[]
 
-  id                 String           @id @default(cuid())
-  branchId           String
-  branch             Branch           @relation(fields: [branchId], references: [id])
-  productId          String
-  product            Product          @relation(fields: [productId], references: [id])
-  recordedById       String
-  recordedBy         User             @relation(fields: [recordedById], references: [id])
-  imei               String?          @unique
-  imei2              String?          @unique
-  serialNumber       String?          @unique
-  barcode            String?
-  status             UnitStatus       @default(IN_STOCK)
-  condition          DeviceCondition  @default(NEW)
-  cosmeticGrade      CosmeticGrade?
-  color              String?
-  storage            String?
-  ram                String?
-  screenSize         String?
-  processor          String?
-  region             String?
-  camera             String?
-  networkLock        NetworkLock      @default(UNKNOWN)
-  osVersion          String?
-  activationLock     ActivationLock   @default(UNKNOWN)
-  batteryHealth      Int?
-  location           String?
-  supplierName       String?
-  purchaseReference  String?
-  notes              String?
-  saleItemId         String?
-  saleItem           SaleItem?        @relation(fields: [saleItemId], references: [id])
-  receivedAt         DateTime         @default(now())
-  soldAt             DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  id                String          @id @default(cuid())
+  branchId          String
+  branch            Branch          @relation(fields: [branchId], references: [id])
+  productId         String
+  product           Product         @relation(fields: [productId], references: [id])
+  recordedById      String
+  recordedBy        User            @relation(fields: [recordedById], references: [id])
+  imei              String?         @unique
+  imei2             String?         @unique
+  serialNumber      String?         @unique
+  barcode           String?
+  status            UnitStatus      @default(IN_STOCK)
+  condition         DeviceCondition @default(NEW)
+  cosmeticGrade     CosmeticGrade?
+  color             String?
+  storage           String?
+  ram               String?
+  screenSize        String?
+  processor         String?
+  region            String?
+  camera            String?
+  networkLock       NetworkLock     @default(UNKNOWN)
+  osVersion         String?
+  activationLock    ActivationLock  @default(UNKNOWN)
+  batteryHealth     Int?
+  location          String?
+  supplierName      String?
+  purchaseReference String?
+  notes             String?
+  saleItemId        String?
+  saleItem          SaleItem?       @relation(fields: [saleItemId], references: [id])
+  receivedAt        DateTime        @default(now())
+  soldAt            DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@index([branchId, status])
   @@index([productId, status])
@@ -401,37 +429,37 @@ model StockUnit {
 }
 
 model CreditPlan {
-  id                   String                    @id @default(cuid())
-  branchId             String
-  branch               Branch                    @relation(fields: [branchId], references: [id])
-  customerId           String
-  customer             Customer                  @relation(fields: [customerId], references: [id])
-  productId            String
-  product              Product                   @relation(fields: [productId], references: [id])
-  totalAmount          Int
-  planReference        String                    @unique @default(cuid())
-  kind                 CreditPlanKind            @default(INSTALLMENT)
-  saleId               String?
-  sale                 Sale?                     @relation(fields: [saleId], references: [id])
-  depositAmount        Int                       @default(0)
-  balance              Int
-  lateFeeAmount        Int                       @default(0)
-  lateFeeAppliedAt     DateTime?
-  earlySettlementDiscountAmount Int              @default(0)
-  imei                 String?                   @unique
-  installmentCount     Int
-  termMonths           Int                       @default(1)
-  nextDueDate          DateTime
-  portalTokenHash      String?                   @unique
-  status               CreditStatus              @default(ACTIVE)
-  payments             Payment[]
-  installments         CreditInstallment[]
-  rescheduleRequests   CreditRescheduleRequest[]
-  paymentSubmissions   CreditPaymentSubmission[]
-  paymentRequests      PaymentRequest[]
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
-  mpesaC2BTransactions MpesaC2BTransaction[]
+  id                            String                    @id @default(cuid())
+  branchId                      String
+  branch                        Branch                    @relation(fields: [branchId], references: [id])
+  customerId                    String
+  customer                      Customer                  @relation(fields: [customerId], references: [id])
+  productId                     String
+  product                       Product                   @relation(fields: [productId], references: [id])
+  totalAmount                   Int
+  planReference                 String                    @unique @default(cuid())
+  kind                          CreditPlanKind            @default(INSTALLMENT)
+  saleId                        String?
+  sale                          Sale?                     @relation(fields: [saleId], references: [id])
+  depositAmount                 Int                       @default(0)
+  balance                       Int
+  lateFeeAmount                 Int                       @default(0)
+  lateFeeAppliedAt              DateTime?
+  earlySettlementDiscountAmount Int                       @default(0)
+  imei                          String?                   @unique
+  installmentCount              Int
+  termMonths                    Int                       @default(1)
+  nextDueDate                   DateTime
+  portalTokenHash               String?                   @unique
+  status                        CreditStatus              @default(ACTIVE)
+  payments                      Payment[]
+  installments                  CreditInstallment[]
+  rescheduleRequests            CreditRescheduleRequest[]
+  paymentSubmissions            CreditPaymentSubmission[]
+  paymentRequests               PaymentRequest[]
+  createdAt                     DateTime                  @default(now())
+  updatedAt                     DateTime                  @updatedAt
+  mpesaC2BTransactions          MpesaC2BTransaction[]
 
   @@index([branchId, status, nextDueDate])
 }
@@ -442,7 +470,7 @@ model CreditPolicy {
   branch                         Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   graceDays                      Int      @default(3)
   lateFeeAmount                  Int      @default(0)
-  minimumDepositPercent          Int      @default(20)
+  minimumDepositPercent          Int      @default(40)
   defaultCreditLimit             Int      @default(0)
   earlySettlementDiscountPercent Int      @default(0)
   managerEscalationDays          Int      @default(3)
@@ -655,35 +683,34 @@ model InventoryMovement {
 }
 
 model ScheduledJobRun {
-  id               String    @id @default(cuid())
-  jobName          String
-  status           String    @default("RUNNING")
-  updatedPlans     Int       @default(0)
-  queuedReminders  Int       @default(0)
-  queuedDigests    Int       @default(0)
-  sentCount        Int       @default(0)
-  failedCount      Int       @default(0)
-  errorMessage     String?
-  startedAt        DateTime  @default(now())
-  finishedAt       DateTime?
+  id              String    @id @default(cuid())
+  jobName         String
+  status          String    @default("RUNNING")
+  updatedPlans    Int       @default(0)
+  queuedReminders Int       @default(0)
+  queuedDigests   Int       @default(0)
+  sentCount       Int       @default(0)
+  failedCount     Int       @default(0)
+  errorMessage    String?
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
 
   @@index([jobName, startedAt])
 }
 
-
 // Staff inbox is independent of customer reminder delivery and consent.
 model StaffAlert {
   senderId    String?
-  sender      User?    @relation("StaffAlertSender", fields: [senderId], references: [id], onDelete: SetNull)
-  requestKey  String?  @unique
-  id          String   @id @default(cuid())
+  sender      User?                @relation("StaffAlertSender", fields: [senderId], references: [id], onDelete: SetNull)
+  requestKey  String?              @unique
+  id          String               @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   title       String
   body        String
-  scheduledAt DateTime @default(now())
+  scheduledAt DateTime             @default(now())
   readAt      DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime             @default(now())
   deliveries  StaffAlertDelivery[]
 
   @@index([senderId, createdAt])
@@ -691,25 +718,25 @@ model StaffAlert {
 }
 
 model StaffAlertDelivery {
-  id        String @id @default(cuid())
+  id        String             @id @default(cuid())
   alertId   String
-  alert     StaffAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  alert     StaffAlert         @relation(fields: [alertId], references: [id], onDelete: Cascade)
   channel   String
   status    NotificationStatus @default(QUEUED)
-  attempts  Int @default(0)
+  attempts  Int                @default(0)
   lastError String?
   sentAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime           @default(now())
 
   @@unique([alertId, channel])
   @@index([status, createdAt])
 }
 
 model PushSubscription {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint  String @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
@@ -731,62 +758,63 @@ model NotificationRateLimit {
   count       Int
 }
 
-
 model AuthDevice {
-  pinAllowed Boolean @default(true)
-  passwordAllowed Boolean @default(true)
-  biometricsAllowed Boolean @default(true)
-  pinHash String?
-  pinVersion Int @default(0)
-  pinUpdatedAt DateTime?
-  activeUntil DateTime?
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String @unique
-  label String
-  createdAt DateTime @default(now())
-  lastUsedAt DateTime @default(now())
-  revokedAt DateTime?
-  lockedAt DateTime?
-  passkeys AuthPasskey[]
+  pinAllowed        Boolean       @default(true)
+  passwordAllowed   Boolean       @default(true)
+  biometricsAllowed Boolean       @default(true)
+  pinHash           String?
+  pinVersion        Int           @default(0)
+  pinUpdatedAt      DateTime?
+  activeUntil       DateTime?
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash         String        @unique
+  label             String
+  createdAt         DateTime      @default(now())
+  lastUsedAt        DateTime      @default(now())
+  revokedAt         DateTime?
+  lockedAt          DateTime?
+  passkeys          AuthPasskey[]
+
   @@index([userId, revokedAt])
 }
 
 model AuthPasskey {
-  id String @id
-  deviceId String
-  device AuthDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  publicKey Bytes
-  counter BigInt @default(0)
+  id         String     @id
+  deviceId   String
+  device     AuthDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  publicKey  Bytes
+  counter    BigInt     @default(0)
   transports String[]
-  createdAt DateTime @default(now())
+  createdAt  DateTime   @default(now())
 }
 
 model AuthChallenge {
-  authMethod String @default("PASSWORD")
+  authMethod        String   @default("PASSWORD")
   credentialVersion Int?
-  id String @id
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind String
-  value String
-  deviceId String?
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id                String   @id
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind              String
+  value             String
+  deviceId          String?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+
   @@index([userId, kind, createdAt])
 }
 
 model AuthEvent {
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
-  action String
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  action      String
   deviceLabel String
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
   @@index([createdAt])
 }
-
 
 enum OperationKind {
   REPAIR
@@ -797,105 +825,108 @@ enum OperationKind {
 }
 
 model Operation {
-  partnerDirection String @default("OUT")
-  requestHash String
-  id String @id @default(cuid())
-  requestKey String @unique
-  kind OperationKind
-  status String
-  version Int @default(0)
-  branchId String
-  branch Branch @relation(fields: [branchId], references: [id])
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  unitId String
-  unit StockUnit @relation(fields: [unitId], references: [id])
-  saleId String?
-  sale Sale? @relation(fields: [saleId], references: [id])
-  party String
-  contact String?
-  destination String?
-  reference String?
-  details String
-  dueAt DateTime
-  codAmount Int @default(0)
-  paidAmount Int @default(0)
-  costAmount Int?
-  proof String?
-  inspection Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  closedAt DateTime?
+  partnerDirection String        @default("OUT")
+  requestHash      String
+  id               String        @id @default(cuid())
+  requestKey       String        @unique
+  kind             OperationKind
+  status           String
+  version          Int           @default(0)
+  branchId         String
+  branch           Branch        @relation(fields: [branchId], references: [id])
+  userId           String
+  user             User          @relation(fields: [userId], references: [id])
+  unitId           String
+  unit             StockUnit     @relation(fields: [unitId], references: [id])
+  saleId           String?
+  sale             Sale?         @relation(fields: [saleId], references: [id])
+  party            String
+  contact          String?
+  destination      String?
+  reference        String?
+  details          String
+  dueAt            DateTime
+  codAmount        Int           @default(0)
+  paidAmount       Int           @default(0)
+  costAmount       Int?
+  proof            String?
+  inspection       Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  closedAt         DateTime?
+
   @@index([branchId, kind, status, dueAt])
   @@index([unitId, closedAt])
 }
 
 model DeviceEvent {
-  requestKey String? @unique
+  requestKey  String?   @unique
   requestHash String?
-  id String @id @default(cuid())
-  branchId String
-  branch Branch @relation(fields: [branchId], references: [id])
-  unitId String
-  unit StockUnit @relation(fields: [unitId], references: [id])
-  userId String?
-  user User? @relation(fields: [userId], references: [id])
-  kind String
-  note String
-  saleId String?
+  id          String    @id @default(cuid())
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id])
+  unitId      String
+  unit        StockUnit @relation(fields: [unitId], references: [id])
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  kind        String
+  note        String
+  saleId      String?
   operationId String?
-  amount Int?
-  createdAt DateTime @default(now())
+  amount      Int?
+  createdAt   DateTime  @default(now())
+
   @@index([unitId, createdAt])
 }
 
 model ExpenseEntry {
   requestHash String
-  id String @id @default(cuid())
-  requestKey String @unique
-  branchId String
-  branch Branch @relation(fields: [branchId], references: [id])
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  category String
-  payee String
+  id          String   @id @default(cuid())
+  requestKey  String   @unique
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  category    String
+  payee       String
   description String
-  amount Int
-  occurredAt DateTime
-  reference String
-  unitId String?
+  amount      Int
+  occurredAt  DateTime
+  reference   String
+  unitId      String?
   operationId String?
-  reversesId String? @unique
-  billId String?
-  period String?
-  createdAt DateTime @default(now())
-  @@index([branchId, occurredAt])
+  reversesId  String?  @unique
+  billId      String?
+  period      String?
+  createdAt   DateTime @default(now())
+
   @@unique([billId, period])
+  @@index([branchId, occurredAt])
 }
 
 model RecurringBill {
   requestHash String
-  id String @id @default(cuid())
-  requestKey String @unique
-  branchId String
-  branch Branch @relation(fields: [branchId], references: [id])
-  title String
-  payee String
-  category String
-  amount Int
-  dueDay Int
-  active Boolean @default(true)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  requestKey  String   @unique
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  title       String
+  payee       String
+  category    String
+  amount      Int
+  dueDay      Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 }
 
-
 model VariantTarget {
-  id String @id @default(cuid())
-  productId String
-  product Product @relation(fields: [productId], references: [id])
-  color String
-  storage String
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id])
+  color           String
+  storage         String
   targetAvailable Int
-  updatedAt DateTime @updatedAt
-  @@unique([productId,color,storage])
+  updatedAt       DateTime @updatedAt
+
+  @@unique([productId, color, storage])
 }
