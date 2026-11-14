@@ -138,3 +138,10 @@ At the account holder’s explicit request, seed defaults and the deployment own
 Production diagnosis found that the generic Resend secret was empty, while the accounts key was valid and `gadgethubke.com` was verified. Runtime compatibility now uses the existing accounts credentials when the generic key is absent. Account verification, order receipts and staff notices select their corresponding configured transport, retaining the shared company-sender override and generic fallback for single-key deployments. Credentials are never returned in settings payloads.
 
 Production workflow `43503087754` verified the requested administrator identity and password, then received provider acceptance for a real sign-in code to `aabere70@gmail.com`. This establishes credential acceptance and provider acceptance, not inbox arrival or completed authentication. The account holder must request/enter a fresh code in their own browser. Seven runtime-configuration tests and 25 transport/auth/notification tests pass; lint, TypeScript and production build pass.
+
+
+## Install/update confirmation choices — 2026-11-14
+
+The installation card consistently offers **Install app** and **Cancel**, including on iPhone where installation opens Safari guidance. The pending-update notice offers **Install update** and **Cancel** with an explicit restart warning. Cancel dismisses the current notice without invoking the native installer, activating a waiting service worker, or reloading the page. Installation cancellation retains the existing seven-day reminder preference; a canceled update stays pending for a later visit.
+
+Seven browser scenarios passed, including both cancellation paths, five-width install layouts and the existing accessibility scan. Updated visual evidence is under `artifacts/branding-review`; the update popup was inspected at 390px.

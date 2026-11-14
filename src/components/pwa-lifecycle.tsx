@@ -10,6 +10,8 @@ const subscribeConnection = (listener: () => void) => {
 export function PwaLifecycle() {
   const online = useSyncExternalStore(subscribeConnection, () => navigator.onLine, () => true);
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
+  const [dismissedUpdate,setDismissedUpdate]=useState<ServiceWorker|null>(null);
+  const updateReady=Boolean(waiting&&waiting!==dismissedUpdate);
   const [notice, setNotice] = useState("");
   useEffect(() => {
     if (!window.isSecureContext || !("serviceWorker" in navigator)) return;
@@ -41,7 +43,7 @@ export function PwaLifecycle() {
     navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload(), { once: true });
     waiting.postMessage({ type: "APPLY_UPDATE" });
   }
-  return <><PwaInstallPrompt suspended={!online||Boolean(waiting)||Boolean(notice)}/>{(!online||waiting||notice)&&<aside className="pwa-status" aria-label="App status"><p role="status">{!online ? "You’re offline. Transactions are not submitted or queued. Reconnect before saving." : waiting ? "An app update is ready. Save your work before restarting." : notice}</p>{online && waiting && <button type="button" onClick={update}>Update & restart</button>}{online && notice && <button type="button" onClick={()=>setNotice("")}>Dismiss</button>}</aside>}</>;
+  return <><PwaInstallPrompt suspended={!online||Boolean(waiting)||Boolean(notice)}/>{(!online||updateReady||notice)&&<aside className="pwa-status" aria-label="App status"><p role="status">{!online ? "You’re offline. Transactions are not submitted or queued. Reconnect before saving." : updateReady ? "An app update is ready. Save your work before installing and restarting." : notice}</p>{online && updateReady && <div className="pwa-status-actions"><button type="button" onClick={()=>setDismissedUpdate(waiting)}>Cancel</button><button type="button" className="pwa-update-install" onClick={update}>Install update</button></div>}{online && notice && <button type="button" onClick={()=>setNotice("")}>Dismiss</button>}</aside>}</>;
 }
 export function PwaSettings() {
   const [message, setMessage] = useState("");

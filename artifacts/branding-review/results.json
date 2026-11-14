@@ -4,7 +4,9 @@
     "Installation guidance yields to sign-in focus",
     "Dismissal persists across reloads",
     "Installed iPhone mode does not advertise installation",
-    "Supported-browser Install invokes the native prompt; accepted request hides the card; accessibility scan passes"
+    "Supported-browser Install invokes the native prompt; accepted request hides the card; accessibility scan passes",
+    "Cancel dismisses installation without opening the native prompt",
+    "Update notice offers Install update and Cancel; cancellation does not activate the worker or reload"
   ],
   "limits": [
     "Native OS installation and Safari Share UI require real-device confirmation. Browser install event is simulated; no installation success is fabricated."

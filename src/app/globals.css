@@ -1046,3 +1046,7 @@ html[data-lock-pending="true"] .workspace-content,html[data-lock-pending="true"]
 .pwa-install-instructions {padding-top:12px;}.pwa-install-instructions button {margin-top:12px;}
 html:has([role="dialog"]) .pwa-install,html:has(.security-login input:focus) .pwa-install {display:none;}
 @media(min-width:1024px){.pwa-install {left:auto;right:24px;bottom:24px;}}
+
+.pwa-status-actions {display:flex;justify-content:flex-end;gap:8px;margin-top:8px;}
+.pwa-status-actions button {border-radius:12px;}
+.pwa-status-actions .pwa-update-install {background:#0a7d56;color:#fff;}
