@@ -42,3 +42,6 @@ App PINs use six equal masked boxes with a restrained green focus ring and a num
 
 
 Password creation/reset uses one shared masked field with an inset eye control and a secondary Generate password action. Generated values use platform cryptographic randomness. Reset uses a native modal dialog with focus containment, Escape/cancel behavior and a clear affected-person summary. Email status distinguishes accepted delivery from an unconfirmed attempt.
+
+
+Reference-catalog lookup uses existing disclosure panels, native labeled inputs and source-attributed result rows. Missing attributes are explicit; incomplete family/reference classifications cannot look like verified sellable variants. Source controls show text-based enablement, error/cooldown and heartbeat states, use the shared password eye control and confirm only preferences saved—not a completed remote collection.

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { Check, Download, FileText, Package, Search } from "lucide-react";
 
+import { ReferenceCatalogLookup } from "@/components/reference-catalog-lookup";
 import { BarcodeCapture } from "@/components/barcode-capture";
 import type { DetectedCode } from "@/lib/barcode-scanner";
 import { categoryTracksUnits, maskImei, maskSerial } from "@/lib/device-units";
@@ -358,6 +359,7 @@ export default function InventoryPage() {
           <button type="button" onClick={() => { setAddingProduct((current) => !current); setError(""); }} className="border border-[var(--border)] px-3.5 py-2.5 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--background)]">{addingProduct ? "Close product setup" : "Add product"}</button>
         </div>
 
+        <ReferenceCatalogLookup/>
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#0a7d56] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--foreground)]">{notice}</p> : null}
 

@@ -242,6 +242,8 @@ model Customer {
 }
 
 model Product {
+  referenceDeviceId String?
+  referenceDevice DeviceCatalogEntry? @relation(fields: [referenceDeviceId], references: [id], onDelete: SetNull)
   variantTargets VariantTarget[]
   id              String              @id @default(cuid())
   sku             String              @unique
@@ -271,6 +273,102 @@ model Product {
   updatedAt       DateTime            @updatedAt
 
   @@index([branchId, category])
+}
+
+// Public reference information is independent of shop stock, cost and physical serials.
+model DeviceCatalogSource {
+  id String @id
+  name String
+  license String
+  licenseUrl String
+  enabled Boolean @default(false)
+  refreshSeconds Int @default(86400)
+  cursor String?
+  nextRunAt DateTime @default(now())
+  cooldownUntil DateTime?
+  leaseToken String?
+  leaseUntil DateTime?
+  etag String?
+  lastModified String?
+  lastCheckedAt DateTime?
+  lastSuccessAt DateTime?
+  lastHttpStatus Int?
+  status String @default("DISABLED")
+  lastError String?
+  failureCount Int @default(0)
+  discoveredCount Int @default(0)
+  changedCount Int @default(0)
+  rejectedCount Int @default(0)
+  entries DeviceCatalogEntry[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([enabled, nextRunAt])
+}
+
+model DeviceCatalogHost {
+  origin String @id
+  nextAllowedAt DateTime @default(now())
+  windowStartedAt DateTime @default(now())
+  requestCount Int @default(0)
+}
+
+model DeviceCatalogEntry {
+  id String @id @default(cuid())
+  sourceId String
+  source DeviceCatalogSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  externalId String
+  name String
+  brand String
+  manufacturer String?
+  category String
+  family String?
+  granularity String @default("MODEL")
+  description String?
+  modelNumbers String[] @default([])
+  partNumbers String[] @default([])
+  gtins String[] @default([])
+  colors String[] @default([])
+  storage String[] @default([])
+  memory String[] @default([])
+  regions String[] @default([])
+  compatibility String[] @default([])
+  released String?
+  discontinued String?
+  specifications Json
+  sourceUrl String
+  contentHash String
+  firstSeenAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  changedAt DateTime @default(now())
+  identifiers DeviceCatalogIdentifier[]
+  observations DeviceCatalogObservation[]
+  products Product[]
+  @@unique([sourceId, externalId])
+  @@index([brand, name])
+  @@index([changedAt])
+}
+
+model DeviceCatalogIdentifier {
+  id String @id @default(cuid())
+  entryId String
+  entry DeviceCatalogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  kind String
+  value String
+  normalizedValue String
+  active Boolean @default(true)
+  @@unique([entryId, kind, normalizedValue])
+  @@index([normalizedValue])
+}
+
+model DeviceCatalogObservation {
+  id String @id @default(cuid())
+  entryId String
+  entry DeviceCatalogEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  contentHash String
+  snapshot Json
+  observedAt DateTime @default(now())
+  @@index([entryId, contentHash])
+  @@index([entryId, observedAt])
 }
 
 model InventoryItem {

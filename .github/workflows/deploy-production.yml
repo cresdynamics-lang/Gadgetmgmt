@@ -50,6 +50,7 @@ jobs:
 
       - name: Verify access and notification security
         run: |
+          npm run test:device-catalog
           npm run test:auth
           npm run test:access
           npm run test:notifications
@@ -77,6 +78,8 @@ jobs:
           cp -a prisma/. "$stage/prisma/"
           mkdir -p "$stage/worker"
           npx esbuild scripts/notifications-worker.ts --bundle --platform=node --packages=external --outfile="$stage/worker/notifications.cjs"
+          npx esbuild scripts/device-catalog-worker.ts --bundle --platform=node --packages=external --outfile="$stage/worker/device-catalog.cjs"
+          npx esbuild scripts/device-catalog-health.ts --bundle --platform=node --packages=external --outfile="$stage/worker/device-catalog-health.cjs"
           (cd "$stage" && npm ci --omit=dev)
           (cd "$stage" && "${GITHUB_WORKSPACE}/node_modules/.bin/prisma" generate)
           test -d "$stage/node_modules/@prisma/client"

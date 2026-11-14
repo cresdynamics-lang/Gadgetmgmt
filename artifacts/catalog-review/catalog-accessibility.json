@@ -1,0 +1,22 @@
+[
+  {
+    "screen": "lookup",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "screen": "lookup",
+    "theme": "dark",
+    "violations": []
+  },
+  {
+    "screen": "sources",
+    "theme": "light",
+    "violations": []
+  },
+  {
+    "screen": "sources",
+    "theme": "dark",
+    "violations": []
+  }
+]

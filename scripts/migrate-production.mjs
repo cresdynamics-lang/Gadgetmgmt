@@ -33,6 +33,7 @@ const migrations=[
  ['20261114080000_device_pin','AuthDevice','pinHash'],
  ['20261114110000_approved_owners','User','ownerApprovedAt'],
  ['20261114120000_sign_in_methods','User','pinAllowed'],
+ ['20261114140000_device_catalog','DeviceCatalogSource'],
 ];
 for(const [name,sentinel,column] of migrations){
  const body=readFileSync(`prisma/migrations/${name}/migration.sql`,'utf8');const checksum=createHash('sha256').update(body).digest('hex');
