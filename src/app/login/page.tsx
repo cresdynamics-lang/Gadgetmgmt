@@ -47,7 +47,7 @@ export default function LoginPage() {
     const session = await sessionResponse.json();
     const callback = safeInternalPath(new URLSearchParams(window.location.search).get("callbackUrl"));
     const pages: string[] = session.user?.pages ?? [];
-    const next = callback && callback !== "/login" && (pages.includes("*") || callback === "/account" || pages.some(page => callback === page || callback.startsWith(`${page}/`))) ? callback : pages.includes("*") || pages.includes("/dashboard") ? "/dashboard" : pages[0] || "/account";
+    const next = callback && callback !== "/login" && (pages.includes("*") || callback === "/account" || callback === "/settings" || callback.startsWith("/settings#") || pages.some(page => callback === page || callback.startsWith(`${page}/`))) ? callback : pages.includes("*") || pages.includes("/dashboard") ? "/dashboard" : pages[0] || "/settings";
     router.replace(next); router.refresh();
   }
   async function submit(event: FormEvent<HTMLFormElement>, passkey = false) {

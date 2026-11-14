@@ -145,3 +145,10 @@ Production workflow `43503087754` verified the requested administrator identity 
 The installation card consistently offers **Install app** and **Cancel**, including on iPhone where installation opens Safari guidance. The pending-update notice offers **Install update** and **Cancel** with an explicit restart warning. Cancel dismisses the current notice without invoking the native installer, activating a waiting service worker, or reloading the page. Installation cancellation retains the existing seven-day reminder preference; a canceled update stays pending for a later visit.
 
 Seven browser scenarios passed, including both cancellation paths, five-width install layouts and the existing accessibility scan. Updated visual evidence is under `artifacts/branding-review`; the update popup was inspected at 390px.
+
+
+## Account Security consolidated into Settings — 2026-11-14
+
+Account Security is now a section of Settings, with its separate navigation entry removed. Passkey enrollment and device revocation are preserved. Appearance/install controls are grouped under App preferences. Branch configuration and the existing business-account panel remain available only to authorized business administrators/managers; personal Settings is available to ungranted staff. `/account` redirects to `/settings#account-security`, and sign-in/root fallback destinations now use Settings.
+
+Verification: 15 access/auth checks and 19 isolated browser scenarios pass, including real virtual-authenticator registration/sign-in, device revocation, ungranted staff Settings access, absence of branch controls, rejected branch writes and the old-link redirect. Settings was reviewed at 375/390/430/768/1440 widths; screenshots are under `artifacts/auth-review`. No production records, credentials or permissions are changed by this move.

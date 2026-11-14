@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-13T13:51:28.907Z",
+  "date": "2026-11-14T04:56:38.923Z",
   "findings": [
     "Login renders without overflow and with 44px targets at five viewport widths",
     "Failed sign-in displays a recoverable error and preserves email",
@@ -12,6 +12,7 @@
     "Mobile navigation traps keyboard focus and closes with Escape",
     "Real WebAuthn registration with required user verification succeeds",
     "Real WebAuthn authentication opens an authorized workspace",
+    "Personal Account Security lives in Settings for ungranted staff; business controls and writes remain denied; old account links redirect",
     "A signed-in staff account has no operational or owner access before explicit grants",
     "Individual grants persist and finance screen cannot be delegated",
     "Permission changes apply to existing sessions and staff inventory JSON excludes buying costs",
