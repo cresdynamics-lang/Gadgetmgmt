@@ -30,7 +30,7 @@ export const PAGE_CATALOG = [
   { path: "/staff", label: "Staff & users" },
   { path: "/activity", label: "Activity" },
   { path: "/notifications", label: "Messages & alerts" },
-  { path: "/settings", label: "Settings" },
+  { path: "/settings", label: "Business settings" },
 ] as const;
 
 const OWNER_ONLY_PAGES = new Set(["/finance", "/expenses", "/activity"]);
@@ -184,7 +184,7 @@ export function isOwnerEntitlementPath(pathname: string) {
 }
 
 export function canAccessPage(role: string, pathname: string, grants?: AccessMap) {
-  if (pathname === "/") return isAppRole(role);
+  if (pathname === "/" || pathname === "/settings") return isAppRole(role);
   if (pathname === "/account" || pathname.startsWith("/account/")) return isAppRole(role);
   if (isOwnerEntitlementPath(pathname)) return role === "OWNER";
   const stored = grants && isAppRole(role) ? grants[role]?.pages : undefined;
@@ -316,4 +316,9 @@ export function assertEntitlementFloors(grants: Record<AppRole, RoleGrant>): { o
     }
   }
   return { ok: true, grants };
+}
+
+/** Personal settings are universal; business editing keeps its existing grants. */
+export function canManageBusinessSettings(role:string,grant:RoleGrant) {
+  return role === "OWNER" || role === "BRANCH_MANAGER" && grant.pages.includes("/settings") && grant.capabilities.includes("branchSettings");
 }

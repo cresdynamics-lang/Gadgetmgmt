@@ -2,8 +2,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import { startRegistration, browserSupportsWebAuthn } from "webauthn-browser";
 import { signOut } from "next-auth/react";
-import { PwaReadiness } from "@/components/pwa-readiness";
-import { PwaSettings } from "@/components/pwa-lifecycle";
 import { Fingerprint, ShieldCheck, Smartphone } from "lucide-react";
 
 type Device = { id: string; label: string; createdAt: string; lastUsedAt: string; user: { name: string }; _count: { passkeys: number } };
@@ -60,11 +58,10 @@ export function AccountSecurity() {
     } catch (e) { setError(e instanceof Error ? e.message : "Device could not be revoked."); }
     finally { setBusy(false); }
   }
-  return <div className="security-stack mx-auto max-w-2xl">
-    <div><p className="security-eyebrow"><ShieldCheck size={16} aria-hidden="true"/> Your account</p><h2>Account security</h2><p className="security-detail">Manage how you sign in and which devices can access GadgetHub.</p></div>
+  return <div className="security-stack">
+    <div><p className="security-eyebrow"><ShieldCheck size={16} aria-hidden="true"/> Your account</p><h2 id="account-security-title">Account security</h2><p className="security-detail">Manage how you sign in and which devices can access GadgetHub.</p></div>
     {error && <div role="alert" className="security-error">{error}<button className="security-link" onClick={() => {setError(""); void load();}}>Try again</button></div>}
     {notice && <p role="status" className="security-notice">{notice}</p>}
-    <PwaSettings /><PwaReadiness />
     <section className="security-panel"><Fingerprint size={24} aria-hidden="true"/><h3>Face ID & passkeys</h3><p className="security-detail">Verify with your device’s Face ID, fingerprint, or screen-lock PIN. Your biometric data stays on your device.</p>
       {loading ? <p role="status">Loading security settings…</p> : !allowed ? <p className="security-notice">Ask the Administrator to enable biometric sign-in for your account.</p> : !supported ? <p className="security-notice">This browser does not support passkeys. Use your password to sign in.</p> : <form className="security-stack" onSubmit={enroll}><label className="security-field">Confirm your password<input name="password" type="password" autoComplete="current-password" required disabled={busy}/></label><button className="security-primary" disabled={busy}>{busy ? "Setting up…" : "Set up Face ID or a passkey"}</button></form>}
     </section>

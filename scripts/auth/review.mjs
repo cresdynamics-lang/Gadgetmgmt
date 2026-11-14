@@ -114,7 +114,7 @@ try {
   await redeem(ticket);
   // The original session remains valid; no second successful sign-in was recorded.
   assert.equal(await prisma.authEvent.count({where:{userId:owner.id,action:'Signed in'}}),1); pass('Login ticket is single-use and successful sign-in audited');
-  await openWorkspace('Account security','/account');
+  await openWorkspace('Settings','/settings');
   await page.getByRole('heading',{name:'Account security',exact:true,level:2}).waitFor();
   await page.getByText('This device',{exact:true}).waitFor();
   for (const width of [375,390,430,768,1440]) {
@@ -158,6 +158,10 @@ try {
   assert.equal((await staffContext.request.get(base+'/api/pos')).status(),403);
   assert.equal((await staffContext.request.get(base+'/api/inventory')).status(),403);
   assert.equal((await staffContext.request.get(base+'/api/auth/access')).status(),403);
+  const personalSettings=await staffContext.request.get(base+'/settings');assert.equal(personalSettings.status(),200);const personalMarkup=await personalSettings.text();assert.match(personalMarkup,/Account security/);assert.doesNotMatch(personalMarkup,/Save branch profile|Branch profile/);
+  assert.equal((await staffContext.request.patch(base+`/api/branches/${branch.id}`,{headers:{Origin:base},data:{name:'Blocked change'}})).status(),403);
+  const legacy=await staffContext.request.get(base+'/account');assert.equal(new URL(legacy.url()).pathname,'/settings');
+  pass('Personal Account Security lives in Settings for ungranted staff; business controls and writes remain denied; old account links redirect');
   pass('A signed-in staff account has no operational or owner access before explicit grants');
   // Server grant mutation requires password and applies per person.
   response=await context.request.put(base+'/api/auth/access',{headers:{Origin:base},data:{userId:staff.id,pages:['/dashboard','/sales','/finance'],capabilities:['sales'],biometricsAllowed:true,password}});assert.equal(response.status(),200);
@@ -200,7 +204,7 @@ try {
   assert.equal((await context.request.get(base+'/api/auth/devices')).status(),401);pass('Server-backed workspace lock blocks subsequent authenticated requests');
   response=await post('password',{email,password});assert.equal(response.status(),200);await redeem((await response.json()).ticket);
   session=await (await context.request.get(base+'/api/auth/session')).json();assert.equal(session.user.id,owner.id);
-  await openWorkspace('Account security','/account');
+  await openWorkspace('Settings','/settings');
   const revokeRow=page.locator('.security-device-list:visible li').filter({hasText:'This device'});
   await revokeRow.getByRole('button',{name:/Revoke/}).click();
   await revokeRow.getByLabel('Confirm your password',{exact:true}).fill(password);

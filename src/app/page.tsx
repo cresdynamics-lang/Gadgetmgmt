@@ -5,5 +5,5 @@ export default async function HomePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const pages = session.user.pages;
-  redirect(pages.includes("*") || pages.includes("/dashboard") ? "/dashboard" : pages[0] || "/account");
+  redirect(pages.includes("*") || pages.includes("/dashboard") ? "/dashboard" : pages[0] || "/settings");
 }

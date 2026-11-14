@@ -86,3 +86,6 @@ These rows supersede earlier auth-slice coverage statements. “Verified” mean
 | LIPA-01 | §7B; existing policy | Approved financing terms | Cashier/owner | Existing quote/collections | Preserve live policy until approved replacement | Lipa / Sell | Awaiting business decision | No sample 40%/1–6-month terms silently enabled |
 | FIN-02 | §7A/H | Bank/Stanbic/refund/statutory policy | Owner | Confirm contract and accounting policy | No invented bank contract, deductions, refund allocation or financing cancellation | Payment/finance | Blocked by contract or business decision | Provider contract + signed policy + reconciliation tests required |
 | HW-01 | §8/13 | Physical iPhone / provider delivery | All | Install, Face ID, camera, VoiceOver, push/email, print | PWA platform capability, not native imitation | Installed app | External verification gate | Real Safari/Home Screen + devices + configured live providers |
+
+
+Settings consolidation: AUTH-02/AUTH-03 now appear under **Settings → Account security**; personal settings remain available without operational grants. Business settings still require authorized role, page and capability. The separate account navigation entry is removed, and `/account` remains a redirect for compatibility. Verified by the dated Settings QA entry.

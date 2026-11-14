@@ -31,9 +31,9 @@ Lipa rows are ordered by `compareLipaUrgency`: recovery, then the late stages, o
 
 ## Authentication slice — current branch
 
-The sign-in journey is email → device passkey when available, or password → emailed verification on a new device. A verified device can use password alone as fallback. New accounts are created by Administrator; staff have no operational permissions until he grants screens and actions individually in Access. Account security is reachable independently of operational grants, including for newly provisioned staff. Users without a permitted dashboard land in Account security rather than a forbidden dead end.
+The sign-in journey is email → device passkey when available, or password → emailed verification on a new device. A verified device can use password alone as fallback. New accounts are created by Administrator; staff have no operational permissions until he grants screens and actions individually in Access. Account security is reachable independently of operational grants, including for newly provisioned staff. Users without operational grants land in Settings, where personal account security is always available.
 
-Account security lists live verified devices, identifies the current device, offers enrollment after password confirmation, and gives an inline revoke confirmation with a safe Cancel action. Device sessions are checked in the database on every authenticated server request. Authentication events join Activity. Device inventory remains the existing physical-stock Devices module; login devices use a separate Account security destination.
+Account security lists live verified devices, identifies the current device, offers enrollment after password confirmation, and gives an inline revoke confirmation with a safe Cancel action. Device sessions are checked in the database on every authenticated server request. Authentication events join Activity. Device inventory remains the existing physical-stock Devices module; login devices are managed in the Account security section inside Settings. The old `/account` destination redirects to `/settings#account-security`.
 
 The web client uses platform WebAuthn with user verification. It does not collect Face ID images, device PINs, or claim native iOS behavior. Security-sensitive administration is separate from operational sales and inventory paths. Individual user grants supersede role-wide authorization.
 
@@ -54,3 +54,8 @@ Focused operational journeys:
 The service worker stores only a public offline page and app icons. Business operations remain online; interrupted requests retain idempotency keys and explain recovery. Updates wait for an explicit restart. Backgrounding covers the workspace immediately and attempts server locking; a short server lease bounds suspension/offline failure. Reopening requires authentication. The web client cannot guarantee a network beacon on an OS kill.
 
 WebAuthn delegates Face ID/fingerprint/device PIN to the OS. Independent application PINs, native secure storage and native haptics are not claimed. Account provides installation, appearance and owner service-readiness controls. Provider configuration and actual delivery are reported separately.
+
+
+## Settings information architecture — 2026-11-14
+
+Settings is a single navigation destination for every authenticated role. It groups Account security (passkeys and verified devices), App preferences (appearance, installation and authorized service readiness), and Business settings. Business settings render only for the Administrator or an authorized branch manager with both the business-settings page grant and branch-settings capability. Personal Settings access does not grant branch editing. The page grant is labeled Business settings in access administration to make that distinction clear. Legacy account links redirect to the security section; ungranted staff sign in to Settings instead of an inaccessible workspace.

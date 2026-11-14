@@ -146,7 +146,7 @@ test("auth redirects and Compose use the public HTTPS origin", () => {
 });
 
 test("each editable page is refused on the server when it is not granted", () => {
-  const pages = ["/dashboard", "/sales", "/deliveries", "/inventory", "/planner", "/devices", "/repairs", "/partners", "/customers", "/credit", "/layaway", "/finance", "/expenses", "/performance", "/assistant", "/insights", "/staff", "/activity", "/notifications", "/settings", "/access"];
+  const pages = ["/dashboard", "/sales", "/deliveries", "/inventory", "/planner", "/devices", "/repairs", "/partners", "/customers", "/credit", "/layaway", "/finance", "/expenses", "/performance", "/assistant", "/insights", "/staff", "/activity", "/notifications", "/access"];
   for (const page of pages) {
     const layout = readFileSync(path.join(root, "src/app", page.slice(1), "layout.tsx"), "utf8");
     assert.match(layout, new RegExp(`requirePage\\("${page}"\\)`));
