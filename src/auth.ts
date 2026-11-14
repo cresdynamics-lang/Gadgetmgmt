@@ -30,7 +30,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         if (!ticket?.deviceId || !await consumeChallenge(ticket.id, "ticket")) return null;
         const token = (await cookies()).get(DEVICE_COOKIE)?.value;
         const device = await prisma.authDevice.findFirst({ where: { id: ticket.deviceId, userId: ticket.userId, tokenHash: digest(token ?? ""), revokedAt: null } });
-        if (!device) return null;
+        if (!device || (ticket.credentialVersion??0)!==device.pinVersion) return null;
         const user = await prisma.user.findUnique({ where: { id: ticket.userId }, include: { branch: { select: { name: true } } } });
         if (!user || user.status !== "ACTIVE" || user.lockedAt || !permittedOwner(user)) return null;
         await prisma.$transaction([
@@ -42,6 +42,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         return {
           id: user.id,
           deviceId: device.id,
+          pinVersion: device.pinVersion,
           name: user.name,
           email: user.email,
           role: user.role,
@@ -56,6 +57,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       if (user) {
         token.userId = user.id;
         token.deviceId = user.deviceId;
+        token.pinVersion = user.pinVersion;
         token.role = user.role;
         token.branchId = user.branchId;
         token.branchName = user.branchName;
@@ -66,7 +68,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         });
         if (!currentUser || currentUser.status !== "ACTIVE" || currentUser.lockedAt || !permittedOwner(currentUser)) return null;
         const device = typeof token.deviceId === "string" ? await prisma.authDevice.findFirst({ where: { id: token.deviceId, userId: token.userId, revokedAt: null, lockedAt: null, activeUntil: { gt: new Date() } } }) : null;
-        if (!device) return null;
+        if (!device || (token.pinVersion??0)!==device.pinVersion) return null;
         token.role = currentUser.role;
         token.branchId = currentUser.branchId;
         token.branchName = currentUser.branch?.name ?? null;

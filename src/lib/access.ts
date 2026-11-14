@@ -91,6 +91,7 @@ export const defaultRoleGrants: Record<AppRole, { pages: readonly string[]; capa
 };
 
 const SENSITIVE_QUERY_KEYS = new Set([
+  "pin", "apppin", "app_pin", "newpin", "new_pin", "confirmpin", "confirm_pin", "currentpin", "current_pin",
   "password",
   "pass",
   "passwd",

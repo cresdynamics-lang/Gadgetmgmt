@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-13T19:27:00.149Z",
+  "date": "2026-11-14T06:41:53.825Z",
   "results": [
     "Physical receipt persists a unique device and its first history event",
     "Repair assignment works through the actual UI and removes sellable stock",
@@ -122,11 +122,6 @@
       "violations": 0
     },
     {
-      "path": "/account",
-      "theme": "light",
-      "violations": 0
-    },
-    {
       "path": "/access",
       "theme": "light",
       "violations": 0
@@ -233,11 +228,6 @@
     },
     {
       "path": "/insights",
-      "theme": "dark",
-      "violations": 0
-    },
-    {
-      "path": "/account",
       "theme": "dark",
       "violations": 0
     },

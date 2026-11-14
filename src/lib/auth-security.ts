@@ -10,6 +10,9 @@ export function codeDigest(id: string, code: string) {
   if (!secret) throw new Error("Authentication secret is required.");
   return createHmac("sha256", secret).update(`${id}:${code}`).digest("hex");
 }
+export function pinDigest(userId:string,deviceId:string,pin:string) {
+  return codeDigest(`device-pin:${userId}:${deviceId}`,pin);
+}
 export const opaqueToken = () => randomBytes(32).toString("base64url");
 export const emailCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 export function ownerEmail() {
@@ -34,8 +37,8 @@ export async function knownDevice(userId: string, token?: string) {
   if (!token) return null;
   return prisma.authDevice.findFirst({ where: { userId, tokenHash: digest(token), revokedAt: null } });
 }
-export async function recordFailure(userId: string, label: string) {
-  await prisma.$transaction(async (tx) => {
+export async function recordFailure(userId: string, label: string, transaction?:Prisma.TransactionClient) {
+  const apply=async (tx:Prisma.TransactionClient) => {
     const user = await tx.user.update({ where: { id: userId }, data: { failedSignIns: { increment: 1 } } });
     await tx.authEvent.create({ data: { userId, action: "Sign-in failed", deviceLabel: label } });
     // A conditional update ensures only one alert is created under concurrent failures.
@@ -45,11 +48,12 @@ export async function recordFailure(userId: string, label: string) {
       const owner = await tx.user.findUnique({ where: { email: ownerEmail() || "unconfigured-owner" } });
       if (owner) await tx.staffAlert.create({ data: { userId: owner.id, title: "Account locked after failed sign-ins", body: `${user.name}'s account is locked. Verify their identity before unlocking it in Access.`, deliveries: { create: { channel: "EMAIL" } } } });
     }
-  });
+  };
+  if(transaction)await apply(transaction);else await prisma.$transaction(apply);
 }
-export async function makeChallenge(userId: string, kind: string, value: string, deviceId?: string) {
-  await prisma.authChallenge.deleteMany({ where: { userId, expiresAt: { lte: new Date() } } });
-  return prisma.authChallenge.create({ data: { id: randomUUID(), userId, kind, value, deviceId, expiresAt: new Date(Date.now() + 5 * 60_000) } });
+export async function makeChallenge(userId: string, kind: string, value: string, deviceId?: string, credentialVersion?:number, tx:Prisma.TransactionClient=prisma) {
+  await tx.authChallenge.deleteMany({ where: { userId, expiresAt: { lte: new Date() } } });
+  return tx.authChallenge.create({ data: { id: randomUUID(), userId, kind, value, deviceId, credentialVersion, expiresAt: new Date(Date.now() + 5 * 60_000) } });
 }
 // Atomic deletion consumes challenges once, even when requests race.
 export async function consumeChallenge(id: string, kind: string, tx: Prisma.TransactionClient = prisma) {
@@ -58,9 +62,11 @@ export async function consumeChallenge(id: string, kind: string, tx: Prisma.Tran
   const consumed = await tx.authChallenge.deleteMany({ where: { id, kind, expiresAt: { gt: new Date() } } });
   return consumed.count ? challenge : null;
 }
-export async function loginTicket(userId: string, deviceId: string) {
+export async function loginTicket(userId: string, deviceId: string, expectedPinVersion?:number,tx:Prisma.TransactionClient=prisma) {
+  const device=await tx.authDevice.findFirst({where:{id:deviceId,userId,revokedAt:null,...(expectedPinVersion===undefined?{}:{pinVersion:expectedPinVersion})},select:{pinVersion:true}});
+  if(!device)throw new Error("Device credentials changed. Authenticate again.");
   const ticket = opaqueToken();
-  await makeChallenge(userId, "ticket", digest(ticket), deviceId);
+  await makeChallenge(userId, "ticket", digest(ticket), deviceId,device.pinVersion,tx);
   return ticket;
 }
 

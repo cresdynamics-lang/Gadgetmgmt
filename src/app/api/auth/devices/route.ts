@@ -15,7 +15,8 @@ export async function GET() {
     orderBy: { lastUsedAt: "desc" },
   });
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { biometricsAllowed: true } });
-  return json({ devices, currentDeviceId: session.user.deviceId, biometricsAllowed: session.user.role === "OWNER" || user?.biometricsAllowed });
+  const current=await prisma.authDevice.findFirst({where:{id:session.user.deviceId,userId:session.user.id,revokedAt:null},select:{pinUpdatedAt:true}});
+  return json({ pinConfigured:Boolean(current?.pinUpdatedAt),devices, currentDeviceId: session.user.deviceId, biometricsAllowed: session.user.role === "OWNER" || user?.biometricsAllowed });
 }
 export async function DELETE(request: Request) {
   if (!sameOrigin(request)) return json({ error: "Access denied." }, 403);

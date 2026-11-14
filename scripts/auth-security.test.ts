@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { authOrigin, codeDigest, digest, emailCode, opaqueToken, permittedOwner } from "../src/lib/auth-security";
-import { applyPageFloors, canManageBusinessSettings, canAccessPage, normalizeCapabilities, normalizePages } from "../src/lib/access";
+import { authOrigin, pinDigest, codeDigest, digest, emailCode, opaqueToken, permittedOwner } from "../src/lib/auth-security";
+import { hasSensitiveQuery, safeInternalPath, applyPageFloors, canManageBusinessSettings, canAccessPage, normalizeCapabilities, normalizePages } from "../src/lib/access";
 
 test("verification code hashes bind the code to its challenge and server secret", () => {
   const original = process.env.NEXTAUTH_SECRET;
@@ -71,4 +71,15 @@ test("personal settings access does not grant business configuration",()=>{
  assert.equal(canManageBusinessSettings("BRANCH_MANAGER",{pages:["/settings"],capabilities:[]}),false);
  assert.equal(canManageBusinessSettings("BRANCH_MANAGER",{pages:["/settings"],capabilities:["branchSettings"]}),true);
  assert.equal(canManageBusinessSettings("OWNER",{pages:[],capabilities:[]}),true);
+});
+
+test("app PIN digests bind a PIN to its user, device and server-held secret",()=>{
+ const before=process.env.NEXTAUTH_SECRET;process.env.NEXTAUTH_SECRET="pin-review-secret";
+ try{const value=pinDigest("user-a","device-a","004269");assert.notEqual(value,"004269");assert.notEqual(value,pinDigest("user-a","device-b","004269"));assert.notEqual(value,pinDigest("user-b","device-a","004269"));process.env.NEXTAUTH_SECRET="different-secret";assert.notEqual(value,pinDigest("user-a","device-a","004269"));}finally{if(before===undefined)delete process.env.NEXTAUTH_SECRET;else process.env.NEXTAUTH_SECRET=before;}
+});
+
+test("app PINs cannot be forwarded in callback URLs",()=>{
+ assert.equal(hasSensitiveQuery(new URLSearchParams("pin=004269")),true);
+ assert.equal(hasSensitiveQuery(new URLSearchParams("confirmPin=004269")),true);
+ assert.equal(safeInternalPath("/settings?app_pin=004269"),null);
 });

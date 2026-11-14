@@ -119,3 +119,12 @@ Apply the new schema migration through the established deployment process. Exist
 After verifying a locked account holder’s identity, Administrator can unlock staff in Access. If the owner is locked out, an authorized server operator can run `npm run auth:unlock -- owner@example.com`; this appends an audit event and leaves revoked devices revoked. It does not bypass email verification or reset passwords.
 
 `node scripts/auth/review.mjs` runs the isolated local Chromium/WebAuthn review against `gadgethub_auth_review` on local PostgreSQL (the Docker development credentials), port 3012, and `/usr/bin/chromium`. Create that separate database and apply the schema with `prisma db push` first. The test process substitutes email transport; production authentication has no test-code bypass. Screenshots and results are saved to `artifacts/auth-review`. npm aliases `webauthn-server` and `webauthn-browser` select current SimpleWebAuthn versions independently of Auth.js’s optional legacy WebAuthn provider peer dependencies.
+
+
+## App PIN sign-in
+
+On a new browser or installed PWA, verify your work email and password, enter the emailed code, then choose and confirm a six-digit app PIN. On that verified device, the app PIN is the primary daily sign-in method. Approved Face ID/passkeys remain an optional alternative. The app PIN is separate from the phone’s screen-lock PIN and is verified online by the server.
+
+Create or recover the PIN through **Settings → Account security → Set up app PIN / Reset app PIN**. Recovery always requires the password and emailed code, even on a known device. Resetting a PIN invalidates earlier sessions and outstanding sign-in tickets on that device. Three failed authentication attempts retain the existing account-lockout, device-revocation and Administrator-alert policy. Existing sessions remain usable during rollout; no PIN is copied from a password or generated for the user.
+
+Apply `20261114080000_device_pin` using the production migration workflow. PINs are never stored in browser storage or URLs: the server stores a bcrypt hash of a device/user-bound digest protected by its authentication secret. Retain that secret across deployments. PIN authentication does not change operational grants or the existing sensitive-action approval rules.

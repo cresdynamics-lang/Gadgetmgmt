@@ -105,11 +105,6 @@
     "violations": []
   },
   {
-    "path": "/account",
-    "theme": "light",
-    "violations": []
-  },
-  {
     "path": "/access",
     "theme": "light",
     "violations": []
@@ -216,11 +211,6 @@
   },
   {
     "path": "/insights",
-    "theme": "dark",
-    "violations": []
-  },
-  {
-    "path": "/account",
     "theme": "dark",
     "violations": []
   },

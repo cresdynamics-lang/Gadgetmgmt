@@ -89,3 +89,13 @@ These rows supersede earlier auth-slice coverage statements. “Verified” mean
 
 
 Settings consolidation: AUTH-02/AUTH-03 now appear under **Settings → Account security**; personal settings remain available without operational grants. Business settings still require authorized role, page and capability. The separate account navigation entry is removed, and `/account` remains a redirect for compatibility. Verified by the dated Settings QA entry.
+
+
+## Approved app PIN requirement — 2026-11-14
+
+| Requirement ID | Source | Feature | User role | Workflow | Business rule | UI location | Status | Acceptance test |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AUTH-PIN-01 | Explicit user instruction, 2026-11-14 | Primary six-digit app PIN | All verified staff | Password + email code → choose/confirm PIN → normal PIN unlock | Device/browser-bound credential; server-only hashing; no password-only ownership shortcut | Sign in; Settings → Account security | Implemented and verified in isolated production-build browser/API tests | Leading zeroes; unknown device denied; normal unlock sends no email |
+| AUTH-PIN-02 | User ownership-verification instruction; existing #29 lockout | PIN recovery and revocation | Account holder / Administrator recovery | Password + email code → reset → sign in | Expiring one-use ownership receipt; invalidate old PIN/session/tickets; serialized failed attempts; existing lockout policy retained | Sign in; Account security section | Implemented and verified in isolated production-build browser/API tests | Expired/replayed setup denied; old sessions/tickets rejected; concurrent failures stop at three |
+
+This approves an application PIN for the PWA, superseding earlier statements that only the operating system’s PIN is supported. Native OS PIN/biometrics remain separate platform credentials. No offline PIN authentication or native secure-enclave claim is made.
