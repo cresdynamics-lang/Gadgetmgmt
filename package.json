@@ -34,7 +34,14 @@
     "test:auth": "node --import tsx --test scripts/auth-security.test.ts",
     "test:auth:e2e": "node scripts/auth/review.mjs",
     "test:pwa": "node --import tsx --test scripts/pwa-workflows.test.ts scripts/pwa/service-worker.test.mjs",
-    "test:pwa:e2e": "PWA_REVIEW=1 node scripts/auth/review.mjs"
+    "test:pwa:e2e": "PWA_REVIEW=1 node scripts/auth/review.mjs",
+    "catalog:worker": "node --env-file=.env --import tsx scripts/device-catalog-worker.ts",
+    "test:device-catalog": "node --import tsx --test scripts/device-catalog.test.ts",
+    "test:device-catalog:e2e": "node --import tsx scripts/test-device-catalog.ts",
+    "catalog:health": "node --env-file=.env --import tsx scripts/device-catalog-health.ts",
+    "catalog:bundle": "node scripts/build-device-catalog-worker.mjs",
+    "catalog:start:local": "node scripts/start-local-device-catalog.mjs",
+    "test:device-catalog:browser": "AUTH_REVIEW_PRODUCTION=1 CATALOG_REVIEW=1 node --import tsx scripts/auth/review.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

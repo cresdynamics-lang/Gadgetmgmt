@@ -17,7 +17,7 @@ const password = 'Auth-review-password-2026!';
 const appPin='004269';
 const mailFile = `/tmp/gadgethub-auth-mail-${run}.json`;
 const productionReview=process.env.AUTH_REVIEW_PRODUCTION==='1';
-const artifactDir = resolve(productionReview?'artifacts/production-review':process.env.PWA_REVIEW==='1'?'artifacts/pwa-review':'artifacts/auth-review');
+const artifactDir = resolve(process.env.CATALOG_REVIEW==='1'?'artifacts/catalog-review':productionReview?'artifacts/production-review':process.env.PWA_REVIEW==='1'?'artifacts/pwa-review':'artifacts/auth-review');
 mkdirSync(artifactDir, { recursive: true });
 const logFile = `/tmp/gadgethub-auth-server-${run}.log`;
 const server = spawn(process.execPath, ['node_modules/next/dist/bin/next', productionReview?'start':'dev', '--port', '3012'], { env: { ...process.env, DATABASE_URL: database, NEXT_DIST_DIR: productionReview?'.next':process.env.PWA_REVIEW==='1'?'.next-pwa-review':'.next-auth-test-clean', APP_BASE_URL: base, NEXTAUTH_URL: base, AUTH_URL: base, AUTH_OWNER_EMAIL: email, NEXTAUTH_SECRET: 'isolated-review-secret-64-characters-long-for-authentication-only-2026', RESEND_API_KEY: 'auth-review-fake-key', EMAIL_FROM: 'GadgetHub <auth@example.test>', AUTH_REVIEW_MAIL_FILE: mailFile, AUTH_REVIEW_AI_FILE: process.env.AUTH_REVIEW_AI_FILE||`/tmp/gadgethub-ai-${run}.json`, OPENAI_API_KEY:'auth-review-fake-key', NODE_OPTIONS: `--import=${resolve('scripts/auth/test-bootstrap.mjs')}` }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -297,6 +297,11 @@ try {
   const {reviewAccounts}=await import('./account-review.mjs');
   await reviewAccounts({browser,context,page,prisma,base,password,run,branch,mailFile,artifactDir,openWorkspace,staffContext,owner,pinDevice});
   pass('Generated and manual account passwords, credential emails and failure recovery, administrator reset, old-session/PIN/code invalidation, and employee/device method policies work through actual controls');
+  if(process.env.CATALOG_REVIEW==='1') {
+    const {reviewCatalog}=await import('../catalog/review.mjs');
+    await reviewCatalog({page,context,prisma,base,password,run,artifactDir,openWorkspace,staffContext});
+    pass('Reference catalog UI lookup, source licence/password controls, rate-limit persistence and role boundaries verified without changing shop stock');
+  }
   if(process.env.PWA_REVIEW==='1') {
     process.env.AUTH_REVIEW_AI_FILE=`/tmp/gadgethub-ai-${run}.json`;
     const {runPwaReview}=await import('../pwa/review.mjs');

@@ -56,3 +56,7 @@ next-env.d.ts
 /.next-pwa-review/
 
 .next-brand-review/
+
+# Private, independent catalog-worker runtime and build artifacts.
+/.catalog-state/
+/.catalog-context/

@@ -86,3 +86,7 @@ App PIN instruction: add device PIN hashes/credential versions and additive migr
 3. Add administrator-confirmed employee password reset, with device/challenge invalidation and Owner peer protection.
 4. Add account and device sign-in policy fields and method-bound tickets/sessions; keep ownership-only verification from bypassing disabled password sign-in.
 5. Verify invitation, opt-out, provider failure, reset, revoked old credentials and policy changes in an isolated running production build; rerun operations/PWA checks.
+
+
+## Independent catalog slice
+Completed: typed public-reference schema and additive migration; AppleDB and dedicated Samsung Wikidata adapters; durable leases/budgets/cache/backoff; append-only history and aliases; authorized lookup API/UI; password-confirmed Owner controls; zero-LLM independent Docker collector, health/watchdog, private local backup and runtime; production worker bundle/readiness wiring. Verify source coverage before adding licensed retail feeds or promoting reference data into operational products. Production deployment remains separate from the running local collector.

@@ -1,0 +1,28 @@
+name: gadgethub-catalog
+services:
+  worker:
+    build:
+      context: .catalog-context
+    image: gadgethub-catalog:local
+    network_mode: host
+    env_file:
+      - path: .catalog-state/worker.env
+        format: raw
+    environment:
+      NODE_ENV: production
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    mem_limit: 384m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "node", "worker/device-catalog-health.cjs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
