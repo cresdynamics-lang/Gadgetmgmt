@@ -128,3 +128,15 @@ On a new browser or installed PWA, verify your work email and password, enter th
 Create or recover the PIN through **Settings → Account security → Set up app PIN / Reset app PIN**. Recovery always requires the password and emailed code, even on a known device. Resetting a PIN invalidates earlier sessions and outstanding sign-in tickets on that device. Three failed authentication attempts retain the existing account-lockout, device-revocation and Administrator-alert policy. Existing sessions remain usable during rollout; no PIN is copied from a password or generated for the user.
 
 Apply `20261114080000_device_pin` using the production migration workflow. PINs are never stored in browser storage or URLs: the server stores a bcrypt hash of a device/user-bound digest protected by its authentication secret. Retain that secret across deployments. PIN authentication does not change operational grants or the existing sensitive-action approval rules.
+
+
+PIN entry uses six masked boxes with native paste/editing and explicit reveal controls. Password forms also offer eye controls; entered values are concealed when leaving the field or backgrounding the app.
+
+The configured Owner can create additional Owners in Staff & users after confirming their current password. New Owners verify their own email/password and set their own PIN. Explicitly approved Owners have full Owner access; historical unapproved Owner rows are not automatically trusted. Owner accounts cannot be demoted, suspended, expired or have their devices revoked by another Owner. Only the configured Owner can provision further Owners. Automatic failed-sign-in lockout remains enforced, with verified server-operator recovery through `npm run auth:unlock`.
+
+
+Administrators can type or generate a new employee password, email the account credentials, and reset an employee password after confirming their own password. Reset invalidates previous devices, PINs and pending authentication challenges; Owner accounts are protected from peer resets. Email status reports provider acceptance or an unconfirmed attempt, not inbox receipt. Plaintext passwords are not stored in application logs, queues or database fields.
+
+Sign-in permissions live in Team access (employee defaults) and Settings → Account security (individual verified-browser restrictions). PIN, password and biometric permissions are enforced on the server. Password/email ownership verification remains necessary for permitted PIN setup even when password sign-in is disabled, and does not itself issue a password session. New browser verification follows employee defaults; device restrictions are scoped to the cookie-bound verified browser rather than hardware identity.
+
+The production migration workflow also applies `20261114110000_approved_owners` and `20261114120000_sign_in_methods` before starting this release. No additional Owner or employee account is created automatically.

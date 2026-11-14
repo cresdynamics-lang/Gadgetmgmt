@@ -35,3 +35,10 @@ Dark appearance now applies throughout the workspace and security screens, follo
 System typography, tabular monetary values, 4/8-point spacing, restrained borders and grouped surfaces remain shared. Workflow fields have explicit accessible names, visible labels, suitable input types and 16px mobile entry text. Minimum 44px controls and safe-area padding apply globally. Mobile catalog prices wrap below names rather than clipping. Existing tables become labeled mobile record cards while retaining header associations. Scroll regions are keyboard-focusable.
 
 Security and operational panels reuse `.security-*` / `.workflow-*`. Collapsible forms keep records visible; each record offers only valid next-state actions. Errors preserve entered values, network retries keep the same request key, and successful financial feedback follows confirmed server state. Updates and destructive/financial actions have explicit controls. Motion respects Reduce Motion. Automated accessibility checks supplement, rather than replace, physical VoiceOver and large-text acceptance testing.
+
+
+## PIN and secret entry
+App PINs use six equal masked boxes with a restrained green focus ring and a numeric keyboard. A single semantic input preserves native paste, selection, backspace and screen-reader labeling; the boxes are decorative and hidden from assistive technology. PIN reveal is explicit and resets when focus leaves the field or the app is hidden. Password inputs use an inset eye control with a 44px target, visible focus and pressed state, retaining autocomplete and form semantics. No control fetches stored server secrets.
+
+
+Password creation/reset uses one shared masked field with an inset eye control and a secondary Generate password action. Generated values use platform cryptographic randomness. Reset uses a native modal dialog with focus containment, Escape/cancel behavior and a clear affected-person summary. Email status distinguishes accepted delivery from an unconfirmed attempt.

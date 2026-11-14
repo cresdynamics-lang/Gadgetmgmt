@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { chromium } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 const base = 'http://localhost:3012';
 const database = 'postgresql://gadgethub:gadgethub@localhost:5432/gadgethub_auth_review';
@@ -68,6 +69,14 @@ try {
   await page.reload({waitUntil:'networkidle'});
   await page.waitForFunction(() => document.documentElement.dataset.authReady === 'true');
   // Verify the browser's actual recovery UI and retained email.
+  await page.locator('#password').fill(password);
+  assert.equal(await page.locator('#password').getAttribute('type'),'password');
+  await page.getByRole('button',{name:'Show password',exact:true}).click();
+  assert.equal(await page.locator('#password').getAttribute('type'),'text');
+  assert.equal(await page.locator('#password').inputValue(),password);
+  await page.locator('#email').focus();
+  assert.equal(await page.locator('#password').getAttribute('type'),'password');
+  pass('Password visibility can be toggled without changing its value and conceals on leaving the field');
   await page.locator('#email').fill(email);
   await page.locator('#password').fill('wrong-password');
   await page.getByRole('button',{name:'Continue',exact:true}).click();
@@ -103,7 +112,25 @@ try {
   await page.getByRole('button',{name:'Verify & continue',exact:true}).click();
   response=await pendingVerified; assert.equal(response.status(),200);
   const {ticket}=await response.json();
-  await page.locator('#pin').waitFor();await page.screenshot({path:`${artifactDir}/pin-setup-390.png`,fullPage:true});await page.locator('#pin').fill(appPin);await page.locator('#confirmPin').fill('004268');await page.getByRole('button',{name:'Save PIN & sign in',exact:true}).click();await page.getByRole('alert').filter({hasText:'same six-digit PIN'}).waitFor();
+  await page.locator('#pin').waitFor();await page.screenshot({path:`${artifactDir}/pin-setup-390.png`,fullPage:true});
+  assert.equal(await page.locator('.pin-field').first().locator('.pin-box').count(),6);
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  await page.evaluate(()=>navigator.clipboard.writeText('004269'));
+  await page.locator('#pin').focus();await page.locator('#pin').press('ControlOrMeta+V');
+  assert.equal(await page.locator('#pin').inputValue(),appPin);
+  assert.equal(await page.locator('.pin-field').first().locator('.is-filled').count(),6);
+  assert.equal((await page.locator('.pin-field').first().locator('.pin-boxes').innerText()).includes('4'),false);
+  await page.getByRole('button',{name:'Show PIN',exact:true}).first().click();
+  assert.equal(await page.locator('#pin').getAttribute('type'),'text');
+  assert.match(await page.locator('.pin-field').first().locator('.pin-boxes').innerText(),/4/);
+  await page.locator('#pin').focus();await page.locator('#pin').press('Home');await page.locator('#pin').press('Delete');
+  assert.equal(await page.locator('#pin').inputValue(),'04269');
+  await page.locator('#pin').press('End');await page.locator('#pin').press('Backspace');assert.equal(await page.locator('#pin').inputValue(),'0426');
+  await page.locator('#confirmPin').focus();assert.equal(await page.locator('#pin').getAttribute('type'),'password');
+  pass('Six-box PIN entry supports leading-zero paste, native editing, reveal and conceal');
+  const pinSetupAudit=await new AxeBuilder({page}).exclude('nextjs-portal').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();assert.deepEqual(pinSetupAudit.violations,[]);
+
+  await page.locator('#pin').fill(appPin);await page.locator('#confirmPin').fill('004268');await page.getByRole('button',{name:'Save PIN & sign in',exact:true}).click();await page.getByRole('alert').filter({hasText:'same six-digit PIN'}).waitFor();
   await page.locator('#confirmPin').fill(appPin);await page.getByRole('button',{name:'Save PIN & sign in',exact:true}).click();
   await page.waitForURL('**/dashboard',{timeout:120000});
   pass('Password and email ownership verification lead to confirmed six-digit PIN setup, preserving leading zeroes');
@@ -111,7 +138,10 @@ try {
   const safePinDevices=await(await context.request.get(base+'/api/auth/devices')).json();assert.equal(safePinDevices.pinConfigured,true);assert.equal(JSON.stringify(safePinDevices).includes('pinHash'),false);assert.equal(JSON.stringify(safePinDevices).includes(pinDevice.pinHash),false);
   const unverifiedPin=await post('pin-set',{challengeId:crypto.randomUUID(),pin:appPin,confirmPin:appPin});assert.equal(unverifiedPin.status(),401);
   const stranger=await browser.newContext();assert.equal((await stranger.request.post(base+'/api/auth/security',{headers:{Origin:base},data:{action:'pin',email,pin:appPin}})).status(),401);await stranger.close();
-  const mailBeforePin=readFileSync(mailFile,'utf8');await context.request.post(base+'/api/auth/lock',{headers:{Origin:base}});await page.goto(base+'/login',{waitUntil:'domcontentloaded'}).catch(error=>{if(!String(error).includes('ERR_ABORTED'))throw error;});await page.waitForURL(url=>url.pathname==='/login');await page.waitForFunction(()=>document.documentElement.dataset.authReady==='true');await page.screenshot({path:`${artifactDir}/pin-unlock-390.png`,fullPage:true});await page.locator('#pin').fill(appPin);await page.getByRole('button',{name:'Unlock with PIN',exact:true}).click();await page.waitForURL('**/dashboard',{timeout:120000});assert.equal(readFileSync(mailFile,'utf8'),mailBeforePin);pass('Verified-device PIN unlock works without email; unverified devices and unproven PIN changes are rejected');
+  const mailBeforePin=readFileSync(mailFile,'utf8');await context.request.post(base+'/api/auth/lock',{headers:{Origin:base}});await page.goto(base+'/login',{waitUntil:'domcontentloaded'}).catch(error=>{if(!String(error).includes('ERR_ABORTED'))throw error;});await page.waitForURL(url=>url.pathname==='/login');await page.waitForFunction(()=>document.documentElement.dataset.authReady==='true');await page.screenshot({path:`${artifactDir}/pin-unlock-390.png`,fullPage:true});
+  for(const scheme of ['light','dark']){await page.emulateMedia({colorScheme:scheme});for(const width of [320,375,390,430,768,1440]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);const bounds=await page.locator('.pin-control').boundingBox();assert.ok(bounds.height>=44);if(width===390)await page.screenshot({path:`${artifactDir}/pin-unlock-${scheme}-390.png`,fullPage:true});}await page.setViewportSize({width:390,height:844});const audit=await new AxeBuilder({page}).exclude('nextjs-portal').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();assert.deepEqual(audit.violations,[]);}
+  await page.emulateMedia({colorScheme:'light'});pass('PIN setup and unlock have clean accessibility scans and no overflow at six widths in both themes');
+  await page.locator('#pin').fill(appPin);await page.getByRole('button',{name:'Unlock with PIN',exact:true}).click();await page.waitForURL('**/dashboard',{timeout:120000});assert.equal(readFileSync(mailFile,'utf8'),mailBeforePin);pass('Verified-device PIN unlock works without email; unverified devices and unproven PIN changes are rejected');
 
   assert.equal((await post('code',{challengeId:challenge.challengeId,code})).status(),401); pass('Verification code cannot be replayed');
   async function redeem(ticket) {
@@ -131,7 +161,7 @@ try {
     assert.equal(await page.locator('.workspace-content:visible').evaluate(el => el.scrollWidth > el.clientWidth),false);
   }
   await page.setViewportSize({width:390,height:844});
-  const currentRow=page.locator('.security-device-list:visible li').filter({hasText:'This device'});
+  const currentRow=page.locator('.security-device-list:visible li').filter({has:page.getByText('This device',{exact:true})});
   await currentRow.getByRole('button',{name:/Revoke/}).click();
   await page.screenshot({path:`${artifactDir}/revoke-confirm-390.png`,fullPage:true});
   await currentRow.getByRole('button',{name:'Cancel',exact:true}).click();
@@ -145,7 +175,7 @@ try {
   pass('Mobile navigation traps keyboard focus and closes with Escape');
   const cdp=await context.newCDPSession(page); await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
-  await page.getByLabel('Confirm your password',{exact:true}).fill(password);
+  await page.getByLabel('Confirm your password',{exact:true}).filter({visible:true}).fill(password);
   await page.getByRole('button',{name:'Set up Face ID or a passkey',exact:true}).click();
   await page.getByRole('status').filter({hasText:'Passkey ready'}).waitFor();
   assert.equal(await prisma.authPasskey.count({where:{device:{userId:owner.id}}}),1); pass('Real WebAuthn registration with required user verification succeeds');
@@ -224,6 +254,49 @@ try {
     assert.equal(await page.locator('.workspace-content:visible').evaluate(el => el.scrollWidth > el.clientWidth),false);
   }
   await page.setViewportSize({width:390,height:844});
+  // Provision through the real staff form; secondary Owners are approved explicitly.
+  const peerEmail=`peer-${run}@example.test`;
+  const ownerPayload={name:'Additional Owner Review',email:peerEmail,password,role:'OWNER',branchId:branch.id};
+  assert.equal((await context.request.post(base+'/api/staff',{headers:{Origin:base},data:ownerPayload})).status(),401);
+  await openWorkspace('Staff & Users','/staff');
+  await page.getByRole('button',{name:'Add a teammate',exact:true}).click();
+  const staffForm=page.locator('form').filter({has:page.locator('input[name="name"]')});
+  await staffForm.locator('[name="name"]').fill(ownerPayload.name);await staffForm.locator('[name="email"]').fill(peerEmail);await staffForm.locator('[name="password"]').fill(password);await staffForm.locator('[name="role"]').selectOption('OWNER');
+  await staffForm.getByLabel('Confirm your current password',{exact:true}).fill(password);
+  await staffForm.getByRole('button',{name:'Create account',exact:true}).click();
+  await page.getByRole('status').filter({hasText:`Account created for ${ownerPayload.name}.`}).waitFor();
+  const peer=await prisma.user.findUniqueOrThrow({where:{email:peerEmail}});assert.ok(peer.ownerApprovedAt);
+  assert.equal(await prisma.authEvent.count({where:{userId:owner.id,action:`Created Owner account for ${peerEmail}`}}),1);
+  assert.equal(await page.getByRole('combobox',{name:`Status for ${peer.name}`,exact:true}).count(),0);assert.equal(await page.getByRole('combobox',{name:`Role for ${peer.name}`,exact:true}).count(),0);
+  const peerContext=await browser.newContext();const peerPost=(action,data={})=>peerContext.request.post(base+'/api/auth/security',{headers:{Origin:base},data:{action,...data}});
+  const peerChallenge=await(await peerPost('password',{email:peerEmail,password})).json();
+  const peerCode=JSON.parse(readFileSync(mailFile,'utf8')).text.match(/code is (\d{6})/)[1];
+  const peerProof=await(await peerPost('code',{challengeId:peerChallenge.challengeId,code:peerCode})).json();
+  const peerCsrf=await(await peerContext.request.get(base+'/api/auth/csrf')).json();
+  const peerRedeem=ticket=>peerContext.request.post(base+'/api/auth/callback/credentials',{form:{csrfToken:peerCsrf.csrfToken,ticket},maxRedirects:0});await peerRedeem(peerProof.ticket);
+  const peerPin=await(await peerPost('pin-set',{challengeId:peerProof.pinSetupId,pin:appPin,confirmPin:appPin})).json();await peerRedeem(peerPin.ticket);
+  const peerSession=await(await peerContext.request.get(base+'/api/auth/session')).json();assert.equal(peerSession.user.role,'OWNER');assert.deepEqual(peerSession.user.pages,['*']);assert.equal((await peerContext.request.get(base+'/api/expenses')).status(),200);
+  const peerDevice=await prisma.authDevice.findFirstOrThrow({where:{userId:peer.id,revokedAt:null}});
+  for(const [actorContext,target] of [[context,peer],[peerContext,owner]]) {
+    const targetId=target.id;const actualDevice=targetId===peer.id?peerDevice:pinDevice;
+    for(const changes of [{status:'SUSPENDED'},{role:'CASHIER'}])assert.equal((await actorContext.request.patch(base+`/api/staff/${targetId}`,{headers:{Origin:base},data:changes})).status(),403);
+    assert.equal((await actorContext.request.delete(base+`/api/staff/${targetId}`,{headers:{Origin:base}})).status(),405);
+    assert.equal((await actorContext.request.put(base+'/api/auth/access',{headers:{Origin:base},data:{userId:targetId,pages:[],capabilities:[],biometricsAllowed:false,expiresAt:new Date(Date.now()+60000).toISOString(),password}})).status(),403);
+    assert.equal((await actorContext.request.delete(base+'/api/auth/devices',{headers:{Origin:base},data:{id:actualDevice.id,password}})).status(),404);
+    const deviceList=await(await actorContext.request.get(base+'/api/auth/devices')).json();assert.equal(deviceList.devices.some(device=>device.id===actualDevice.id),false);
+    assert.equal((await prisma.user.findUniqueOrThrow({where:{id:targetId}})).status,'ACTIVE');assert.equal((await prisma.authDevice.findUniqueOrThrow({where:{id:actualDevice.id}})).revokedAt,null);
+  }
+  assert.equal((await peerContext.request.post(base+'/api/staff',{headers:{Origin:base},data:{...ownerPayload,email:`denied-${run}@example.test`,actorPassword:password}})).status(),403);
+  assert.equal((await staffContext.request.post(base+'/api/staff',{headers:{Origin:base},data:{...ownerPayload,email:`staff-denied-${run}@example.test`,actorPassword:password}})).status(),403);
+  await Promise.all(Array.from({length:4},()=>peerPost('pin',{email:peerEmail,pin:'999999'})));
+  assert.ok((await prisma.user.findUniqueOrThrow({where:{id:peer.id}})).lockedAt);
+  const peerLockAlert=await prisma.staffAlert.findFirstOrThrow({where:{userId:owner.id,body:{contains:peer.name}}});assert.match(peerLockAlert.body,/server operator/);
+  pass('Additional Owner security lockout remains enforced and directs recovery to the server operator');
+  await peerContext.close();
+  pass('Configured Owner provisions an audited Owner through the UI; that Owner verifies email and PIN, receives finance access, and both peers reject suspension, demotion, permission changes, deletion and device revocation');
+  const {reviewAccounts}=await import('./account-review.mjs');
+  await reviewAccounts({browser,context,page,prisma,base,password,run,branch,mailFile,artifactDir,openWorkspace,staffContext,owner,pinDevice});
+  pass('Generated and manual account passwords, credential emails and failure recovery, administrator reset, old-session/PIN/code invalidation, and employee/device method policies work through actual controls');
   if(process.env.PWA_REVIEW==='1') {
     process.env.AUTH_REVIEW_AI_FILE=`/tmp/gadgethub-ai-${run}.json`;
     const {runPwaReview}=await import('../pwa/review.mjs');
@@ -235,7 +308,7 @@ try {
   response=await post('pin',{email,pin:appPin});assert.equal(response.status(),200);await redeem((await response.json()).ticket);
   session=await (await context.request.get(base+'/api/auth/session')).json();assert.equal(session.user.id,owner.id);
   await openWorkspace('Settings','/settings');
-  const revokeRow=page.locator('.security-device-list:visible li').filter({hasText:'This device'});
+  const revokeRow=page.locator('.security-device-list:visible li').filter({has:page.getByText('This device',{exact:true})});
   await revokeRow.getByRole('button',{name:/Revoke/}).click();
   await revokeRow.getByLabel('Confirm your password',{exact:true}).fill(password);
   await revokeRow.getByRole('button',{name:'Revoke access',exact:true}).click();
@@ -245,7 +318,7 @@ try {
   const failedPins=await Promise.all(Array.from({length:6},()=>staffPost('pin',{email:staff.email,pin:'999999'})));for(const result of failedPins)assert.equal(result.status(),401);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:staff.id}})).failedSignIns,3);
   assert.ok((await prisma.user.findUnique({where:{id:staff.id}})).lockedAt);
   assert.equal((await post('password',{email:staff.email,password})).status(),401);
-  assert.equal(await prisma.staffAlert.count({where:{userId:owner.id,title:'Account locked after failed sign-ins'}}),1);pass('Concurrent wrong PINs stop at three failures, lock the account, revoke devices and alert the Administrator');
+  assert.equal(await prisma.staffAlert.count({where:{userId:owner.id,title:'Account locked after failed sign-ins',body:{contains:staff.name}}}),1);pass('Concurrent wrong PINs stop at three failures, lock the account, revoke devices and alert the Administrator');
   assert.equal((await staffContext.request.get(base+'/api/auth/devices')).status(),401);
   await staffContext.close();
   writeFileSync(`${artifactDir}/results.json`,JSON.stringify({date:new Date().toISOString(),findings,limitations:['Virtual authenticator validates WebAuthn protocol, not physical Face ID hardware.','Email uses a test-process transport; live provider delivery not exercised.']},null,2)+'\n');

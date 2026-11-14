@@ -1,4 +1,7 @@
 "use client";
+import { PasswordChoice } from "@/components/password-choice";
+import { PasswordReset } from "@/components/password-reset";
+import { SecretInput } from "@/components/secret-input";
 
 import { ArrowUpRight, Plus, Search, ShieldCheck, UsersRound } from "lucide-react";
 import Link from "next/link";
@@ -22,6 +25,11 @@ export default function StaffPage() {
   const { data: session } = useSession();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [initialPassword,setInitialPassword]=useState("");
+  const [resetUser,setResetUser]=useState<StaffMember|null>(null);
+  const [handover,setHandover]=useState<{name:string;email:string;password:string}|null>(null);
+  const [canProvisionOwners, setCanProvisionOwners] = useState(false);
+  const [newRole, setNewRole] = useState("CASHIER");
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -38,6 +46,7 @@ export default function StaffPage() {
     if (!staffResponse.ok) throw new Error(staffData.error ?? "Could not load staff records.");
     if (!branchesResponse.ok) throw new Error(branchData.error ?? "Could not load branches.");
     setStaff(staffData);
+    setCanProvisionOwners(staffResponse.headers.get("X-Can-Provision-Owners") === "true");
     setBranches(branchData);
   }
 
@@ -75,14 +84,16 @@ export default function StaffPage() {
       const response = await fetch("/api/staff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: data.get("name"), email: data.get("email"), password: data.get("password"), role: data.get("role"), branchId: data.get("branchId") || undefined }),
+        body: JSON.stringify({ name: data.get("name"), email: data.get("email"), password: data.get("password"), role: data.get("role"), emailCredentials: data.get("emailCredentials")==="on", actorPassword: data.get("actorPassword") || undefined, branchId: data.get("branchId") || undefined }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Staff account could not be created.");
       await loadStaff();
       form.reset();
       setAdding(false);
-      setNotice(`Account created for ${result.name}. Share the initial password securely.`);
+      setHandover(result.emailStatus==="accepted"?null:{name:result.name,email:result.email,password:initialPassword});
+      setInitialPassword("");
+      setNotice(`Account created for ${result.name}. ${result.emailStatus==="accepted"?"Email accepted for delivery.":result.emailStatus==="unconfirmed"?"Email delivery is unconfirmed. Share the password privately, or reset and email a new one.":"Email was not requested. Share the password privately."}`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Staff account could not be created.");
     } finally {
@@ -132,6 +143,8 @@ export default function StaffPage() {
         {error ? <p role="alert" className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
         {notice ? <p role="status" className="border-l-2 border-[#0a7d56] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--foreground)]">{notice}</p> : null}
 
+        {handover&&<section className="security-panel security-stack"><h3>Share privately with {handover.name}</h3><p className="security-detail">{handover.email}. This password is available here only until you dismiss this panel.</p><label className="security-field">Initial password<SecretInput readOnly value={handover.password} autoComplete="off"/></label><button className="security-secondary" onClick={()=>setHandover(null)}>Done</button></section>}
+        {resetUser&&<PasswordReset key={resetUser.id} user={resetUser} onClose={()=>setResetUser(null)} onDone={()=>void loadStaff().catch(()=>setError("Password reset completed. Reload the team list."))}/>}
         <div className="staff-metrics grid gap-3 sm:grid-cols-3">
           <div className="border-b border-[var(--border)] px-4 py-4 sm:border-b-0 sm:border-r">
             <p className="text-xs text-[var(--foreground)]">Staff accounts</p>
@@ -160,17 +173,15 @@ export default function StaffPage() {
               <label className="text-xs font-medium text-[var(--foreground)]">Work email
                 <input name="email" type="email" required maxLength={254} autoComplete="email" className="mt-1 w-full border border-[var(--border)] px-3 py-2.5 text-sm" />
               </label>
-              <label className="text-xs font-medium text-[var(--foreground)]">Initial password
-                <input name="password" type="password" required minLength={12} maxLength={72} autoComplete="new-password" className="mt-1 w-full border border-[var(--border)] px-3 py-2.5 text-sm" />
-              </label>
+              <PasswordChoice label="Initial password" value={initialPassword} onChange={setInitialPassword} disabled={saving}/>
               <label className="text-xs font-medium text-[var(--foreground)]">Role
-                <select name="role" className="mt-1 w-full border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm">
+                <select name="role" value={newRole} onChange={event=>setNewRole(event.target.value)} className="mt-1 w-full border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm">
                   {session?.user.role === "OWNER" ? (
                     <>
                       <option value="CASHIER">Cashier</option>
                       <option value="INVENTORY_LEAD">Inventory lead</option>
                       <option value="BRANCH_MANAGER">Branch manager</option>
-                      <option value="OWNER">Administrator</option>
+                      {canProvisionOwners && <option value="OWNER">Owner</option>}
                     </>
                   ) : (
                     <>
@@ -188,6 +199,8 @@ export default function StaffPage() {
                 </label>
               ) : null}
             </div>
+            <label className="security-check mt-4"><input name="emailCredentials" type="checkbox" defaultChecked disabled={saving}/>Email the account credentials to this person</label>
+            {newRole === "OWNER" && <div className="security-stack mt-4"><p className="security-notice">Owners receive full access, including finance. Owners cannot block, demote, revoke or change one another’s accounts.</p><label className="security-field">Confirm your current password<SecretInput name="actorPassword" autoComplete="current-password" required disabled={saving}/></label></div>}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-[var(--foreground)]">Use a unique 12+ character password and share it through a private channel.</p>
               <div className="flex gap-2">
@@ -228,9 +241,8 @@ export default function StaffPage() {
                       <div className="flex items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[var(--accent-soft)] text-xs font-bold tracking-wide text-[var(--accent-text)] ring-1 ring-[var(--border)]">{member.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><div className="min-w-0"><p className="truncate font-semibold text-[var(--foreground)]">{member.name}</p><p className="mt-1 truncate text-[11px] text-[var(--muted)]">{member.email}</p></div></div>
                     </td>
                     <td className="px-4 py-3">
-                      {canManageAccess && member.id !== session?.user.id ? (
+                      {canManageAccess && member.role !== "OWNER" && member.id !== session?.user.id ? (
                         <select aria-label={`Role for ${member.name}`} value={member.role} disabled={savingMemberId === member.id} onChange={(event) => void updateAccess(member.id, { role: event.target.value })} className="border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm disabled:opacity-60">
-                          <option value="OWNER">Administrator</option>
                           <option value="BRANCH_MANAGER">Branch manager</option>
                           <option value="CASHIER">Cashier</option>
                           <option value="INVENTORY_LEAD">Inventory lead</option>
@@ -240,7 +252,7 @@ export default function StaffPage() {
                     <td className="px-4 py-3 text-[var(--foreground)]">{member.branch?.name ?? "Unassigned"}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{member._count.sales}</td>
                     <td className="px-4 py-3">
-                      {canManageAccess && member.id !== session?.user.id ? (
+                      {canManageAccess && member.role !== "OWNER" && member.id !== session?.user.id ? (
                         <select aria-label={`Status for ${member.name}`} value={member.status} disabled={savingMemberId === member.id} onChange={(event) => void updateAccess(member.id, { status: event.target.value })} className="border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm disabled:opacity-60">
                           <option value="ACTIVE">Active</option>
                           <option value="OFF_SHIFT">Off shift</option>
@@ -248,7 +260,7 @@ export default function StaffPage() {
                         </select>
                       ) : <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${member.status === "ACTIVE" ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : member.status === "SUSPENDED" ? "bg-[var(--danger-soft)] text-[var(--danger-text)]" : "bg-[var(--background)] text-[var(--warning-text)]"}`}><span className={`h-1.5 w-1.5 rounded-full ${member.status === "ACTIVE" ? "bg-[#0a7d56]" : member.status === "SUSPENDED" ? "bg-[#b3261e]" : "bg-[#8a5a12]"}`}/>{member.status.replace("_", " ")}</span>}
                     </td>
-                    {canManageAccess ? <td className="px-4 py-3 text-xs text-[var(--foreground)]">{member.id === session?.user.id ? "Current account" : savingMemberId === member.id ? "Saving…" : "Changes save immediately"}</td> : null}
+                    {canManageAccess ? <td className="px-4 py-3 text-xs text-[var(--foreground)]">{member.id === session?.user.id ? "Current account" : member.role === "OWNER" ? "Protected Owner" : savingMemberId === member.id ? "Saving…" : "Changes save immediately"}{member.role!=="OWNER"&&<button type="button" className="security-link block" aria-label={`Reset password for ${member.name}`} onClick={()=>setResetUser(member)}>Reset password</button>}</td> : null}
                     <td className="px-4 py-3 text-xs text-[var(--foreground)]">{new Date(member.createdAt).toLocaleDateString("en-KE")}</td>
                   </tr>
                 ))}
