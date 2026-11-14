@@ -730,6 +730,9 @@ model NotificationRateLimit {
 
 
 model AuthDevice {
+  pinHash String?
+  pinVersion Int @default(0)
+  pinUpdatedAt DateTime?
   activeUntil DateTime?
   id String @id @default(cuid())
   userId String
@@ -755,6 +758,7 @@ model AuthPasskey {
 }
 
 model AuthChallenge {
+  credentialVersion Int?
   id String @id
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

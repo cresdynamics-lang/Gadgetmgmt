@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import { startRegistration, browserSupportsWebAuthn } from "webauthn-browser";
+import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { Fingerprint, ShieldCheck, Smartphone } from "lucide-react";
 
@@ -8,6 +9,7 @@ type Device = { id: string; label: string; createdAt: string; lastUsedAt: string
 export function AccountSecurity() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [currentId, setCurrentId] = useState("");
+  const [pinConfigured,setPinConfigured]=useState(false);
   const [allowed, setAllowed] = useState(false);
   const supported = useSyncExternalStore(() => () => {}, browserSupportsWebAuthn, () => true);
   const [loading, setLoading] = useState(true);
@@ -22,7 +24,7 @@ export function AccountSecurity() {
       const response = await fetch("/api/auth/devices", { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
-      setDevices(body.devices); setCurrentId(body.currentDeviceId); setAllowed(body.biometricsAllowed);
+      setPinConfigured(Boolean(body.pinConfigured));setDevices(body.devices); setCurrentId(body.currentDeviceId); setAllowed(body.biometricsAllowed);
     } catch (e) { setError(e instanceof Error ? e.message : "Devices could not be loaded. Try again."); }
     finally { setLoading(false); }
   }, []);
@@ -62,6 +64,7 @@ export function AccountSecurity() {
     <div><p className="security-eyebrow"><ShieldCheck size={16} aria-hidden="true"/> Your account</p><h2 id="account-security-title">Account security</h2><p className="security-detail">Manage how you sign in and which devices can access GadgetHub.</p></div>
     {error && <div role="alert" className="security-error">{error}<button className="security-link" onClick={() => {setError(""); void load();}}>Try again</button></div>}
     {notice && <p role="status" className="security-notice">{notice}</p>}
+    <section className="security-panel"><h3>App PIN</h3><p className="security-detail">{loading?"Loading PIN settings…":pinConfigured?"A six-digit app PIN is set for this device. Use it for everyday sign-in.":"Set a six-digit PIN for everyday sign-in on this device."} Setup and recovery require your password and an emailed code.</p><Link className="security-secondary" href="/login?flow=verify&callbackUrl=%2Fsettings%23account-security">{pinConfigured?"Reset app PIN":"Set up app PIN"}</Link></section>
     <section className="security-panel"><Fingerprint size={24} aria-hidden="true"/><h3>Face ID & passkeys</h3><p className="security-detail">Verify with your device’s Face ID, fingerprint, or screen-lock PIN. Your biometric data stays on your device.</p>
       {loading ? <p role="status">Loading security settings…</p> : !allowed ? <p className="security-notice">Ask the Administrator to enable biometric sign-in for your account.</p> : !supported ? <p className="security-notice">This browser does not support passkeys. Use your password to sign in.</p> : <form className="security-stack" onSubmit={enroll}><label className="security-field">Confirm your password<input name="password" type="password" autoComplete="current-password" required disabled={busy}/></label><button className="security-primary" disabled={busy}>{busy ? "Setting up…" : "Set up Face ID or a passkey"}</button></form>}
     </section>

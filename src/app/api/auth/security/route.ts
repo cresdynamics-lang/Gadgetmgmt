@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { compare } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "webauthn-server";
@@ -7,15 +7,17 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { deliverNotification } from "@/lib/notifications";
 import { sameOrigin } from "@/lib/staff-alerts";
-import { authOrigin, codeDigest, consumeChallenge, DEVICE_COOKIE, deviceCookieOptions, deviceLabel, digest, emailCode, knownDevice, loginTicket, makeChallenge, opaqueToken, permittedOwner, recordFailure } from "@/lib/auth-security";
+import { authOrigin, codeDigest, consumeChallenge, DEVICE_COOKIE, deviceCookieOptions, deviceLabel, digest, emailCode, knownDevice, loginTicket, makeChallenge, opaqueToken, permittedOwner, pinDigest, recordFailure } from "@/lib/auth-security";
 
 const inputSchema = z.object({
-  action: z.enum(["password", "code", "passkey-options", "passkey-verify", "register-options", "register-verify"]),
+  action: z.enum(["password", "code", "passkey-options", "passkey-verify", "register-options", "register-verify", "device-state", "pin", "pin-set"]),
   email: z.string().trim().email().transform(v => v.toLowerCase()).optional(),
   password: z.string().min(1).max(256).optional(),
   challengeId: z.string().uuid().optional(),
   code: z.string().regex(/^\d{6}$/).optional(),
   response: z.unknown().optional(),
+  pin: z.string().regex(/^\d{6}$/).optional(),
+  confirmPin: z.string().regex(/^\d{6}$/).optional(),
 });
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const denied = () => reply({ error: "Sign-in could not be verified. Check your details or ask the Administrator to unlock your account." }, 401);
@@ -33,6 +35,26 @@ export async function POST(request: Request) {
   const token = jar.get(DEVICE_COOKIE)?.value;
   const label = deviceLabel(request);
   try {
+    if(input.action==="device-state"){
+      const device=token?await prisma.authDevice.findUnique({where:{tokenHash:digest(token)},include:{user:true}}):null;
+      if(!device||device.revokedAt||device.user.status!=="ACTIVE"||device.user.lockedAt||!permittedOwner(device.user))return reply({known:false});
+      return reply({known:true,email:device.user.email,pinConfigured:Boolean(device.pinHash)});
+    }
+    if(input.action==="pin"){
+      if(!input.email||!input.pin||!token)return denied();
+      const email=input.email,pin=input.pin,deviceHash=digest(token);
+      const ticket=await prisma.$transaction(async tx=>{
+        // Serialize attempts so concurrent requests cannot exceed the failure budget.
+        await tx.$queryRaw`SELECT id FROM "User" WHERE email=${email} FOR UPDATE`;
+        const user=await tx.user.findUnique({where:{email}});
+        if(!user||user.status!=="ACTIVE"||user.lockedAt||!permittedOwner(user))return null;
+        const device=await tx.authDevice.findFirst({where:{userId:user.id,tokenHash:deviceHash,revokedAt:null}});
+        if(!device?.pinHash)return null;
+        if(!await compare(pinDigest(user.id,device.id,pin),device.pinHash)){await recordFailure(user.id,label,tx);return null;}
+        return loginTicket(user.id,device.id,device.pinVersion,tx);
+      },{timeout:10000});
+      return ticket?reply({ticket}):denied();
+    }
     if (input.action === "password") {
       if (!input.email || !input.password) return denied();
       const user = await prisma.user.findUnique({ where: { email: input.email } });
@@ -41,7 +63,7 @@ export async function POST(request: Request) {
       if (!user || user.status !== "ACTIVE" || user.lockedAt || !permittedOwner(user)) return denied();
       if (!valid) { await recordFailure(user.id, label); return denied(); }
       const device = await knownDevice(user.id, token);
-      if (device) return reply({ ticket: await loginTicket(user.id, device.id) });
+      // Password is an ownership/recovery path and always requires the emailed code.
       // Reserve the resend window atomically; do not flood the email provider.
       const reservation = await prisma.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
@@ -50,7 +72,7 @@ export async function POST(request: Request) {
         const id = randomUUID();
         const code = emailCode();
         await tx.authChallenge.deleteMany({ where: { userId: user.id, kind: "email" } });
-        await tx.authChallenge.create({ data: { id, userId: user.id, kind: "email", value: codeDigest(id, code), expiresAt: new Date(Date.now() + 5 * 60_000) } });
+        await tx.authChallenge.create({ data: { id, userId: user.id, kind: "email", deviceId:device?.id, value: codeDigest(id, code), expiresAt: new Date(Date.now() + 5 * 60_000) } });
         return { id, code };
       });
       if (!reservation) return reply({ error: "A code was sent recently. Wait one minute before requesting another." }, 429);
@@ -69,11 +91,38 @@ export async function POST(request: Request) {
       if (!timingSafeEqual(Buffer.from(challenge.value), Buffer.from(codeDigest(challenge.id, input.code)))) {
         await recordFailure(challenge.userId, label); return denied();
       }
+      const previous=await knownDevice(challenge.userId,token);
+      if(challenge.deviceId && previous?.id!==challenge.deviceId)return denied();
       if (!await consumeChallenge(challenge.id, "email")) return denied();
-      const deviceToken = opaqueToken();
-      const device = await prisma.authDevice.create({ data: { userId: challenge.userId, tokenHash: digest(deviceToken), label } });
+      const deviceToken = previous?token!:opaqueToken();
+      const device = previous??await prisma.authDevice.create({ data: { userId: challenge.userId, tokenHash: digest(deviceToken), label } });
       jar.set(DEVICE_COOKIE, deviceToken, deviceCookieOptions);
-      return reply({ ticket: await loginTicket(challenge.userId, device.id) });
+      const setup=await makeChallenge(challenge.userId,"pin-setup",digest(deviceToken),device.id);
+      return reply({ ticket: await loginTicket(challenge.userId, device.id),pinSetupId:setup.id });
+    }
+    if(input.action==="pin-set"){
+      const session=await auth();if(!session?.user)return reply({error:"Your sign-in expired. Verify your email and password again."},401);
+      if(!input.challengeId||!input.pin||input.pin!==input.confirmPin)return reply({error:"Enter and confirm the same six-digit PIN after verifying ownership."},400);
+      const setupId=input.challengeId;
+      const device=await knownDevice(session.user.id,token);if(!device)return denied();
+      const proof=await prisma.authChallenge.findUnique({where:{id:setupId}});
+      if(!proof||proof.kind!=="pin-setup"||proof.userId!==session.user.id||proof.deviceId!==device.id||proof.value!==digest(token??"")||proof.expiresAt<=new Date())return reply({error:"Ownership verification expired. Verify your email and password again."},401);
+      const pinHash=await hash(pinDigest(session.user.id,device.id,input.pin),12);
+      const updated=await prisma.$transaction(async tx=>{
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id=${session.user.id} FOR UPDATE`;
+        const currentUser=await tx.user.findUnique({where:{id:session.user.id}});
+        if(!currentUser||currentUser.status!=="ACTIVE"||currentUser.lockedAt||!permittedOwner(currentUser))return null;
+        const setup=await tx.authChallenge.findUnique({where:{id:setupId}});
+        if(!setup||setup.kind!=="pin-setup"||setup.userId!==session.user.id||setup.deviceId!==device.id||setup.value!==digest(token??""))return null;
+        if(!await consumeChallenge(setupId,"pin-setup",tx))return null;
+        const result=await tx.authDevice.updateMany({where:{id:device.id,userId:session.user.id,revokedAt:null,pinVersion:device.pinVersion},data:{pinHash,pinVersion:{increment:1},pinUpdatedAt:new Date()}});
+        if(!result.count)throw new Error("PIN changed concurrently");
+        await tx.authChallenge.deleteMany({where:{deviceId:device.id,kind:{in:["ticket","pin-setup","register","authenticate"]}}});
+        await tx.authEvent.create({data:{userId:session.user.id,action:device.pinHash?"Device PIN changed":"Device PIN created",deviceLabel:label}});
+        return device.pinVersion+1;
+      });
+      if(updated===null)return reply({error:"Ownership verification expired. Verify your email and password again."},401);
+      return reply({ticket:await loginTicket(session.user.id,device.id,updated)});
     }
     if (input.action === "passkey-options") {
       if (!input.email) return denied();
@@ -82,7 +131,7 @@ export async function POST(request: Request) {
       const device = await knownDevice(user.id, token);
       if (!device) return reply({ error: "Use your password and email code to verify this device first." }, 401);
       const keys = await prisma.authPasskey.findMany({ where: { deviceId: device.id } });
-      if (!keys.length) return reply({ error: "Sign in with your password, then set up Face ID or a passkey in Account security." }, 400);
+      if (!keys.length) return reply({ error: "Sign in with your password, then set up Face ID or a passkey in Settings → Account security." }, 400);
       const { rpID } = authOrigin();
       const options = await generateAuthenticationOptions({ rpID, userVerification: "required", allowCredentials: keys.map(key => ({ id: key.id, transports: key.transports })) });
       const challenge = await makeChallenge(user.id, "authenticate", options.challenge, device.id);

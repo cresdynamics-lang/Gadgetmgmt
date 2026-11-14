@@ -13,6 +13,7 @@ const prisma = new PrismaClient({ datasourceUrl: database });
 const run = Date.now().toString(36);
 const email = `administrator-${run}@example.test`;
 const password = 'Auth-review-password-2026!';
+const appPin='004269';
 const mailFile = `/tmp/gadgethub-auth-mail-${run}.json`;
 const productionReview=process.env.AUTH_REVIEW_PRODUCTION==='1';
 const artifactDir = resolve(productionReview?'artifacts/production-review':process.env.PWA_REVIEW==='1'?'artifacts/pwa-review':'artifacts/auth-review');
@@ -56,7 +57,7 @@ try {
     await page.screenshot({path:`${artifactDir}/login-${width}.png`,fullPage:true});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     const input=await page.locator('#email').boundingBox(); assert.ok(input.height >=44);
-    const action=await page.getByRole('button',{name:'Sign in with Face ID or passkey'}).boundingBox(); assert.ok(action.height>=44);
+    const action=await page.getByRole('button',{name:'Use Face ID or passkey'}).boundingBox(); assert.ok(action.height>=44);
     assert.equal(await page.locator('#email').evaluate(el=>getComputedStyle(el).fontSize),'16px');
   }
   pass('Login renders without overflow and with 44px targets at five viewport widths');
@@ -68,7 +69,6 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.authReady === 'true');
   // Verify the browser's actual recovery UI and retained email.
   await page.locator('#email').fill(email);
-  await page.getByRole('button',{name:'Use password',exact:true}).click();
   await page.locator('#password').fill('wrong-password');
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.locator('.security-error').waitFor();
@@ -100,11 +100,19 @@ try {
   pass('Expired and incorrect email codes cannot authenticate');
   const pendingVerified=page.waitForResponse(r=>r.url()===base+'/api/auth/security' && r.request().postData()?.includes('"action":"code"'));
   await page.locator('#code').fill(code);
-  await page.getByRole('button',{name:'Verify & sign in',exact:true}).click();
+  await page.getByRole('button',{name:'Verify & continue',exact:true}).click();
   response=await pendingVerified; assert.equal(response.status(),200);
   const {ticket}=await response.json();
+  await page.locator('#pin').waitFor();await page.screenshot({path:`${artifactDir}/pin-setup-390.png`,fullPage:true});await page.locator('#pin').fill(appPin);await page.locator('#confirmPin').fill('004268');await page.getByRole('button',{name:'Save PIN & sign in',exact:true}).click();await page.getByRole('alert').filter({hasText:'same six-digit PIN'}).waitFor();
+  await page.locator('#confirmPin').fill(appPin);await page.getByRole('button',{name:'Save PIN & sign in',exact:true}).click();
   await page.waitForURL('**/dashboard',{timeout:120000});
-  pass('Password and emailed code complete the actual browser sign-in flow');
+  pass('Password and email ownership verification lead to confirmed six-digit PIN setup, preserving leading zeroes');
+  const pinDevice=await prisma.authDevice.findFirstOrThrow({where:{userId:owner.id,revokedAt:null}});assert.ok(pinDevice.pinHash);assert.notEqual(pinDevice.pinHash,appPin);assert.equal(pinDevice.pinVersion,1);
+  const safePinDevices=await(await context.request.get(base+'/api/auth/devices')).json();assert.equal(safePinDevices.pinConfigured,true);assert.equal(JSON.stringify(safePinDevices).includes('pinHash'),false);assert.equal(JSON.stringify(safePinDevices).includes(pinDevice.pinHash),false);
+  const unverifiedPin=await post('pin-set',{challengeId:crypto.randomUUID(),pin:appPin,confirmPin:appPin});assert.equal(unverifiedPin.status(),401);
+  const stranger=await browser.newContext();assert.equal((await stranger.request.post(base+'/api/auth/security',{headers:{Origin:base},data:{action:'pin',email,pin:appPin}})).status(),401);await stranger.close();
+  const mailBeforePin=readFileSync(mailFile,'utf8');await context.request.post(base+'/api/auth/lock',{headers:{Origin:base}});await page.goto(base+'/login',{waitUntil:'domcontentloaded'}).catch(error=>{if(!String(error).includes('ERR_ABORTED'))throw error;});await page.waitForURL(url=>url.pathname==='/login');await page.waitForFunction(()=>document.documentElement.dataset.authReady==='true');await page.screenshot({path:`${artifactDir}/pin-unlock-390.png`,fullPage:true});await page.locator('#pin').fill(appPin);await page.getByRole('button',{name:'Unlock with PIN',exact:true}).click();await page.waitForURL('**/dashboard',{timeout:120000});assert.equal(readFileSync(mailFile,'utf8'),mailBeforePin);pass('Verified-device PIN unlock works without email; unverified devices and unproven PIN changes are rejected');
+
   assert.equal((await post('code',{challengeId:challenge.challengeId,code})).status(),401); pass('Verification code cannot be replayed');
   async function redeem(ticket) {
     const csrf=await (await context.request.get(base+'/api/auth/csrf')).json();
@@ -113,7 +121,7 @@ try {
   let session=await (await context.request.get(base+'/api/auth/session')).json(); assert.equal(session.user.id,owner.id);
   await redeem(ticket);
   // The original session remains valid; no second successful sign-in was recorded.
-  assert.equal(await prisma.authEvent.count({where:{userId:owner.id,action:'Signed in'}}),1); pass('Login ticket is single-use and successful sign-in audited');
+  assert.equal(await prisma.authEvent.count({where:{userId:owner.id,action:'Signed in'}}),3); pass('Login ticket is single-use and successful sign-in audited');
   await openWorkspace('Settings','/settings');
   await page.getByRole('heading',{name:'Account security',exact:true,level:2}).waitFor();
   await page.getByText('This device',{exact:true}).waitFor();
@@ -143,7 +151,7 @@ try {
   assert.equal(await prisma.authPasskey.count({where:{device:{userId:owner.id}}}),1); pass('Real WebAuthn registration with required user verification succeeds');
   await page.goto(base+'/login',{waitUntil:'networkidle'});
   await page.locator('#email').fill(email);
-  await page.getByRole('button',{name:'Sign in with Face ID or passkey',exact:true}).click();
+  await page.getByRole('button',{name:'Use Face ID or passkey',exact:true}).click();
   await page.waitForURL('**/dashboard',{timeout:120000}); pass('Real WebAuthn authentication opens an authorized workspace');
   const staffContext=await browser.newContext();
   const staffPost=(action,extra={})=>staffContext.request.post(base+'/api/auth/security',{headers:{Origin:base},data:{action,...extra}});
@@ -152,15 +160,37 @@ try {
   const staffMail=JSON.parse(readFileSync(mailFile,'utf8'));
   const staffCode=staffMail.text.match(/code is (\d{6})/)[1];
   staffResponse=await staffPost('code',{challengeId:staffChallenge.challengeId,code:staffCode});
-  const staffTicket=(await staffResponse.json()).ticket;
+  const staffVerified=await staffResponse.json();const staffTicket=staffVerified.ticket;
   const staffCsrf=await(await staffContext.request.get(base+'/api/auth/csrf')).json();
   await staffContext.request.post(base+'/api/auth/callback/credentials',{form:{csrfToken:staffCsrf.csrfToken,ticket:staffTicket,callbackUrl:base+'/account'},maxRedirects:0});
+  const staffPinSet=await staffPost('pin-set',{challengeId:staffVerified.pinSetupId,pin:appPin,confirmPin:appPin});assert.equal(staffPinSet.status(),200);const staffPinTicket=(await staffPinSet.json()).ticket;
+  await staffContext.request.post(base+'/api/auth/callback/credentials',{form:{csrfToken:staffCsrf.csrfToken,ticket:staffPinTicket,callbackUrl:base+'/settings'},maxRedirects:0});
+  const staleSession=await browser.newContext();await staleSession.addCookies(await staffContext.cookies());
+  const stalePinTicket=(await (await staffPost('pin',{email:staff.email,pin:appPin})).json()).ticket;
+  const recovery=await staffPost('password',{email:staff.email,password});assert.equal(recovery.status(),200);const recoveryChallenge=await recovery.json();assert.equal(recoveryChallenge.needsCode,true,'Known devices still require email for PIN recovery');
+  const recoveryMail=JSON.parse(readFileSync(mailFile,'utf8'));const recoveryCode=recoveryMail.text.match(/code is (\d{6})/)[1];const recoveryVerified=await (await staffPost('code',{challengeId:recoveryChallenge.challengeId,code:recoveryCode})).json();
+  assert.equal(await prisma.authDevice.count({where:{userId:staff.id}}),1);
+  await prisma.authChallenge.update({where:{id:recoveryVerified.pinSetupId},data:{expiresAt:new Date(Date.now()-1000)}});
+  assert.equal((await staffPost('pin-set',{challengeId:recoveryVerified.pinSetupId,pin:'614820',confirmPin:'614820'})).status(),401);
+  await prisma.authChallenge.update({where:{id:recoveryVerified.pinSetupId},data:{expiresAt:new Date(Date.now()+300000)}});
+  const reset=await staffPost('pin-set',{challengeId:recoveryVerified.pinSetupId,pin:'614820',confirmPin:'614820'});assert.equal(reset.status(),200);const resetTicket=(await reset.json()).ticket;
+  assert.equal((await staleSession.request.get(base+'/api/auth/devices')).status(),401);
+  const staleCsrf=await(await staleSession.request.get(base+'/api/auth/csrf')).json();await staleSession.request.post(base+'/api/auth/callback/credentials',{form:{csrfToken:staleCsrf.csrfToken,ticket:stalePinTicket},maxRedirects:0});assert.equal((await staleSession.request.get(base+'/api/auth/devices')).status(),401);await staleSession.close();
+  await staffContext.request.post(base+'/api/auth/callback/credentials',{form:{csrfToken:staffCsrf.csrfToken,ticket:resetTicket},maxRedirects:0});
+  assert.equal((await staffPost('pin-set',{challengeId:recoveryVerified.pinSetupId,pin:'614820',confirmPin:'614820'})).status(),401);
+  assert.equal((await staffPost('pin',{email:staff.email,pin:appPin})).status(),401);
+  const newPin=await staffPost('pin',{email:staff.email,pin:'614820'});assert.equal(newPin.status(),200);const newPinTicket=(await newPin.json()).ticket;await staffContext.request.post(base+'/api/auth/callback/credentials',{form:{csrfToken:staffCsrf.csrfToken,ticket:newPinTicket},maxRedirects:0});
+  pass('PIN recovery requires password plus email, expires and cannot replay; reset rejects old PINs, sessions and outstanding tickets without duplicating the device');
   assert.equal((await staffContext.request.get(base+'/api/pos')).status(),403);
   assert.equal((await staffContext.request.get(base+'/api/inventory')).status(),403);
   assert.equal((await staffContext.request.get(base+'/api/auth/access')).status(),403);
   const personalSettings=await staffContext.request.get(base+'/settings');assert.equal(personalSettings.status(),200);const personalMarkup=await personalSettings.text();assert.match(personalMarkup,/Account security/);assert.doesNotMatch(personalMarkup,/Save branch profile|Branch profile/);
   assert.equal((await staffContext.request.patch(base+`/api/branches/${branch.id}`,{headers:{Origin:base},data:{name:'Blocked change'}})).status(),403);
-  const legacy=await staffContext.request.get(base+'/account');assert.equal(new URL(legacy.url()).pathname,'/settings');
+  // Production streaming redirects use a meta tag after headers are sent.
+  const legacyPage=await staffContext.newPage();
+  await legacyPage.goto(base+'/account',{waitUntil:'domcontentloaded'});
+  await legacyPage.waitForURL(url=>url.pathname==='/settings'&&url.hash==='#account-security');
+  await legacyPage.getByRole('heading',{name:'Account security',exact:true}).waitFor();
   pass('Personal Account Security lives in Settings for ungranted staff; business controls and writes remain denied; old account links redirect');
   pass('A signed-in staff account has no operational or owner access before explicit grants');
   // Server grant mutation requires password and applies per person.
@@ -197,12 +227,12 @@ try {
   if(process.env.PWA_REVIEW==='1') {
     process.env.AUTH_REVIEW_AI_FILE=`/tmp/gadgethub-ai-${run}.json`;
     const {runPwaReview}=await import('../pwa/review.mjs');
-    await runPwaReview({context,page,prisma,base,owner,staff,staffContext,password,branch,artifactDir,openWorkspace});
+    await runPwaReview({context,page,prisma,base,owner,staff,staffContext,password,pin:appPin,branch,artifactDir,openWorkspace});
   }
   // Lock the device and confirm that server access ends.
   assert.equal((await context.request.post(base+'/api/auth/lock',{headers:{Origin:base},data:{}})).status(),204);
   assert.equal((await context.request.get(base+'/api/auth/devices')).status(),401);pass('Server-backed workspace lock blocks subsequent authenticated requests');
-  response=await post('password',{email,password});assert.equal(response.status(),200);await redeem((await response.json()).ticket);
+  response=await post('pin',{email,pin:appPin});assert.equal(response.status(),200);await redeem((await response.json()).ticket);
   session=await (await context.request.get(base+'/api/auth/session')).json();assert.equal(session.user.id,owner.id);
   await openWorkspace('Settings','/settings');
   const revokeRow=page.locator('.security-device-list:visible li').filter({hasText:'This device'});
@@ -212,10 +242,10 @@ try {
   await page.waitForURL('**/login',{timeout:120000});
   assert.equal((await context.request.get(base+'/api/auth/devices')).status(),401);pass('Revoke ends access on the next API request');
   // Lockouts include email-code failures and generate owner notification.
-  for(let i=0;i<3;i++)assert.equal((await post('password',{email:staff.email,password:'wrong-password'})).status(),401);
+  const failedPins=await Promise.all(Array.from({length:6},()=>staffPost('pin',{email:staff.email,pin:'999999'})));for(const result of failedPins)assert.equal(result.status(),401);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:staff.id}})).failedSignIns,3);
   assert.ok((await prisma.user.findUnique({where:{id:staff.id}})).lockedAt);
   assert.equal((await post('password',{email:staff.email,password})).status(),401);
-  assert.equal(await prisma.staffAlert.count({where:{userId:owner.id,title:'Account locked after failed sign-ins'}}),1);pass('Three failures lock the account and alert the owner');
+  assert.equal(await prisma.staffAlert.count({where:{userId:owner.id,title:'Account locked after failed sign-ins'}}),1);pass('Concurrent wrong PINs stop at three failures, lock the account, revoke devices and alert the Administrator');
   assert.equal((await staffContext.request.get(base+'/api/auth/devices')).status(),401);
   await staffContext.close();
   writeFileSync(`${artifactDir}/results.json`,JSON.stringify({date:new Date().toISOString(),findings,limitations:['Virtual authenticator validates WebAuthn protocol, not physical Face ID hardware.','Email uses a test-process transport; live provider delivery not exercised.']},null,2)+'\n');

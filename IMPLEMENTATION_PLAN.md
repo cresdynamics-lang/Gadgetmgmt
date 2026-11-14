@@ -67,3 +67,6 @@ Validation: `npm run test:pwa:e2e` (isolated database and fake providers), `PWA_
 Rollout dependencies: apply migrations using the established deployment process; deploy application and notification worker together; configure canonical HTTPS, owner identity and provider secrets; grant new operational capabilities individually. Old devices without a live foreground lease reauthenticate. No automatic data consolidation, inventory backfill, bank charging, payroll deductions or financing-policy change is performed.
 
 Remaining external acceptance work: real iPhone installed-mode/Face ID/camera/VoiceOver/large text; actual provider inbox/push and physical label printing; confirmed bank, statutory payroll, trade-in exchange/refund and replacement financing policy. These are explicitly tracked dependencies, not simulated production passes.
+
+
+App PIN instruction: add device PIN hashes/credential versions and additive migration; make password + email ownership verification mandatory for setup/recovery; provide primary PIN unlock and optional WebAuthn; preserve verified sessions during rollout; verify replay/expiry/reset/concurrency/lockout and user-visible Settings flows before deployment. No production migration is applied until the reviewed release workflow runs.

@@ -59,3 +59,10 @@ WebAuthn delegates Face ID/fingerprint/device PIN to the OS. Independent applica
 ## Settings information architecture — 2026-11-14
 
 Settings is a single navigation destination for every authenticated role. It groups Account security (passkeys and verified devices), App preferences (appearance, installation and authorized service readiness), and Business settings. Business settings render only for the Administrator or an authorized branch manager with both the business-settings page grant and branch-settings capability. Personal Settings access does not grant branch editing. The page grant is labeled Business settings in access administration to make that distinction clear. Legacy account links redirect to the security section; ungranted staff sign in to Settings instead of an inaccessible workspace.
+
+
+## Primary PIN authentication — 2026-11-14
+
+The sign-in page recognizes only the browser’s opaque verified-device cookie. A configured device opens with an email hint and app PIN as the primary action; password plus emailed code is the setup/recovery path. Unknown devices verify ownership before PIN selection. Six digits, confirmation, a masked numeric field and preserved leading zeroes support quick retail use. Face ID/passkeys remain optional under existing approvals.
+
+PIN setup requires a fresh, expiring ownership receipt bound to the same user and device cookie. Recovery reuses that device record and advances its credential version, ending earlier sessions/tickets for that device. Failed PIN attempts are serialized on the server before comparison and use the existing three-failure account lockout. Settings exposes only whether the current device has a PIN; credential hashes and versions are never exposed there. Business authorization and financial step-up rules remain independent of the sign-in method.

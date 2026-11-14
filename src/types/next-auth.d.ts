@@ -2,6 +2,7 @@ import type { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface User {
+    pinVersion: number;
     deviceId: string;
     role: string;
     branchId: string | null;
@@ -23,6 +24,7 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
+    pinVersion?: number;
     deviceId: string;
     userId: string;
     role: string;

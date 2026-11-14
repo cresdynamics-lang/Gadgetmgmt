@@ -2,9 +2,9 @@
   {
     "path": "/dashboard",
     "theme": "light",
-    "textLength": 1989,
+    "textLength": 2081,
     "headings": [
-      "7 sales recorded today",
+      "1 sale recorded today",
       "Today’s action desk",
       "AI business briefing",
       "Sales activity",
@@ -27,7 +27,7 @@
   {
     "path": "/inventory",
     "theme": "light",
-    "textLength": 1336,
+    "textLength": 1343,
     "headings": [
       "Inventory",
       "Record a device",
@@ -39,16 +39,22 @@
   {
     "path": "/planner",
     "theme": "light",
-    "textLength": 5163,
+    "textLength": 6742,
     "headings": [
       "Variant stock planner",
       "Review iPhone 13bc734c",
+      "Review iPhone 666e47d8",
       "Review iPhone 9d6adedc",
       "Review iPhone 9e55787f",
       "Review iPhone ae8d5e1a",
       "Review iPhone e7f578a8",
       "Review iPhone f094fa05",
       "Review iPhone ccfce363",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
       "Review accessory",
       "Review accessory",
       "Review accessory",
@@ -63,14 +69,15 @@
       "Review iPhone 625c23eb",
       "Review iPhone cb0ae984"
     ],
-    "controls": 60
+    "controls": 78
   },
   {
     "path": "/devices",
     "theme": "light",
-    "textLength": 839,
+    "textLength": 914,
     "headings": [
       "Device passports",
+      "Review iPhone 666e47d8",
       "Review iPhone ae8d5e1a",
       "Review iPhone 9d6adedc",
       "Review iPhone f094fa05",
@@ -81,12 +88,12 @@
       "Review iPhone cb0ae984",
       "Review iPhone 625c23eb"
     ],
-    "controls": 9
+    "controls": 10
   },
   {
     "path": "/repairs",
     "theme": "light",
-    "textLength": 1956,
+    "textLength": 2181,
     "headings": [
       "Repair workspace",
       "Recorded work",
@@ -97,14 +104,15 @@
       "Review iPhone 13bc734c",
       "Review iPhone f094fa05",
       "Review iPhone 9d6adedc",
-      "Review iPhone ae8d5e1a"
+      "Review iPhone ae8d5e1a",
+      "Review iPhone 666e47d8"
     ],
-    "controls": 15
+    "controls": 16
   },
   {
     "path": "/deliveries",
     "theme": "light",
-    "textLength": 2176,
+    "textLength": 2464,
     "headings": [
       "Delivery workspace",
       "Recorded work",
@@ -114,9 +122,10 @@
       "Review iPhone 13bc734c",
       "Review iPhone f094fa05",
       "Review iPhone 9d6adedc",
-      "Review iPhone ae8d5e1a"
+      "Review iPhone ae8d5e1a",
+      "Review iPhone 666e47d8"
     ],
-    "controls": 16
+    "controls": 17
   },
   {
     "path": "/partners",
@@ -141,11 +150,15 @@
   {
     "path": "/expenses",
     "theme": "light",
-    "textLength": 4018,
+    "textLength": 4522,
     "headings": [
       "Expenses & bills",
       "Recurring obligations",
       "Payment history",
+      "Fixture utility",
+      "Fixture landlord 666e47d8",
+      "Fixture repairer",
+      "Fixture landlord 666e47d8",
       "Fixture utility",
       "Fixture landlord ae8d5e1a",
       "Fixture repairer",
@@ -176,12 +189,12 @@
       "Fixture landlord 9e55787f",
       "Fixture landlord e7f578a8"
     ],
-    "controls": 41
+    "controls": 43
   },
   {
     "path": "/finance",
     "theme": "light",
-    "textLength": 1416,
+    "textLength": 1417,
     "headings": [
       "Finance",
       "Customer-stated marketing attribution"
@@ -191,12 +204,12 @@
   {
     "path": "/customers",
     "theme": "light",
-    "textLength": 1805,
+    "textLength": 1876,
     "headings": [
-      "Customers 8",
-      "Fixture buyer ae8d5e1a"
+      "Customers 9",
+      "Fixture buyer 666e47d8"
     ],
-    "controls": 24
+    "controls": 25
   },
   {
     "path": "/credit",
@@ -222,17 +235,17 @@
   {
     "path": "/staff",
     "theme": "light",
-    "textLength": 7582,
+    "textLength": 10622,
     "headings": [
       "Meet your team",
       "Your people"
     ],
-    "controls": 84
+    "controls": 116
   },
   {
     "path": "/activity",
     "theme": "light",
-    "textLength": 3185,
+    "textLength": 3122,
     "headings": [
       "Activity"
     ],
@@ -241,7 +254,7 @@
   {
     "path": "/notifications",
     "theme": "light",
-    "textLength": 5066,
+    "textLength": 5430,
     "headings": [
       "Messages & alerts",
       "Your inbox · 0 unread",
@@ -253,18 +266,26 @@
   {
     "path": "/settings",
     "theme": "light",
-    "textLength": 1204,
+    "textLength": 5298,
     "headings": [
+      "Settings",
+      "Account security",
+      "App PIN",
+      "Face ID & passkeys",
+      "Verified devices",
+      "App preferences",
+      "Your installed workspace",
+      "Delivery & installation readiness",
       "Business settings",
       "Branch profile",
       "Signed-in account"
     ],
-    "controls": 7
+    "controls": 37
   },
   {
     "path": "/performance",
     "theme": "light",
-    "textLength": 453,
+    "textLength": 493,
     "headings": [
       "Staff performance"
     ],
@@ -295,22 +316,9 @@
     "controls": 1
   },
   {
-    "path": "/account",
-    "theme": "light",
-    "textLength": 3028,
-    "headings": [
-      "Account security",
-      "Your installed workspace",
-      "Delivery & installation readiness",
-      "Face ID & passkeys",
-      "Verified devices"
-    ],
-    "controls": 24
-  },
-  {
     "path": "/access",
     "theme": "light",
-    "textLength": 2021,
+    "textLength": 2880,
     "headings": [
       "Team access"
     ],
@@ -319,9 +327,9 @@
   {
     "path": "/dashboard",
     "theme": "dark",
-    "textLength": 1989,
+    "textLength": 2081,
     "headings": [
-      "7 sales recorded today",
+      "1 sale recorded today",
       "Today’s action desk",
       "AI business briefing",
       "Sales activity",
@@ -344,7 +352,7 @@
   {
     "path": "/inventory",
     "theme": "dark",
-    "textLength": 1336,
+    "textLength": 1343,
     "headings": [
       "Inventory",
       "Record a device",
@@ -356,16 +364,22 @@
   {
     "path": "/planner",
     "theme": "dark",
-    "textLength": 5163,
+    "textLength": 6742,
     "headings": [
       "Variant stock planner",
       "Review iPhone 13bc734c",
+      "Review iPhone 666e47d8",
       "Review iPhone 9d6adedc",
       "Review iPhone 9e55787f",
       "Review iPhone ae8d5e1a",
       "Review iPhone e7f578a8",
       "Review iPhone f094fa05",
       "Review iPhone ccfce363",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
+      "Review accessory",
       "Review accessory",
       "Review accessory",
       "Review accessory",
@@ -380,14 +394,15 @@
       "Review iPhone 625c23eb",
       "Review iPhone cb0ae984"
     ],
-    "controls": 60
+    "controls": 78
   },
   {
     "path": "/devices",
     "theme": "dark",
-    "textLength": 839,
+    "textLength": 914,
     "headings": [
       "Device passports",
+      "Review iPhone 666e47d8",
       "Review iPhone ae8d5e1a",
       "Review iPhone 9d6adedc",
       "Review iPhone f094fa05",
@@ -398,12 +413,12 @@
       "Review iPhone cb0ae984",
       "Review iPhone 625c23eb"
     ],
-    "controls": 9
+    "controls": 10
   },
   {
     "path": "/repairs",
     "theme": "dark",
-    "textLength": 1956,
+    "textLength": 2181,
     "headings": [
       "Repair workspace",
       "Recorded work",
@@ -414,14 +429,15 @@
       "Review iPhone 13bc734c",
       "Review iPhone f094fa05",
       "Review iPhone 9d6adedc",
-      "Review iPhone ae8d5e1a"
+      "Review iPhone ae8d5e1a",
+      "Review iPhone 666e47d8"
     ],
-    "controls": 15
+    "controls": 16
   },
   {
     "path": "/deliveries",
     "theme": "dark",
-    "textLength": 2176,
+    "textLength": 2464,
     "headings": [
       "Delivery workspace",
       "Recorded work",
@@ -431,9 +447,10 @@
       "Review iPhone 13bc734c",
       "Review iPhone f094fa05",
       "Review iPhone 9d6adedc",
-      "Review iPhone ae8d5e1a"
+      "Review iPhone ae8d5e1a",
+      "Review iPhone 666e47d8"
     ],
-    "controls": 16
+    "controls": 17
   },
   {
     "path": "/partners",
@@ -458,11 +475,15 @@
   {
     "path": "/expenses",
     "theme": "dark",
-    "textLength": 4018,
+    "textLength": 4522,
     "headings": [
       "Expenses & bills",
       "Recurring obligations",
       "Payment history",
+      "Fixture utility",
+      "Fixture landlord 666e47d8",
+      "Fixture repairer",
+      "Fixture landlord 666e47d8",
       "Fixture utility",
       "Fixture landlord ae8d5e1a",
       "Fixture repairer",
@@ -493,12 +514,12 @@
       "Fixture landlord 9e55787f",
       "Fixture landlord e7f578a8"
     ],
-    "controls": 41
+    "controls": 43
   },
   {
     "path": "/finance",
     "theme": "dark",
-    "textLength": 1416,
+    "textLength": 1417,
     "headings": [
       "Finance",
       "Customer-stated marketing attribution"
@@ -508,12 +529,12 @@
   {
     "path": "/customers",
     "theme": "dark",
-    "textLength": 1805,
+    "textLength": 1876,
     "headings": [
-      "Customers 8",
-      "Fixture buyer ae8d5e1a"
+      "Customers 9",
+      "Fixture buyer 666e47d8"
     ],
-    "controls": 24
+    "controls": 25
   },
   {
     "path": "/credit",
@@ -539,17 +560,17 @@
   {
     "path": "/staff",
     "theme": "dark",
-    "textLength": 7582,
+    "textLength": 10622,
     "headings": [
       "Meet your team",
       "Your people"
     ],
-    "controls": 84
+    "controls": 116
   },
   {
     "path": "/activity",
     "theme": "dark",
-    "textLength": 3185,
+    "textLength": 3122,
     "headings": [
       "Activity"
     ],
@@ -558,7 +579,7 @@
   {
     "path": "/notifications",
     "theme": "dark",
-    "textLength": 5066,
+    "textLength": 5430,
     "headings": [
       "Messages & alerts",
       "Your inbox · 0 unread",
@@ -570,18 +591,26 @@
   {
     "path": "/settings",
     "theme": "dark",
-    "textLength": 1204,
+    "textLength": 5298,
     "headings": [
+      "Settings",
+      "Account security",
+      "App PIN",
+      "Face ID & passkeys",
+      "Verified devices",
+      "App preferences",
+      "Your installed workspace",
+      "Delivery & installation readiness",
       "Business settings",
       "Branch profile",
       "Signed-in account"
     ],
-    "controls": 7
+    "controls": 37
   },
   {
     "path": "/performance",
     "theme": "dark",
-    "textLength": 453,
+    "textLength": 493,
     "headings": [
       "Staff performance"
     ],
@@ -612,22 +641,9 @@
     "controls": 1
   },
   {
-    "path": "/account",
-    "theme": "dark",
-    "textLength": 3028,
-    "headings": [
-      "Account security",
-      "Your installed workspace",
-      "Delivery & installation readiness",
-      "Face ID & passkeys",
-      "Verified devices"
-    ],
-    "controls": 24
-  },
-  {
     "path": "/access",
     "theme": "dark",
-    "textLength": 2021,
+    "textLength": 2880,
     "headings": [
       "Team access"
     ],

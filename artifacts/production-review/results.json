@@ -1,24 +1,27 @@
 {
-  "date": "2026-11-13T19:27:05.688Z",
+  "date": "2026-11-14T06:41:59.634Z",
   "findings": [
     "Login renders without overflow and with 44px targets at five viewport widths",
     "Failed sign-in displays a recoverable error and preserves email",
     "Cross-origin authentication rejected",
     "New device requires emailed code and resend is throttled",
     "Expired and incorrect email codes cannot authenticate",
-    "Password and emailed code complete the actual browser sign-in flow",
+    "Password and email ownership verification lead to confirmed six-digit PIN setup, preserving leading zeroes",
+    "Verified-device PIN unlock works without email; unverified devices and unproven PIN changes are rejected",
     "Verification code cannot be replayed",
     "Login ticket is single-use and successful sign-in audited",
     "Mobile navigation traps keyboard focus and closes with Escape",
     "Real WebAuthn registration with required user verification succeeds",
     "Real WebAuthn authentication opens an authorized workspace",
+    "PIN recovery requires password plus email, expires and cannot replay; reset rejects old PINs, sessions and outstanding tickets without duplicating the device",
+    "Personal Account Security lives in Settings for ungranted staff; business controls and writes remain denied; old account links redirect",
     "A signed-in staff account has no operational or owner access before explicit grants",
     "Individual grants persist and finance screen cannot be delegated",
     "Permission changes apply to existing sessions and staff inventory JSON excludes buying costs",
     "Individual permission editor saves grants through its actual browser controls",
     "Server-backed workspace lock blocks subsequent authenticated requests",
     "Revoke ends access on the next API request",
-    "Three failures lock the account and alert the owner"
+    "Concurrent wrong PINs stop at three failures, lock the account, revoke devices and alert the Administrator"
   ],
   "limitations": [
     "Virtual authenticator validates WebAuthn protocol, not physical Face ID hardware.",

@@ -3,7 +3,7 @@ import {writeFileSync,readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {chromium,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-export async function runPwaReview({context,page,prisma,base,owner,staff,staffContext,password,branch,artifactDir,openWorkspace}) {
+export async function runPwaReview({context,page,prisma,base,staff,staffContext,password,pin,branch,artifactDir,openWorkspace}) {
   const results=[],audits=[],navigation=[];const mark=text=>{results.push(text);console.log('PWA PASS',text)};
   const origin={Origin:base};
   const request=async(method,path,data)=>{const response=await context.request[method](base+path,{headers:origin,...(data?{data}:{})});const body=await response.json();assert.ok(response.ok(),`${method} ${path}: ${response.status()} ${JSON.stringify(body)}`);return body;};
@@ -106,7 +106,7 @@ export async function runPwaReview({context,page,prisma,base,owner,staff,staffCo
   await page.evaluate(()=>sessionStorage.setItem('gadgethub-lock-pending','1'));
   await context.setOffline(true);await page.getByRole('status').filter({hasText:'You’re offline'}).waitFor();await page.goto(base+'/finance',{waitUntil:'domcontentloaded'});await page.getByRole('heading',{name:'Reconnect to your workspace.',exact:true}).waitFor();await page.screenshot({path:`${artifactDir}/offline-390.png`,fullPage:true});
   const caches=await page.evaluate(async()=>{const rows=[];for(const key of await window.caches.keys())for(const entry of await(await window.caches.open(key)).keys())rows.push(new URL(entry.url).pathname);return rows;});assert.ok(caches.length);assert.ok(caches.every(path=>['/notifications-offline.html','/notifications-icon-192.png','/notifications-icon-512.png'].includes(path)));await context.setOffline(false);await page.getByRole('link',{name:'Try connection again',exact:true}).click();await page.waitForURL(url=>url.pathname==='/login',{timeout:120000});
-  await page.locator('#email').fill(owner.email);await page.getByRole('button',{name:'Use password',exact:true}).click();await page.locator('#password').fill(password);await page.getByRole('button',{name:'Continue',exact:true}).click();await page.waitForURL('**/dashboard',{timeout:120000});mark('Offline navigation exposes only a public recovery screen, protected data is absent from CacheStorage, and reopening a locked PWA requires sign-in');
+  await page.waitForFunction(()=>document.documentElement.dataset.authReady==='true');await page.locator('#pin').fill(pin);await page.getByRole('button',{name:'Unlock with PIN',exact:true}).click();await page.waitForURL('**/dashboard',{timeout:120000});mark('Offline navigation exposes only a public recovery screen, protected data is absent from CacheStorage, and reopening a locked PWA requires sign-in');
   await openWorkspace('Team access','/access');
   writeFileSync(`${artifactDir}/pwa-results.json`,JSON.stringify({date:new Date().toISOString(),results,accessibility:audits.map(row=>({path:row.path,theme:row.theme,violations:row.violations.length})),limits:['Physical iPhone installation, Face ID hardware, VoiceOver and real push/email delivery require real-device/provider verification.','Unapproved financing, statutory payroll and refund accounting policies are not invented.']},null,2));
   const serious=audits.flatMap(row=>row.violations.filter(v=>['serious','critical'].includes(v.impact)).map(v=>`${row.path} ${row.theme}: ${v.id}`));assert.deepEqual(serious,[],`Accessibility issues: ${serious.join(', ')}`);

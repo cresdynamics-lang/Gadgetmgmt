@@ -1,0 +1,4 @@
+ALTER TABLE "AuthDevice" ADD COLUMN "pinHash" TEXT,
+ADD COLUMN "pinVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "pinUpdatedAt" TIMESTAMP(3);
+ALTER TABLE "AuthChallenge" ADD COLUMN "credentialVersion" INTEGER;

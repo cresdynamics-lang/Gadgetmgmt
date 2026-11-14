@@ -50,6 +50,7 @@ jobs:
 
       - name: Verify access and notification security
         run: |
+          npm run test:auth
           npm run test:access
           npm run test:notifications
 
